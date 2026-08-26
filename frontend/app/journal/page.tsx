@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
+import { API_BASE } from "../lib/api";
 
 type JournalEntry = {
   id: string;
@@ -40,7 +41,7 @@ export default function JournalPage() {
     if (!deviceId) return;
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:5000/api/journal", {
+      const res = await fetch(`${API_BASE}/api/journal`, {
         headers: { "x-device-id": deviceId },
       });
       if (res.ok) {
@@ -68,7 +69,7 @@ export default function JournalPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("http://localhost:5000/api/journal", {
+      const res = await fetch(`${API_BASE}/api/journal`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,7 +107,7 @@ export default function JournalPage() {
 
     setClosingSubmitting(true);
     try {
-      const res = await fetch("http://localhost:5000/api/journal", {
+      const res = await fetch(`${API_BASE}/api/journal`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

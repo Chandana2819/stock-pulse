@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiRequestError } from "../lib/api";
+import { api, ApiRequestError, API_BASE } from "../lib/api";
 
 type SignalItem = {
   id: string;
@@ -114,7 +114,7 @@ export default function StockSignalsPage() {
       // Fetch user holdings to filter SELL, HOLD, and WAIT signals
       const deviceId = localStorage.getItem("sp_device_id");
       if (deviceId) {
-        const holdRes = await fetch("http://localhost:5000/api/portfolio", {
+        const holdRes = await fetch(`${API_BASE}/api/portfolio`, {
           headers: { "x-device-id": deviceId },
         });
         if (holdRes.ok) {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
+import { API_BASE } from "../../lib/api";
 
 export default function BrokerLoginPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function BrokerLoginPage() {
     setError(null);
     try {
       // Simulate callback to backend callback route
-      const res = await fetch(`http://localhost:5000/api/brokers/callback/${broker.toUpperCase()}?code=mock_code_123&state=${state}`);
+      const res = await fetch(`${API_BASE}/api/brokers/callback/${broker.toUpperCase()}?code=mock_code_123&state=${state}`);
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Login simulation failed");
@@ -30,7 +31,7 @@ export default function BrokerLoginPage() {
       
       // Trigger holdings sync with correct device-id
       const deviceId = localStorage.getItem("sp_device_id") || "";
-      const syncRes = await fetch(`http://localhost:5000/api/brokers/${broker.toUpperCase()}/sync`, {
+      const syncRes = await fetch(`${API_BASE}/api/brokers/${broker.toUpperCase()}/sync`, {
         method: "POST",
         headers: { "x-device-id": deviceId },
       });

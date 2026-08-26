@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { API_BASE } from "../lib/api";
 
 type IndexPoint = { symbol: string; price: number | null; prevClose: number | null; pctChange: number | null };
 type RiskFactor = { key: string; label: string; score: number | null; available: boolean; detail: string };
@@ -31,7 +32,7 @@ export default function MarketOverview() {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("http://localhost:5000/api/market");
+        const res = await fetch(`${API_BASE}/api/market`);
         const json = await res.json();
         if (!cancelled) setData(json);
       } catch {

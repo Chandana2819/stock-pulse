@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
 import PortfolioDoctor from "../components/PortfolioDoctor";
+import { API_BASE } from "../lib/api";
 
 type Holding = {
   id: string;
@@ -63,7 +64,7 @@ export default function PortfolioPage() {
     setLoading(true);
     try {
       // 1. Fetch Holdings & Wallet
-      const holdRes = await fetch("http://localhost:5000/api/portfolio", {
+      const holdRes = await fetch(`${API_BASE}/api/portfolio`, {
         headers: { "x-device-id": deviceId },
       });
       if (holdRes.ok) {
@@ -73,7 +74,7 @@ export default function PortfolioPage() {
       }
 
       // 2. Fetch Transactions
-      const txRes = await fetch("http://localhost:5000/api/transactions", {
+      const txRes = await fetch(`${API_BASE}/api/transactions`, {
         headers: { "x-device-id": deviceId },
       });
       if (txRes.ok) {
@@ -100,7 +101,7 @@ export default function PortfolioPage() {
     if (!deviceId) return;
 
     try {
-      const res = await fetch(`http://localhost:5000/api/portfolio?stock=${stock}`, {
+      const res = await fetch(`${API_BASE}/api/portfolio?stock=${stock}`, {
         method: "DELETE",
         headers: { "x-device-id": deviceId },
       });
@@ -128,7 +129,7 @@ export default function PortfolioPage() {
 
     setSubmitting(true);
     try {
-      const res = await fetch("http://localhost:5000/api/transactions", {
+      const res = await fetch(`${API_BASE}/api/transactions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -201,7 +202,7 @@ export default function PortfolioPage() {
           
           if (isNaN(qty) || isNaN(price) || qty <= 0 || price <= 0) continue;
 
-          await fetch("http://localhost:5000/api/transactions", {
+          await fetch(`${API_BASE}/api/transactions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -259,7 +260,7 @@ export default function PortfolioPage() {
         ];
 
         for (const trade of mockTrades) {
-          await fetch("http://localhost:5000/api/transactions", {
+          await fetch(`${API_BASE}/api/transactions`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -283,7 +284,7 @@ export default function PortfolioPage() {
       } else {
         // Redirect to OAuth
         const deviceId = localStorage.getItem("sp_device_id");
-        const res = await fetch(`http://localhost:5000/api/brokers/${brokerSelect.toLowerCase()}/connect`, {
+        const res = await fetch(`${API_BASE}/api/brokers/${brokerSelect.toLowerCase()}/connect`, {
           headers: { "x-device-id": deviceId || "" },
         });
         if (res.ok) {

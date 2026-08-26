@@ -5,7 +5,7 @@
 // the backend accepts either. Centralizing this means no component crafts its
 // own fetch/headers, so auth upgrades happen in exactly one place.
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:5000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000";
 
 export function getDeviceId(): string {
   if (typeof window === "undefined") return "";

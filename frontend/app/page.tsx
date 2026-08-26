@@ -12,6 +12,7 @@ import NotificationSystem, {
 } from "./components/NotificationSystem";
 import HoldingsPortfolio, { Holding } from "./components/HoldingsPortfolio";
 import TradeModal from "./components/TradeModal";
+import { API_BASE } from "./lib/api";
 
 const POPULAR = [
   "SUZLON", "TCS", "RELIANCE", "INFY",
@@ -35,12 +36,12 @@ export default function Home() {
 
   const fetchSignalsOverview = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/signals");
+      const res = await fetch(`${API_BASE}/api/signals`);
       if (res.ok) {
         const json = await res.json();
         setSignalsSummary(json.summary);
       }
-      const riskRes = await fetch("http://localhost:5000/api/signals/market-risk");
+      const riskRes = await fetch(`${API_BASE}/api/signals/market-risk`);
       if (riskRes.ok) {
         const riskJson = await riskRes.json();
         setMarketRisk(riskJson);
@@ -68,7 +69,7 @@ export default function Home() {
     if (!deviceId) return;
     try {
       // Wallet
-      const userRes = await fetch("http://localhost:5000/api/user", {
+      const userRes = await fetch(`${API_BASE}/api/user`, {
         headers: { "x-device-id": deviceId },
       });
       if (userRes.ok) {
@@ -77,7 +78,7 @@ export default function Home() {
       }
 
       // Holdings
-      const portRes = await fetch("http://localhost:5000/api/portfolio", {
+      const portRes = await fetch(`${API_BASE}/api/portfolio`, {
         headers: { "x-device-id": deviceId },
       });
       if (portRes.ok) {
@@ -94,7 +95,7 @@ export default function Home() {
     const deviceId = localStorage.getItem("sp_device_id");
     if (!deviceId) return;
     try {
-      const res = await fetch("http://localhost:5000/api/watchlist", {
+      const res = await fetch(`${API_BASE}/api/watchlist`, {
         headers: { "x-device-id": deviceId },
       });
       if (res.ok) {
@@ -131,7 +132,7 @@ export default function Home() {
     if (!deviceId) return;
 
     try {
-      const res = await fetch("http://localhost:5000/api/transactions", {
+      const res = await fetch(`${API_BASE}/api/transactions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -184,7 +185,7 @@ export default function Home() {
     currentStockRef.current = sym;
     setCountdown(60);
     try {
-      const res = await fetch("http://localhost:5000/api/analyze", {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stock: sym }),
@@ -263,7 +264,7 @@ export default function Home() {
     const isWatched = watchlist.includes(upper);
     try {
       if (isWatched) {
-        const res = await fetch(`http://localhost:5000/api/watchlist?symbol=${upper}`, {
+        const res = await fetch(`${API_BASE}/api/watchlist?symbol=${upper}`, {
           method: "DELETE",
           headers: { "x-device-id": deviceId },
         });
@@ -272,7 +273,7 @@ export default function Home() {
           addToast({ type: "info", title: upper, message: "Removed from watchlist." });
         }
       } else {
-        const res = await fetch("http://localhost:5000/api/watchlist", {
+        const res = await fetch(`${API_BASE}/api/watchlist`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
