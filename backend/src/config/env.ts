@@ -58,7 +58,7 @@ export const env = {
 
   redisUrl: str("REDIS_URL", ""),
 
-  brokerRedirectBase: str("BROKER_REDIRECT_BASE", "http://localhost:5000/api/brokers/callback"),
+  brokerRedirectBase: str("BROKER_REDIRECT_BASE", "https://stock-pulse-vzuy.onrender.com/api/brokers/callback"),
 
   enableJobs: bool("ENABLE_BACKGROUND_JOBS", true),
   alertIntervalMs: num("ALERT_INTERVAL_MS", 120_000),
