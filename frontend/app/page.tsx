@@ -560,8 +560,8 @@ export default function Home() {
           <div className="xl:col-span-4 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4 justify-between">
             <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"TODAY'S MARKET SIGNALS"}</div>
             
-            <div className="flex flex-col sm:flex-row xl:flex-col items-stretch justify-between gap-5 h-full">
-              <div className="grid grid-cols-4 gap-2 flex-1 items-center">
+            <div className="flex flex-col gap-4 justify-between h-full">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-center w-full">
                 <div className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center">
                   <div className="font-mono text-[1.4rem] font-bold text-green-custom">{signalsSummary?.buy || 17}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY</span>
@@ -580,16 +580,16 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between border-t xl:border-t xl:border-l-0 border-border-custom pt-4 w-full">
+              <div className="flex items-center justify-between border-t border-border-custom pt-4 w-full">
                 <div className="flex flex-col">
-                  <span className="font-mono text-[0.52rem] text-text-4 uppercase block tracking-wider">MARKET BIAS</span>
-                  <span className="font-mono text-[0.78rem] text-text-custom font-bold uppercase mt-0.5 leading-none">
+                  <span className="font-mono text-[0.7rem] text-text-4 uppercase block tracking-wider">MARKET BIAS</span>
+                  <span className="font-mono text-[0.82rem] text-text-custom font-bold uppercase mt-0.5 leading-none">
                     52/100 — <span className="text-amber-custom font-extrabold">MODERATE RISK</span>
                   </span>
                 </div>
                 <Link
                   href="/stock-signals"
-                  className="font-mono text-[0.62rem] tracking-[0.1em] text-green-custom hover:underline flex items-center gap-1.5 uppercase font-bold"
+                  className="font-mono text-[0.72rem] tracking-[0.1em] text-green-custom hover:underline flex items-center gap-1.5 uppercase font-bold"
                 >
                   VIEW ALL SIGNALS →
                 </Link>
