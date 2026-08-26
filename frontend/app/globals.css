@@ -1,0 +1,110 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #050508;
+  --color-bg-1: #0c0c12;
+  --color-bg-2: #111118;
+  --color-bg-3: #1a1a24;
+  --color-bg-4: #22222e;
+  --color-border-custom: rgba(255, 255, 255, 0.06);
+  --color-border-bright: rgba(255, 255, 255, 0.12);
+
+  --color-text-custom: #ffffff;
+  --color-text-2: #f3f4f6;
+  --color-text-3: #e5e7eb;
+  --color-text-4: #d1d5db;
+
+  --color-green-custom: #00e5a0;
+  --color-green-dim: rgba(0, 229, 160, 0.12);
+  --color-green-glow: 0 0 20px rgba(0, 229, 160, 0.3);
+
+  --color-red-custom: #ff3b5c;
+  --color-red-dim: rgba(255, 59, 92, 0.12);
+  --color-red-glow: 0 0 20px rgba(255, 59, 92, 0.3);
+
+  --color-amber-custom: #ffb020;
+  --color-amber-dim: rgba(255, 176, 32, 0.12);
+
+  --color-blue-custom: #4d9fff;
+  --color-blue-dim: rgba(77, 159, 255, 0.12);
+
+  --color-cyan-custom: #00d4f5;
+  --color-purple-custom: #9b6dff;
+
+  --font-mono: "JetBrains Mono", monospace;
+  --font-display: "Outfit", sans-serif;
+  --font-body: "Plus Jakarta Sans", sans-serif;
+
+  --radius-custom: 2px;
+  --radius-lg-custom: 4px;
+
+  /* Tailwind CSS v4 Theme Animations & Keyframes */
+  --animate-ticker-scroll: ticker-scroll 30s linear infinite;
+  --animate-bar-bounce: bar-bounce 0.8s ease-in-out infinite;
+  --animate-custom-pulse: pulse 2s ease-in-out infinite;
+  --animate-glow-buy: pulse-glow 2s ease-in-out infinite;
+  --animate-card-enter: card-enter 0.3s ease-out forwards;
+  --animate-toast-in: toast-in 0.2s ease-out forwards;
+  --animate-refresh-progress: refresh-progress 60s linear forwards;
+  --animate-float-blob: float-blob 20s ease-in-out infinite;
+  --animate-float-blob-reverse: float-blob-reverse 25s ease-in-out infinite;
+
+  @keyframes ticker-scroll {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  @keyframes bar-bounce {
+    0%, 100% { height: 8px; opacity: 0.3; }
+    50% { height: 32px; opacity: 1; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 5px rgba(0, 229, 160, 0.2); }
+    50% { box-shadow: 0 0 15px rgba(0, 229, 160, 0.5); }
+  }
+  @keyframes card-enter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes refresh-progress {
+    from { width: 100%; }
+    to { width: 0%; }
+  }
+  @keyframes float-blob {
+    0%, 100% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.95); }
+  }
+  @keyframes float-blob-reverse {
+    0%, 100% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(-40px, 40px) scale(0.9); }
+    66% { transform: translate(40px, -20px) scale(1.1); }
+  }
+}
+
+/* ─── BASE OVERRIDES ──────────────────────────────────────────── */
+html {
+  font-size: 14px;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text-custom);
+  font-family: var(--font-body);
+}
+
+/* ─── SCROLLBAR ───────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--color-bg-1); }
+::-webkit-scrollbar-thumb { background: var(--color-bg-4); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-3); }

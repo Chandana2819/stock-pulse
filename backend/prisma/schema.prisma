@@ -1,0 +1,762 @@
+// StockPulse — data model
+// -----------------------
+// Written to stay portable: no SQLite-only types, no native enums (stored as
+// checked strings), no array columns (JSON strings instead). Switching the
+// datasource to PostgreSQL later is a provider swap + `prisma migrate`, not a
+// rewrite.
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─────────────────────────────  IDENTITY  ─────────────────────────────
+
+model User {
+  id               String    @id @default(uuid())
+  deviceId         String    @unique
+  username         String?   @unique
+  email            String?   @unique
+  phone            String?   @unique
+  password         String?
+  salt             String?
+  fullName         String?
+  role             String    @default("USER") // USER | ADMIN
+  status           String    @default("ACTIVE") // ACTIVE | SUSPENDED
+  emailVerified    Boolean   @default(false)
+  phoneVerified    Boolean   @default(false)
+  kycStatus        String    @default("NOT_STARTED") // NOT_STARTED | PENDING | VERIFIED | REJECTED
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  walletInr        Float     @default(0.0)
+  walletUsd        Float     @default(0.0)
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  profile       UserProfile?
+  sessions      Session[]
+  otpCodes      OtpCode[]
+  watchlist     WatchlistItem[]
+  holdings      Holding[]
+  transactions  Transaction[]
+  journals      JournalEntry[]
+  alerts        Alert[]
+  notifications Notification[]
+  goals         Goal[]
+  screeners     ScreenerPreset[]
+  insights      AIInsight[]
+  learning      LearningProgress[]
+  bankAccounts  BankAccount[]
+  brokers       BrokerConnection[]
+  payments      Payment[]
+  taxRecords    TaxRecord[]
+  tickets       SupportTicket[]
+  auditLogs     AuditLog[]
+  eventSubs     EventSubscription[]
+  fundWatch     FundWatchItem[]
+  posts            CommunityPost[]
+  comments         CommunityComment[]
+  postLikes        PostLike[]
+  followers        UserFollow[]        @relation("following")
+  following        UserFollow[]        @relation("followers")
+  sharedWatchlists SharedWatchlist[]
+  watchlistLikes   WatchlistLike[]
+  kycRecord        KycRecord?
+
+  @@index([role])
+}
+
+model UserProfile {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experience          String   @default("BEGINNER") // BEGINNER | INTERMEDIATE | ADVANCED
+  riskTolerance       String   @default("MODERATE") // CONSERVATIVE | MODERATE | AGGRESSIVE
+  horizonYears        Int      @default(5)
+  monthlyInvestment   Float    @default(0)
+  preferredMarkets    String   @default("[]") // JSON string[]
+  preferredAssets     String   @default("[]") // JSON string[]
+  goalsSummary        String?
+  baseCurrency        String   @default("INR")
+  theme               String   @default("dark") // dark | light | system
+  onboardingCompleted Boolean  @default(false)
+  notifyEmail         Boolean  @default(true)
+  notifyPush          Boolean  @default(true)
+  notifySms           Boolean  @default(false)
+  quietHours          String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Session {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  deviceName String?
+  userAgent  String?
+  ip         String?
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model OtpCode {
+  id         String    @id @default(uuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  target     String    // email or phone
+  channel    String    // EMAIL | SMS
+  purpose    String    // LOGIN | VERIFY_PHONE | VERIFY_EMAIL | RESET_PASSWORD
+  codeHash   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+  attempts   Int       @default(0)
+  createdAt  DateTime  @default(now())
+
+  @@index([target, purpose])
+}
+
+// ─────────────────────────  REFERENCE / MARKET  ───────────────────────
+
+model StockMeta {
+  id         String   @id @default(uuid())
+  symbol     String   @unique // provider symbol, e.g. RELIANCE.NS
+  displaySym String
+  name       String?
+  exchange   String   // NSE | BSE | GLOBAL | INDEX
+  currency   String   @default("INR")
+  sector     String?
+  industry   String?
+  marketCap  Float?
+  country    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  fundamentals Fundamentals?
+  scores       StockScore[]
+
+  @@index([sector])
+  @@index([exchange])
+}
+
+model Fundamentals {
+  id              String    @id @default(uuid())
+  symbol          String    @unique
+  stock           StockMeta @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+  peRatio         Float?
+  pbRatio         Float?
+  roe             Float?
+  roce            Float?
+  debtToEquity    Float?
+  revenueGrowth   Float?
+  profitGrowth    Float?
+  epsGrowth       Float?
+  eps             Float?
+  dividendYield   Float?
+  marketCap       Float?
+  bookValue       Float?
+  freeCashFlow    Float?
+  revenue         Float?
+  netIncome       Float?
+  ebitda          Float?
+  totalDebt       Float?
+  totalCash       Float?
+  promoterHolding Float?
+  fiiHolding      Float?
+  diiHolding      Float?
+  beta            Float?
+  sectorPe        Float?
+  raw             String?
+  source          String    @default("yahoo-finance")
+  fetchedAt       DateTime  @default(now())
+}
+
+model MarketRiskSnapshot {
+  id             String   @id @default(uuid())
+  score          Int
+  classification String
+  factors        String // JSON
+  reasons        String // JSON
+  createdAt      DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model StockScore {
+  id          String    @id @default(uuid())
+  symbol      String
+  stock       StockMeta @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
+  decision    String // BUY | HOLD | WAIT | REDUCE | AVOID | WATCH
+  confidence  Int
+  totalScore  Int
+  pillars     String // JSON
+  reasons     String // JSON string[]
+  risks       String // JSON string[]
+  wouldChange String // JSON string[]
+  createdAt   DateTime  @default(now())
+
+  @@index([symbol, createdAt])
+}
+
+model NewsArticle {
+  id             String    @id @default(uuid())
+  externalId     String    @unique
+  title          String
+  link           String
+  source         String?
+  publishedAt    DateTime?
+  summary        String?
+  sentiment      String    @default("NEUTRAL") // POSITIVE | NEGATIVE | NEUTRAL
+  sentimentScore Float     @default(0)
+  importance     String    @default("LOW") // HIGH | MEDIUM | LOW
+  symbols        String    @default("[]")
+  sectors        String    @default("[]")
+  createdAt      DateTime  @default(now())
+
+  @@index([publishedAt])
+}
+
+model MarketEvent {
+  id         String   @id @default(uuid())
+  externalId String   @unique
+  type       String // EARNINGS | DIVIDEND | SPLIT | BONUS | IPO | POLICY | MACRO | AGM
+  title      String
+  symbol     String?
+  sector     String?
+  date       DateTime
+  detail     String?
+  source     String?
+  createdAt  DateTime @default(now())
+
+  subscriptions EventSubscription[]
+
+  @@index([date])
+  @@index([symbol])
+}
+
+model EventSubscription {
+  id        String      @id @default(uuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     MarketEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([userId, eventId])
+}
+
+// ─────────────────────────────  PORTFOLIO  ────────────────────────────
+
+model WatchlistItem {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol      String
+  listName    String   @default("Default")
+  note        String?
+  targetPrice Float?
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, symbol])
+  @@index([userId, listName])
+}
+
+model Holding {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock      String
+  displaySym String
+  exchange   String
+  avgPrice   Float
+  quantity   Float
+  currency   String
+  source     String   @default("SIMULATED") // SIMULATED | BROKER | MANUAL
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, stock])
+}
+
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock     String
+  type      String // BUY | SELL
+  price     Float
+  quantity  Float
+  fee       Float
+  totalCost Float
+  currency  String   @default("INR")
+  source    String   @default("SIMULATED")
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, stock])
+}
+
+model JournalEntry {
+  id           String    @id @default(uuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock        String
+  thesis       String
+  status       String // OPEN | CLOSED
+  notes        String?
+  entryReason  String?
+  exitReason   String?
+  expectedRisk String?
+  targetPrice  Float?
+  stopLoss     Float?
+  emotion      String? // CONFIDENT | FOMO | FEARFUL | NEUTRAL
+  outcome      String? // WIN | LOSS | FLAT
+  entryPrice   Float?
+  exitPrice    Float?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  closedAt     DateTime?
+
+  @@index([userId, status])
+}
+
+model Goal {
+  id                  String   @id @default(uuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                String
+  category            String   @default("WEALTH")
+  targetAmount        Float
+  currentAmount       Float    @default(0)
+  targetDate          DateTime
+  monthlyContribution Float    @default(0)
+  expectedReturn      Float    @default(12)
+  inflationRate       Float    @default(6)
+  priority            String   @default("MEDIUM")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model ScreenerPreset {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  filters   String // JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+}
+
+// ───────────────────────  ALERTS & NOTIFICATIONS  ─────────────────────
+
+model Alert {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol          String?
+  type            String
+  threshold       Float?
+  channels        String    @default("[]")
+  active          Boolean   @default(true)
+  note            String?
+  lastTriggeredAt DateTime?
+  triggerCount    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  triggers AlertTrigger[]
+
+  @@index([userId, active])
+}
+
+model AlertTrigger {
+  id        String   @id @default(uuid())
+  alertId   String
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  value     Float?
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([alertId, createdAt])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  String
+  priority  String    @default("NORMAL")
+  title     String
+  body      String
+  link      String?
+  meta      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+// ───────────────────────────  AI & LEARNING  ──────────────────────────
+
+model AIInsight {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scope       String // STOCK | PORTFOLIO | MARKET | CHAT
+  subject     String?
+  question    String?
+  conclusion  String
+  why         String
+  evidence    String // JSON
+  confidence  Int
+  risk        String?
+  wouldChange String?
+  engine      String   @default("rules-v1")
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model LearningProgress {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    String
+  status      String    @default("IN_PROGRESS")
+  quizScore   Int?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, lessonId])
+}
+
+// ─────────────────────────────  MONEY  ────────────────────────────────
+
+model BankAccount {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankName     String
+  accountLast4 String // never store the full account number
+  ifsc         String
+  accountType  String   @default("SAVINGS")
+  holderName   String
+  isPrimary    Boolean  @default(false)
+  verified     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+}
+
+model BrokerConnection {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  broker          String
+  status          String    @default("DISCONNECTED")
+  accessTokenEnc  String? // encrypted at rest; never a raw password
+  refreshTokenEnc String?
+  externalUserId  String?
+  scopes          String    @default("[]")
+  connectedAt     DateTime?
+  expiresAt       DateTime?
+  lastSyncAt      DateTime?
+  lastError       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, broker])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider      String
+  providerRef   String?  @unique
+  type          String // DEPOSIT | WITHDRAWAL
+  amount        Float
+  currency      String   @default("INR")
+  status        String   @default("CREATED")
+  failureReason String?
+  meta          String? // JSON — non-sensitive provider metadata only
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model TaxRecord {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  financialYear  String
+  stcg           Float    @default(0)
+  ltcg           Float    @default(0)
+  dividendIncome Float    @default(0)
+  realizedPnl    Float    @default(0)
+  breakdown      String // JSON
+  generatedAt    DateTime @default(now())
+
+  @@unique([userId, financialYear])
+}
+
+model FundWatchItem {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schemeCode String
+  schemeName String
+  kind       String   @default("MUTUAL_FUND")
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, schemeCode])
+}
+
+// ────────────────────────  SUPPORT & PLATFORM  ────────────────────────
+
+model SupportTicket {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject   String
+  category  String   @default("GENERAL")
+  status    String   @default("OPEN")
+  priority  String   @default("NORMAL")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages TicketMessage[]
+
+  @@index([userId, status])
+}
+
+model TicketMessage {
+  id        String        @id @default(uuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author    String // USER | SUPPORT
+  body      String
+  createdAt DateTime      @default(now())
+
+  @@index([ticketId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String?
+  entityId  String?
+  ip        String?
+  userAgent String?
+  meta      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action])
+}
+
+model CommunityPost {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  symbol    String?
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  comments  CommunityComment[]
+  postLikes PostLike[]
+}
+
+model CommunityComment {
+  id        String   @id @default(uuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model PostLike {
+  id        String   @id @default(uuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, postId])
+}
+
+model UserFollow {
+  id          String   @id @default(uuid())
+  followerId  String
+  follower    User     @relation("followers", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("following", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  @@unique([followerId, followingId])
+}
+
+model SharedWatchlist {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  symbols     String
+  likes       Int      @default(0)
+  views       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  watchlistLikes WatchlistLike[]
+}
+
+model WatchlistLike {
+  id          String   @id @default(uuid())
+  watchlistId String
+  watchlist   SharedWatchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  @@unique([userId, watchlistId])
+}
+
+model KycRecord {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  panNumber      String
+  documentType   String
+  documentUrl    String?
+  address        String
+  birthDate      String
+  fullName       String
+  amlStatus      String   @default("PASSED")
+  amlMatchScore  Float    @default(0.0)
+  verifiedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model StockPrice {
+  id        String   @id @default(uuid())
+  symbol    String
+  date      DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    Float
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@index([symbol])
+  @@index([date])
+}
+
+model StockIndicator {
+  id         String   @id @default(uuid())
+  symbol     String
+  date       DateTime
+  indicators String   // JSON blob
+  createdAt  DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@index([symbol])
+  @@index([date])
+}
+
+model StockRecommendation {
+  id             String   @id @default(uuid())
+  symbol         String   @unique
+  action         String
+  score          Int
+  confidence     Int
+  risk           String
+  reasons        String
+  warnings       String
+  entryZoneMin   Float?
+  entryZoneMax   Float?
+  stopLoss       Float?
+  targetRangeMin Float?
+  targetRangeMax Float?
+  dataQuality    Int
+  generatedAt    DateTime @default(now())
+
+  @@index([symbol])
+  @@index([action])
+  @@index([score])
+  @@index([generatedAt])
+}
+
+model RecommendationHistory {
+  id          String   @id @default(uuid())
+  symbol      String
+  action      String
+  score       Int
+  confidence  Int
+  risk        String
+  reasons     String
+  generatedAt DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([symbol])
+  @@index([action])
+  @@index([score])
+  @@index([createdAt])
+}
+
+model MarketRisk {
+  id        String   @id @default(uuid())
+  score     Int
+  level     String
+  details   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model SectorAnalysis {
+  id        String   @id @default(uuid())
+  sector    String
+  returnPct Float
+  strength  String
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([sector, date])
+  @@index([sector])
+  @@index([date])
+}
+
+model DataSyncLog {
+  id           String   @id @default(uuid())
+  type         String
+  status       String
+  symbolsCount Int
+  details      String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
