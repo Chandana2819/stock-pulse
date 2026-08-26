@@ -50,16 +50,16 @@ export default function MarketOverview() {
 
   return (
     <section className="mb-6">
-      <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// MARKET OVERVIEW"}</div>
+      <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"MARKET OVERVIEW"}</div>
 
       {/* Real index ticker, replacing static demo values */}
-      <div className="relative bg-bg-1 border border-border-custom px-4 h-8 flex items-center gap-8 overflow-hidden rounded-lg mt-2 mb-3">
+      <div className="relative bg-bg-1 border border-border-custom px-4 h-9 flex items-center gap-8 overflow-hidden rounded-lg mt-2 mb-3">
         {/* Gradient fade overlays */}
         <div className="absolute left-0 top-0 w-[60px] h-full bg-gradient-to-r from-bg-1 to-transparent z-10 pointer-events-none" />
         <div className="absolute right-0 top-0 w-[60px] h-full bg-gradient-to-l from-bg-1 to-transparent z-10 pointer-events-none" />
         <div className="animate-ticker-scroll flex gap-10 whitespace-nowrap shrink-0">
           {(data?.indices ?? []).concat(data?.indices ?? []).map((item, i) => (
-            <div key={i} className="flex items-center gap-[0.4rem] font-mono text-[0.7rem] tracking-[0.05em] text-text-2">
+            <div key={i} className="flex items-center gap-[0.4rem] font-mono text-[0.82rem] tracking-[0.05em] text-text-2">
               <span className="text-text-custom font-bold">{item.symbol}</span>
               <span>{fmt(item.price, true)}</span>
               <span className={item.pctChange != null && item.pctChange >= 0 ? "text-green-custom" : "text-red-custom"}>
@@ -71,23 +71,23 @@ export default function MarketOverview() {
       </div>
 
       {loading && !risk ? (
-        <div className="flex items-center gap-2 font-mono text-[0.62rem] text-text-3 tracking-[0.05em] py-[0.4rem] border-t border-b border-border-custom"><span>Loading market risk…</span></div>
+        <div className="flex items-center gap-2 font-mono text-[0.8rem] text-text-3 tracking-[0.05em] py-[0.4rem] border-t border-b border-border-custom"><span>Loading market risk…</span></div>
       ) : risk ? (
         <div
-          className="flex flex-col items-start gap-2 cursor-pointer font-mono text-[0.62rem] text-text-3 tracking-[0.05em] py-2 border-t border-b border-border-custom w-full"
+          className="flex flex-col items-start gap-2 cursor-pointer font-mono text-[0.8rem] text-text-3 tracking-[0.05em] py-2 border-t border-b border-border-custom w-full"
           onClick={() => setExpanded((v) => !v)}
         >
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-[10px] w-full">
             <span className="text-[18px]">{risk.statusEmoji}</span>
-            <span className="font-mono text-[0.58rem] tracking-[0.18em] text-text-3 uppercase text-[12px]">MARKET RISK</span>
+            <span className="font-mono text-[0.72rem] tracking-[0.18em] text-text-3 uppercase font-bold">MARKET RISK</span>
             <span className="text-text-2 text-[16px]">{risk.score} / 100</span>
             <span className="text-text-custom">{risk.classification}</span>
             <span className="text-text-4 mx-1">·</span>
-            <span className="text-[11px] opacity-60">{data?.dataCompleteness}</span>
-            <span className="text-[11px] opacity-60">{expanded ? "▲ hide factors" : "▼ show factors"}</span>
+            <span className="text-[12px] opacity-60">{data?.dataCompleteness}</span>
+            <span className="text-[12px] opacity-60">{expanded ? "▲ hide factors" : "▼ show factors"}</span>
           </div>
 
-          <div className="text-[13px] opacity-85 text-text-2">
+          <div className="text-[14px] opacity-85 text-text-2">
             {risk.reasons.join(" · ")}
           </div>
 
@@ -95,8 +95,8 @@ export default function MarketOverview() {
             <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 w-full mt-1" onClick={(e) => e.stopPropagation()}>
               {risk.factors.map((f) => (
                 <div key={f.key} className="flex flex-col items-start gap-[2px] p-[0.65rem_1.25rem] border-b border-border-custom last:border-b-0">
-                  <span className="font-mono text-[0.58rem] tracking-[0.18em] text-text-3 uppercase">{f.label}</span>
-                  <span className="text-xs text-text-2 leading-[1.4]">
+                  <span className="font-mono text-[0.72rem] tracking-[0.18em] text-text-3 uppercase font-bold">{f.label}</span>
+                  <span className="text-sm text-text-2 leading-[1.4]">
                     {f.available && f.score != null ? Math.round(f.score) : "N/A"}
                   </span>
                   <span className="text-[11px] opacity-60 text-text-3">{f.detail}</span>
@@ -106,7 +106,7 @@ export default function MarketOverview() {
           )}
         </div>
       ) : (
-        <div className="flex items-center gap-2 font-mono text-[0.62rem] text-text-3 tracking-[0.05em] py-[0.4rem] border-t border-b border-border-custom"><span>Market risk data unavailable right now.</span></div>
+        <div className="flex items-center gap-2 font-mono text-[0.8rem] text-text-3 tracking-[0.05em] py-[0.4rem] border-t border-b border-border-custom"><span>Market risk data unavailable right now.</span></div>
       )}
     </section>
   );

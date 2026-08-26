@@ -32,10 +32,35 @@ export default function TopNav() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifItems, setNotifItems] = useState<Array<{ id: string; title: string; body: string; category: string; readAt: string | null; createdAt: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
     setUsername(localStorage.getItem("sp_username"));
+    const saved = localStorage.getItem("sp_theme") as "dark" | "light" | null;
+    if (saved) {
+      setTheme(saved);
+      if (saved === "light") {
+        document.documentElement.classList.add("light");
+        document.body.classList.add("light");
+      } else {
+        document.documentElement.classList.remove("light");
+        document.body.classList.remove("light");
+      }
+    }
   }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("sp_theme", next);
+    if (next === "light") {
+      document.documentElement.classList.add("light");
+      document.body.classList.add("light");
+    } else {
+      document.documentElement.classList.remove("light");
+      document.body.classList.remove("light");
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -102,8 +127,8 @@ export default function TopNav() {
     <header className="flex items-center justify-between py-3.5 px-4 md:px-8 border-b border-border-custom bg-bg-1 relative z-30">
       <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-green-custom to-transparent opacity-50" />
       
-      {/* Left side: Logo */}
-      <Link href="/" className="flex items-center gap-2 no-underline z-50">
+      {/* Left side: Logo (hidden on desktop sidebar layout) */}
+      <Link href="/" className="flex md:hidden items-center gap-2 no-underline z-50">
         <div className="w-6 h-6 relative flex items-center justify-center shrink-0">
           <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
             <polyline points="2,22 7,14 11,18 16,8 20,12 26,4" stroke="#00e5a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
@@ -115,41 +140,45 @@ export default function TopNav() {
         </h1>
       </Link>
 
-      {/* Center: Desktop Navigation Links */}
-      <nav className="hidden md:flex items-center gap-4 lg:gap-5 ml-6 mr-auto">
-        {NAV_LINKS.map((l) => {
-          const isActive = pathname === l.href;
-          return (
-            <Link
-              key={l.href}
-              href={l.href}
-              className={`font-mono text-[0.7rem] lg:text-[0.75rem] no-underline tracking-[0.05em] pb-[2px] transition-colors duration-150 ${
-                isActive ? "text-green-custom font-bold border-b border-green-custom" : "text-text-2 font-normal hover:text-text-custom"
-              }`}
-            >
-              {l.label}
-            </Link>
-          );
-        })}
-      </nav>
+      {/* Desktop Search Terminal Bar (Aligned Left) */}
+      <div className="hidden md:flex items-center bg-bg-2 border border-border-custom rounded px-2.5 py-1.5 w-56 gap-2 hover:border-border-bright transition-all">
+        <span className="opacity-55 text-[0.65rem]">🔍</span>
+        <input 
+          type="text" 
+          placeholder="Search stocks, indices..." 
+          className="bg-transparent border-none outline-none w-full text-text-custom placeholder:text-text-4/40 text-[0.82rem] uppercase tracking-wider font-mono"
+          style={{ fontSize: '0.82rem' }}
+        />
+      </div>
 
       {/* Right side: Desktop Wallets + Notification + Profile Actions */}
-      <div className="flex items-center gap-2 md:gap-4">
+      <div className="flex items-center gap-3 md:gap-4.5">
         {/* Wallets (Desktop Only - hidden on mobile/tablet) */}
-        <div className="hidden lg:flex gap-5 border-l border-r border-border-custom px-5 mr-2">
+        <div className="hidden lg:flex gap-5 border-l border-r border-border-custom px-5 mr-1">
           <div>
-            <span className="font-mono text-[0.52rem] text-text-3 block tracking-[0.08em] mb-0.5">INR WALLET</span>
-            <span className="font-mono text-[0.85rem] text-green-custom font-bold">
+            <span className="font-mono text-[0.7rem] text-text-3 block tracking-[0.08em] mb-0.5">INR WALLET</span>
+            <span className="font-mono text-[0.95rem] text-green-custom font-bold">
               ₹{wallet.inr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
           <div>
-            <span className="font-mono text-[0.52rem] text-text-3 block tracking-[0.08em] mb-0.5">USD WALLET</span>
-            <span className="font-mono text-[0.85rem] text-cyan-custom font-bold">
+            <span className="font-mono text-[0.7rem] text-text-3 block tracking-[0.08em] mb-0.5">USD WALLET</span>
+            <span className="font-mono text-[0.95rem] text-cyan-custom font-bold">
               ${wallet.usd.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>
+
+        {/* Theme Switcher Toggle Button */}
+        <button
+          className="bg-transparent border border-border-custom hover:border-green-custom rounded p-1.5 md:p-2 text-text-2 hover:text-green-custom transition-all cursor-pointer flex items-center justify-center select-none"
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          <span className="font-mono text-[0.8rem] md:text-[0.95rem]">
+            {theme === "dark" ? "☀️" : "🌙"}
+          </span>
+        </button>
 
         {/* Notifications (Always visible, clean, compact) */}
         <div className="relative">
@@ -190,19 +219,24 @@ export default function TopNav() {
           )}
         </div>
 
-        {/* Profile (Desktop Only - hidden on mobile) */}
+        {/* Profile Avatar Actions (Desktop Only) */}
         {username && (
-          <div className="hidden sm:flex flex-col items-end border-l border-border-custom pl-3 md:pl-4 font-mono text-[0.7rem] text-text-3 gap-[0.1rem]">
-            <span className="text-text-2 text-[0.8rem] font-bold uppercase">{username}</span>
-            <button onClick={handleLogout} className="bg-transparent border-none p-0 cursor-pointer font-mono text-[0.55rem] text-red-custom hover:underline uppercase">
-              [ LOGOUT ]
-            </button>
+          <div className="hidden sm:flex items-center gap-3 border-l border-border-custom pl-4">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-purple-custom to-cyan-custom flex items-center justify-center font-bold text-bg text-[0.82rem] border border-border-bright shrink-0 select-none">
+              {username.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="flex flex-col items-start font-mono text-[0.8rem] gap-[0.05rem]">
+              <span className="text-text-custom font-bold uppercase leading-none">{username}</span>
+              <button onClick={handleLogout} className="bg-transparent border-none p-0 cursor-pointer text-[0.68rem] text-red-custom hover:underline uppercase font-mono">
+                [ LOGOUT ]
+              </button>
+            </div>
           </div>
         )}
 
         {/* Time (Desktop Only - hidden on mobile/tablet) */}
-        <div className="hidden md:flex font-mono text-[0.7rem] text-text-3 tracking-[0.08em] flex-col items-end gap-[0.1rem]">
-          <span className="text-text-2 text-[0.8rem]">{time || "-- : -- : --"}</span>
+        <div className="hidden md:flex font-mono text-[0.82rem] text-text-3 tracking-[0.08em] flex-col items-end gap-[0.1rem]">
+          <span className="text-text-2 text-[0.9rem]">{time || "-- : -- : --"}</span>
           <span>IST · INDIA</span>
         </div>
 

@@ -271,7 +271,7 @@ export default function StockSignalsPage() {
       {/* Market Risk Section */}
       {riskData && (
         <div className="border border-border-bright bg-bg-1 p-6">
-          <h2 className="font-mono text-[0.68rem] tracking-[0.18em] text-text-3 uppercase mb-4">// BROAD MARKET RISK RADAR</h2>
+          <h2 className="font-mono text-[0.68rem] tracking-[0.18em] text-text-3 uppercase mb-4">BROAD MARKET RISK RADAR</h2>
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
             
             {/* Gauge */}
@@ -422,7 +422,7 @@ export default function StockSignalsPage() {
 
       {/* Backtesting Dashboard Widget */}
       <div className="border border-border-bright bg-bg-1 p-6">
-        <h2 className="font-mono text-[0.68rem] tracking-[0.18em] text-text-3 uppercase mb-4">// SYSTEM BACKTEST ENGINE</h2>
+        <h2 className="font-mono text-[0.68rem] tracking-[0.18em] text-text-3 uppercase mb-4">SYSTEM BACKTEST ENGINE</h2>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
           
           {/* Controls */}

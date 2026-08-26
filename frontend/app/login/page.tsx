@@ -136,7 +136,7 @@ export default function LoginPage() {
             STOCK<span className="text-green-custom">PULSE</span>
           </h1>
           <p className="font-mono text-[0.6rem] text-text-3 tracking-[0.15em] uppercase">
-            {"// VIRTUAL PORTFOLIO & THESIS LOG"}
+            {"VIRTUAL PORTFOLIO & THESIS LOG"}
           </p>
         </div>
 

@@ -1,41 +1,103 @@
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
 @import "tailwindcss";
 
+:root {
+  /* Default: Dark Theme */
+  --bg: #050508;
+  --bg-1: #0c0c12;
+  --bg-2: #111118;
+  --bg-3: #1a1a24;
+  --bg-4: #22222e;
+  --border-custom: rgba(255, 255, 255, 0.06);
+  --border-bright: rgba(255, 255, 255, 0.12);
+
+  --text-custom: #ffffff;
+  --text-2: #f3f4f6;
+  --text-3: #e5e7eb;
+  --text-4: #d1d5db;
+
+  --green-custom: #00e5a0;
+  --green-dim: rgba(0, 229, 160, 0.12);
+
+  --red-custom: #ff3b5c;
+  --red-dim: rgba(255, 59, 92, 0.12);
+
+  --amber-custom: #ffb020;
+  --amber-dim: rgba(255, 176, 32, 0.12);
+
+  --blue-custom: #4d9fff;
+  --blue-dim: rgba(77, 159, 255, 0.12);
+
+  --cyan-custom: #00d4f5;
+  --purple-custom: #9b6dff;
+}
+
+.light {
+  /* Light Theme Override */
+  --bg: #f8fafc;
+  --bg-1: #ffffff;
+  --bg-2: #f1f5f9;
+  --bg-3: #e2e8f0;
+  --bg-4: #cbd5e1;
+  --border-custom: rgba(15, 23, 42, 0.08);
+  --border-bright: rgba(15, 23, 42, 0.14);
+
+  --text-custom: #0f172a;
+  --text-2: #334155;
+  --text-3: #475569;
+  --text-4: #64748b;
+
+  --green-custom: #10b981;
+  --green-dim: rgba(16, 185, 129, 0.12);
+
+  --red-custom: #ef4444;
+  --red-dim: rgba(239, 68, 68, 0.12);
+
+  --amber-custom: #f59e0b;
+  --amber-dim: rgba(245, 158, 11, 0.12);
+
+  --blue-custom: #3b82f6;
+  --blue-dim: rgba(59, 130, 246, 0.12);
+
+  --cyan-custom: #0891b2;
+  --purple-custom: #7c3aed;
+}
+
 @theme {
-  --color-bg: #050508;
-  --color-bg-1: #0c0c12;
-  --color-bg-2: #111118;
-  --color-bg-3: #1a1a24;
-  --color-bg-4: #22222e;
-  --color-border-custom: rgba(255, 255, 255, 0.06);
-  --color-border-bright: rgba(255, 255, 255, 0.12);
+  --color-bg: var(--bg);
+  --color-bg-1: var(--bg-1);
+  --color-bg-2: var(--bg-2);
+  --color-bg-3: var(--bg-3);
+  --color-bg-4: var(--color-bg-4);
+  --color-border-custom: var(--border-custom);
+  --color-border-bright: var(--border-bright);
 
-  --color-text-custom: #ffffff;
-  --color-text-2: #f3f4f6;
-  --color-text-3: #e5e7eb;
-  --color-text-4: #d1d5db;
+  --color-text-custom: var(--text-custom);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-4: var(--text-4);
 
-  --color-green-custom: #00e5a0;
-  --color-green-dim: rgba(0, 229, 160, 0.12);
-  --color-green-glow: 0 0 20px rgba(0, 229, 160, 0.3);
+  --color-green-custom: var(--green-custom);
+  --color-green-dim: var(--green-dim);
+  --color-green-glow: 0 0 20px var(--green-dim);
 
-  --color-red-custom: #ff3b5c;
-  --color-red-dim: rgba(255, 59, 92, 0.12);
-  --color-red-glow: 0 0 20px rgba(255, 59, 92, 0.3);
+  --color-red-custom: var(--red-custom);
+  --color-red-dim: var(--red-dim);
+  --color-red-glow: 0 0 20px var(--red-dim);
 
-  --color-amber-custom: #ffb020;
-  --color-amber-dim: rgba(255, 176, 32, 0.12);
+  --color-amber-custom: var(--amber-custom);
+  --color-amber-dim: var(--amber-dim);
 
-  --color-blue-custom: #4d9fff;
-  --color-blue-dim: rgba(77, 159, 255, 0.12);
+  --color-blue-custom: var(--blue-custom);
+  --color-blue-dim: var(--blue-dim);
 
-  --color-cyan-custom: #00d4f5;
-  --color-purple-custom: #9b6dff;
+  --color-cyan-custom: var(--cyan-custom);
+  --color-purple-custom: var(--purple-custom);
 
   --font-mono: "JetBrains Mono", monospace;
   --font-display: "Outfit", sans-serif;
-  --font-body: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Inter", sans-serif;
 
   --radius-custom: 2px;
   --radius-lg-custom: 4px;
@@ -64,8 +126,8 @@
     50% { opacity: 0.3; }
   }
   @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 5px rgba(0, 229, 160, 0.2); }
-    50% { box-shadow: 0 0 15px rgba(0, 229, 160, 0.5); }
+    0%, 100% { box-shadow: 0 0 5px var(--green-dim); }
+    50% { box-shadow: 0 0 15px var(--green-custom); }
   }
   @keyframes card-enter {
     from { opacity: 0; transform: translateY(12px); }
@@ -93,7 +155,7 @@
 
 /* ─── BASE OVERRIDES ──────────────────────────────────────────── */
 html {
-  font-size: 14px;
+  font-size: 16px;
   scroll-behavior: smooth;
 }
 

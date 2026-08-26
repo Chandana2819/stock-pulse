@@ -339,7 +339,7 @@ export default function PortfolioPage() {
         {/* Left Column: Active Positions */}
         <div>
           <section className="flex flex-col gap-5 mt-0">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// PORTFOLIO SUMMARY"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"PORTFOLIO SUMMARY"}</div>
             
             {/* Wallet Cash Display Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-4">
@@ -387,7 +387,7 @@ export default function PortfolioPage() {
             </div>
 
             {/* Holdings Table */}
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-8">{"// ACTIVE PORTFOLIO POSITIONS"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-8">{"ACTIVE PORTFOLIO POSITIONS"}</div>
             {loading ? (
               <div className="font-mono text-xs text-text-3 py-8 text-center">FETCHING CURRENT HOLDINGS...</div>
             ) : holdings.length === 0 ? (
@@ -444,7 +444,7 @@ export default function PortfolioPage() {
           
           {/* Link Demat Broker Form */}
           <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// LINK DEMAT / BROKER ACCOUNT"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"LINK DEMAT / BROKER ACCOUNT"}</div>
             
             <div className="flex flex-col gap-3">
               <p className="text-[0.68rem] text-text-2 leading-relaxed">
@@ -521,7 +521,7 @@ export default function PortfolioPage() {
             </div>
           </section>
           <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-5">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// RECORD MANUAL TRANSACTION"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"RECORD MANUAL TRANSACTION"}</div>
             <form onSubmit={handleRecordTransaction} className="mt-4">
               <div className="mb-4">
                 <label className="block font-mono text-[0.65rem] text-text-3 mb-1">SYMBOL (e.g. INFY.NS or TSLA)</label>
@@ -588,7 +588,7 @@ export default function PortfolioPage() {
           </section>
 
           {/* Historical Log Feed */}
-          <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-8">{"// HISTORICAL TRANSACTION LOG"}</div>
+          <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-8">{"HISTORICAL TRANSACTION LOG"}</div>
           {loading ? (
             <div className="font-mono text-xs text-text-3 py-4">LOADING HISTORY...</div>
           ) : transactions.length === 0 ? (
