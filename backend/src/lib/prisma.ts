@@ -1,30 +1,17 @@
-import { PrismaClient } from "@prisma/client";
+import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { Pool } from "pg";
-import { env } from "../config/env";
+import { PrismaClient } from "../generated/prisma/client";
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
-};
+const connectionString = process.env.DATABASE_URL;
 
-let prismaInstance: PrismaClient;
-
-if (globalForPrisma.prisma) {
-  prismaInstance = globalForPrisma.prisma;
-} else {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || env.databaseUrl,
-  });
-  const adapter = new PrismaPg(pool);
-
-  prismaInstance = new PrismaClient({
-    adapter,
-    log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
-  });
-
-  if (process.env.NODE_ENV !== "production") {
-    globalForPrisma.prisma = prismaInstance;
-  }
+if (!connectionString) {
+  throw new Error("DATABASE_URL is not configured");
 }
 
-export const prisma = prismaInstance;
+const adapter = new PrismaPg({
+  connectionString,
+});
+
+export const prisma = new PrismaClient({
+  adapter,
+});
