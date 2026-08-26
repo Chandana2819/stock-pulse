@@ -99,77 +99,76 @@ export default function TopNav() {
   };
 
   return (
-    <header className="flex flex-col md:flex-row items-center justify-between py-3 px-4 sm:px-8 border-b border-border-custom bg-bg-1 relative gap-3 md:gap-0">
+    <header className="flex items-center justify-between py-3.5 px-4 md:px-8 border-b border-border-custom bg-bg-1 relative z-30">
       <div className="absolute bottom-[-1px] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-green-custom to-transparent opacity-50" />
-      <div className="flex items-center gap-3 w-full md:w-auto justify-between">
-        <Link href="/" className="flex items-center gap-3 no-underline">
-          <div className="w-7 h-7 relative flex items-center justify-center shrink-0">
-            <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <polyline points="2,22 7,14 11,18 16,8 20,12 26,4" stroke="#00e5a0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-              <circle cx="26" cy="4" r="2" fill="#00e5a0" />
-            </svg>
-          </div>
-          <h1 className="font-display text-[1.6rem] tracking-[0.12em] text-text-custom leading-none">
-            STOCK<span className="text-green-custom">PULSE</span>
-          </h1>
-        </Link>
-        <button
-          className="md:hidden font-mono text-[0.65rem] border border-border-bright px-2 py-1 text-text-2"
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          {menuOpen ? "CLOSE" : "MENU"}
-        </button>
-      </div>
+      
+      {/* Left side: Logo */}
+      <Link href="/" className="flex items-center gap-2 no-underline z-50">
+        <div className="w-6 h-6 relative flex items-center justify-center shrink-0">
+          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <polyline points="2,22 7,14 11,18 16,8 20,12 26,4" stroke="#00e5a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            <circle cx="26" cy="4" r="2.5" fill="#00e5a0" />
+          </svg>
+        </div>
+        <h1 className="font-display text-[1.25rem] md:text-[1.5rem] tracking-[0.1em] text-text-custom leading-none select-none">
+          STOCK<span className="text-green-custom">PULSE</span>
+        </h1>
+      </Link>
 
-      {/* Navigation Menu */}
-      <nav className={`flex-col md:flex-row gap-2 md:gap-4 md:ml-8 md:mr-auto justify-center md:justify-start w-full md:w-auto ${menuOpen ? "flex" : "hidden md:flex"}`}>
-        {NAV_LINKS.map((l) => (
-          <Link
-            key={l.href}
-            href={l.href}
-            onClick={() => setMenuOpen(false)}
-            className={`font-mono text-[0.72rem] no-underline tracking-[0.05em] pb-[2px] transition-colors duration-150 ${
-              pathname === l.href ? "text-green-custom font-bold border-b border-green-custom" : "text-text-2 font-normal hover:text-text-custom"
-            }`}
-          >
-            {l.label}
-          </Link>
-        ))}
+      {/* Center: Desktop Navigation Links */}
+      <nav className="hidden md:flex items-center gap-4 lg:gap-5 ml-6 mr-auto">
+        {NAV_LINKS.map((l) => {
+          const isActive = pathname === l.href;
+          return (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`font-mono text-[0.7rem] lg:text-[0.75rem] no-underline tracking-[0.05em] pb-[2px] transition-colors duration-150 ${
+                isActive ? "text-green-custom font-bold border-b border-green-custom" : "text-text-2 font-normal hover:text-text-custom"
+              }`}
+            >
+              {l.label}
+            </Link>
+          );
+        })}
       </nav>
 
-      {/* Wallets */}
-      <div className="hidden lg:flex gap-6 border-l border-r border-border-custom px-6">
-        <div>
-          <span className="font-mono text-[0.55rem] text-text-3 block tracking-[0.1em]">INR WALLET</span>
-          <span className="font-mono text-[0.95rem] text-green-custom font-bold">
-            ₹{wallet.inr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
+      {/* Right side: Desktop Wallets + Notification + Profile Actions */}
+      <div className="flex items-center gap-2 md:gap-4">
+        {/* Wallets (Desktop Only - hidden on mobile/tablet) */}
+        <div className="hidden lg:flex gap-5 border-l border-r border-border-custom px-5 mr-2">
+          <div>
+            <span className="font-mono text-[0.52rem] text-text-3 block tracking-[0.08em] mb-0.5">INR WALLET</span>
+            <span className="font-mono text-[0.85rem] text-green-custom font-bold">
+              ₹{wallet.inr.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div>
+            <span className="font-mono text-[0.52rem] text-text-3 block tracking-[0.08em] mb-0.5">USD WALLET</span>
+            <span className="font-mono text-[0.85rem] text-cyan-custom font-bold">
+              ${wallet.usd.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
         </div>
-        <div>
-          <span className="font-mono text-[0.55rem] text-text-3 block tracking-[0.1em]">USD WALLET</span>
-          <span className="font-mono text-[0.95rem] text-cyan-custom font-bold">
-            ${wallet.usd.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-        </div>
-      </div>
 
-      <div className="flex items-center gap-4">
-        {/* Notification bell */}
+        {/* Notifications (Always visible, clean, compact) */}
         <div className="relative">
           <button
-            className="relative bg-transparent border border-border-custom rounded p-[0.4rem_0.55rem] text-text-2 hover:border-amber-custom hover:text-amber-custom transition-colors"
+            className="relative bg-transparent border border-border-custom hover:border-amber-custom rounded p-1.5 md:p-2 text-text-2 hover:text-amber-custom transition-all cursor-pointer"
             onClick={() => setNotifOpen((v) => !v)}
             title="Notifications"
           >
-            <span className="font-mono text-[0.7rem]">🔔</span>
+            <span className="font-mono text-[0.8rem] md:text-[0.95rem]">🔔</span>
             {unread > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 bg-red-custom text-bg text-[0.55rem] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+              <span className="absolute -top-1 -right-1 bg-red-custom text-bg text-[0.52rem] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
                 {unread > 9 ? "9+" : unread}
               </span>
             )}
           </button>
+          
+          {/* Notification Dropdown */}
           {notifOpen && (
-            <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-bg-2 border border-border-bright rounded shadow-2xl z-50">
+            <div className="absolute right-0 mt-2 w-72 md:w-80 max-h-96 overflow-y-auto bg-bg-2 border border-border-bright rounded shadow-2xl z-50">
               <div className="flex items-center justify-between px-3 py-2 border-b border-border-custom">
                 <span className="font-mono text-[0.6rem] tracking-[0.15em] text-text-3 uppercase">Notifications</span>
                 <button className="font-mono text-[0.58rem] text-blue-custom hover:underline" onClick={markAllRead}>
@@ -191,18 +190,113 @@ export default function TopNav() {
           )}
         </div>
 
+        {/* Profile (Desktop Only - hidden on mobile) */}
         {username && (
-          <div className="flex flex-col items-end border-l border-border-custom pl-4 font-mono text-[0.72rem] text-text-3 gap-[0.15rem]">
-            <span className="text-text-2 text-[0.85rem] font-bold uppercase">{username}</span>
-            <button onClick={handleLogout} className="bg-transparent border-none p-0 cursor-pointer font-mono text-[0.6rem] text-red-custom hover:underline uppercase">
+          <div className="hidden sm:flex flex-col items-end border-l border-border-custom pl-3 md:pl-4 font-mono text-[0.7rem] text-text-3 gap-[0.1rem]">
+            <span className="text-text-2 text-[0.8rem] font-bold uppercase">{username}</span>
+            <button onClick={handleLogout} className="bg-transparent border-none p-0 cursor-pointer font-mono text-[0.55rem] text-red-custom hover:underline uppercase">
               [ LOGOUT ]
             </button>
           </div>
         )}
 
-        <div className="hidden md:flex font-mono text-[0.72rem] text-text-3 tracking-[0.08em] flex-col items-end gap-[0.15rem]">
-          <span className="text-text-2 text-[0.85rem]">{time || "-- : -- : --"}</span>
+        {/* Time (Desktop Only - hidden on mobile/tablet) */}
+        <div className="hidden md:flex font-mono text-[0.7rem] text-text-3 tracking-[0.08em] flex-col items-end gap-[0.1rem]">
+          <span className="text-text-2 text-[0.8rem]">{time || "-- : -- : --"}</span>
           <span>IST · INDIA</span>
+        </div>
+
+        {/* Premium Mobile Menu Button (Hamburger) */}
+        <button
+          className="md:hidden flex flex-col justify-center items-center w-8 h-8 rounded border border-border-custom bg-transparent relative z-50 cursor-pointer hover:border-green-custom transition-all"
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label="Toggle Menu"
+        >
+          <div className="relative w-4 h-3 flex flex-col justify-between">
+            <span className={`block h-[2px] w-full bg-text-2 rounded-full transition-all duration-300 origin-center ${menuOpen ? "rotate-45 translate-y-[5px]" : ""}`} />
+            <span className={`block h-[2px] w-full bg-text-2 rounded-full transition-all duration-300 ${menuOpen ? "w-0 opacity-0" : ""}`} />
+            <span className={`block h-[2px] w-full bg-text-2 rounded-full transition-all duration-300 origin-center ${menuOpen ? "-rotate-45 -translate-y-[5px]" : ""}`} />
+          </div>
+        </button>
+      </div>
+
+      {/* Drawer Overlay for Mobile */}
+      <div 
+        className={`md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40 transition-opacity duration-300 ${menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+        onClick={() => setMenuOpen(false)}
+      />
+
+      {/* Drawer Menu for Mobile */}
+      <div className={`md:hidden fixed top-0 right-0 bottom-0 w-[280px] max-w-[85vw] bg-bg-2 border-l border-border-custom z-50 flex flex-col p-6 shadow-2xl transition-transform duration-300 ease-in-out transform ${menuOpen ? "translate-x-0" : "translate-x-full"}`}>
+        {/* Drawer Header */}
+        <div className="flex items-center justify-between pb-4 border-b border-border-custom mb-4">
+          <span className="font-display text-sm tracking-[0.15em] text-text-custom uppercase">Menu</span>
+          <button 
+            className="text-text-3 hover:text-green-custom font-mono text-[0.65rem] cursor-pointer border border-border-bright rounded px-2 py-0.5"
+            onClick={() => setMenuOpen(false)}
+          >
+            CLOSE
+          </button>
+        </div>
+
+        {/* Drawer Nav Links */}
+        <nav className="flex-1 overflow-y-auto py-2 flex flex-col gap-2">
+          {NAV_LINKS.map((l) => {
+            const isActive = pathname === l.href;
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setMenuOpen(false)}
+                className={`flex items-center gap-3 py-2 px-3 rounded font-mono text-[0.7rem] tracking-wider transition-all duration-150 border ${
+                  isActive 
+                    ? "bg-green-dim/10 border-green-custom/30 text-green-custom font-bold" 
+                    : "border-transparent text-text-2 hover:bg-bg-3 hover:text-text-custom"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-green-custom shadow-[0_0_8px_#00e5a0]" : "bg-text-3/30"}`} />
+                {l.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Drawer Footer (Wallets + Profile + Logout) */}
+        <div className="mt-auto pt-4 border-t border-border-custom flex flex-col gap-3.5">
+          {/* Wallets */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-bg-3/50 p-2.5 rounded border border-border-custom">
+              <span className="font-mono text-[0.5rem] text-text-3 block tracking-[0.1em] mb-1">INR WALLET</span>
+              <span className="font-mono text-[0.75rem] text-green-custom font-bold">
+                ₹{wallet.inr.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+            <div className="bg-bg-3/50 p-2.5 rounded border border-border-custom">
+              <span className="font-mono text-[0.5rem] text-text-3 block tracking-[0.1em] mb-1">USD WALLET</span>
+              <span className="font-mono text-[0.75rem] text-cyan-custom font-bold">
+                ${wallet.usd.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+          
+          {/* Profile & Logout (Mobile View) */}
+          {username && (
+            <div className="flex items-center justify-between font-mono text-[0.7rem] bg-bg-3/40 p-2.5 rounded border border-border-custom">
+              <div className="flex flex-col">
+                <span className="text-text-3 text-[0.55rem] tracking-wider uppercase">Logged In As</span>
+                <span className="text-text-custom font-bold">{username}</span>
+              </div>
+              <button onClick={handleLogout} className="bg-transparent border border-red-custom/30 rounded p-[0.2rem_0.5rem] cursor-pointer font-mono text-[0.58rem] text-red-custom hover:bg-red-custom/10 uppercase transition-all">
+                LOGOUT
+              </button>
+            </div>
+          )}
+
+          {/* Time / Location */}
+          <div className="flex justify-between items-center font-mono text-[0.62rem] text-text-3 bg-bg-3/20 p-2 rounded">
+            <span>{time || "--:--:--"}</span>
+            <span>IST · INDIA</span>
+          </div>
         </div>
       </div>
     </header>
