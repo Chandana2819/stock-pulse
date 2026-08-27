@@ -157,24 +157,30 @@ export class ZerodhaKiteProvider implements BrokerProvider {
 export class UpstoxProvider implements BrokerProvider {
   readonly id = "UPSTOX";
   readonly label = "Upstox";
-  private apiKey = process.env.UPSTOX_API_KEY ?? "";
-  private apiSecret = process.env.UPSTOX_API_SECRET ?? "";
+  private apiKey = env.upstoxApiKey;
+  private apiSecret = env.upstoxApiSecret;
+  private redirectUri = env.upstoxRedirectUri;
 
   get configured() {
     return Boolean(this.apiKey && this.apiSecret);
   }
 
+  private getRedirectUri(): string {
+    return this.redirectUri || `${env.brokerRedirectBase}/UPSTOX`;
+  }
+
   getAuthUrl(state: string): string {
-    const redirect = `${env.brokerRedirectBase}/UPSTOX`;
+    const redirect = this.getRedirectUri();
     return `https://api.upstox.com/v2/login/authorization/dialog?client_id=${encodeURIComponent(this.apiKey)}&redirect_uri=${encodeURIComponent(redirect)}&state=${encodeURIComponent(state)}&response_type=code`;
   }
 
   async exchangeCode(code: string) {
+    const redirect = this.getRedirectUri();
     const body = new URLSearchParams({
       code,
       client_id: this.apiKey,
       client_secret: this.apiSecret,
-      redirect_uri: `${env.brokerRedirectBase}/UPSTOX`,
+      redirect_uri: redirect,
       grant_type: "authorization_code",
     });
     const res = await axios.post("https://api.upstox.com/v2/login/authorization/token", body.toString(), {

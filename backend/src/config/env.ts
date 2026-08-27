@@ -60,6 +60,10 @@ export const env = {
 
   brokerRedirectBase: str("BROKER_REDIRECT_BASE", "https://stock-pulse-vzuy.onrender.com/api/brokers/callback"),
 
+  upstoxApiKey: str("UPSTOX_API_KEY", ""),
+  upstoxApiSecret: str("UPSTOX_API_SECRET", ""),
+  upstoxRedirectUri: str("UPSTOX_REDIRECT_URI", ""),
+
   enableJobs: bool("ENABLE_BACKGROUND_JOBS", true),
   alertIntervalMs: num("ALERT_INTERVAL_MS", 120_000),
 
@@ -78,4 +82,10 @@ export function assertProductionConfig() {
   if (missing.length) {
     throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
   }
+}
+
+export function reportUpstoxConfig() {
+  console.log(`UPSTOX_API_KEY: ${env.upstoxApiKey ? "configured" : "missing"}`);
+  console.log(`UPSTOX_API_SECRET: ${env.upstoxApiSecret ? "configured" : "missing"}`);
+  console.log(`UPSTOX_REDIRECT_URI: ${env.upstoxRedirectUri ? "configured" : "missing"}`);
 }

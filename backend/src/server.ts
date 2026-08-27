@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { env, assertProductionConfig } from "./config/env";
+import { env, assertProductionConfig, reportUpstoxConfig } from "./config/env";
 import { attachUser } from "./middleware/auth";
 import { globalLimiter } from "./middleware/rateLimit";
 import { errorHandler, notFoundHandler } from "./middleware/error";
@@ -36,6 +36,7 @@ import kycRouter from "./routes/kyc";
 import signalsRouter from "./routes/signals";
 
 assertProductionConfig();
+reportUpstoxConfig();
 
 const app = express();
 const PORT = env.port;
