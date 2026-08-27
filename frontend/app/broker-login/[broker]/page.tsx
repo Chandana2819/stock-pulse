@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { API_BASE } from "../../lib/api";
 
@@ -16,6 +16,51 @@ export default function BrokerLoginPage() {
   const [pin, setPin] = useState("123456");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
+  useEffect(() => {
+    const code = searchParams.get("code") || searchParams.get("request_token");
+    if (!code) return;
+
+    let active = true;
+    const executeCallback = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/brokers/callback/${broker.toUpperCase()}?code=${code}&state=${state}`);
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "OAuth connection failed");
+        }
+        
+        // Trigger holdings sync with correct device-id
+        const deviceId = localStorage.getItem("sp_device_id") || "";
+        const syncRes = await fetch(`${API_BASE}/api/brokers/${broker.toUpperCase()}/sync`, {
+          method: "POST",
+          headers: { "x-device-id": deviceId },
+        });
+
+        if (!syncRes.ok) {
+          const data = await syncRes.json();
+          throw new Error(data.error || "Broker holdings sync failed");
+        }
+
+        if (active) {
+          router.push("/portfolio?synced=true");
+        }
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : "OAuth connection failed");
+          setLoading(false);
+        }
+      }
+    };
+
+    executeCallback();
+    return () => {
+      active = false;
+    };
+  }, [searchParams, broker, state, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

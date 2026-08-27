@@ -52,6 +52,8 @@ export default function PortfolioPage() {
   const [brokerPassword, setBrokerPassword] = useState("");
   const [connectingBroker, setConnectingBroker] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [brokerConnections, setBrokerConnections] = useState<any[]>([]);
+  const [syncingBroker, setSyncingBroker] = useState<string | null>(null);
 
   const addToast = useCallback((toast: Omit<Toast, "id" | "timestamp">) => {
     const id = Math.random().toString(36).slice(2);
@@ -81,6 +83,15 @@ export default function PortfolioPage() {
       if (txRes.ok) {
         const txData = await txRes.json();
         setTransactions(Array.isArray(txData) ? txData : txData?.items ?? []);
+      }
+
+      // 3. Fetch Broker Connections
+      const brokerRes = await fetch(`${API_BASE}/api/brokers`, {
+        headers: { "x-device-id": deviceId },
+      });
+      if (brokerRes.ok) {
+        const brokerData = await brokerRes.json();
+        setBrokerConnections(brokerData.connections || []);
       }
     } catch (e) {
       console.error("Failed to load portfolio statistics:", e);
@@ -444,85 +455,185 @@ export default function PortfolioPage() {
 
         {/* Right Column: Record Form & Tx Feed */}
         <div className="flex flex-col gap-6">
-          
           {/* Link Demat Broker Form */}
-          <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"LINK DEMAT / BROKER ACCOUNT"}</div>
-            
-            <div className="flex flex-col gap-3">
-              <p className="text-[0.68rem] text-text-2 leading-relaxed">
-                Connect your active Zerodha, Upstox, or Simulated Demat account to sync holdings instantly.
-              </p>
+          {brokerConnections.some(c => c.broker === "ZERODHA" && c.status === "CONNECTED") ? (
+            (() => {
+              const zerodhaConn = brokerConnections.find(c => c.broker === "ZERODHA");
+              return (
+                <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
+                  <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"ZERODHA KITE CONNECTION"}</div>
+                  
+                  <div className="flex flex-col gap-3">
+                    <div className="flex justify-between items-center border-b border-border-custom pb-2.5">
+                      <span className="font-mono text-[0.65rem] text-text-3 uppercase">Status</span>
+                      <span className={`font-mono text-xs font-bold uppercase ${
+                        syncingBroker === "ZERODHA" 
+                          ? "text-blue-custom animate-pulse" 
+                          : zerodhaConn.status === "CONNECTED" 
+                            ? "text-green-custom" 
+                            : "text-red-custom"
+                      }`}>
+                        {syncingBroker === "ZERODHA" ? "Syncing" : "Connected"}
+                      </span>
+                    </div>
 
-              <div>
-                <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">SELECT BROKER</label>
-                <select
-                  value={brokerSelect}
-                  onChange={(e) => setBrokerSelect(e.target.value)}
-                  className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
-                >
-                  <option value="DEMO">Demo / Simulation Broker</option>
-                  <option value="CSV">Upload Zerodha Console CSV (Free)</option>
-                  <option value="ZERODHA">Zerodha Kite (OAuth)</option>
-                  <option value="UPSTOX">Upstox (OAuth)</option>
-                </select>
-              </div>
+                    <div className="flex justify-between items-center border-b border-border-custom pb-2.5">
+                      <span className="font-mono text-[0.65rem] text-text-3 uppercase">Last Synced</span>
+                      <span className="font-mono text-xs text-text-custom">
+                        {zerodhaConn.lastSyncAt 
+                          ? new Date(zerodhaConn.lastSyncAt).toLocaleString("en-US", {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                              hour12: true
+                            })
+                          : "NEVER"}
+                      </span>
+                    </div>
 
-              {brokerSelect === "CSV" && (
+                    {zerodhaConn.lastError && (
+                      <div className="p-2.5 bg-red-dim/15 border border-red-custom/20 rounded text-[0.62rem] text-red-custom font-mono">
+                        Error: {zerodhaConn.lastError}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={async () => {
+                          setSyncingBroker("ZERODHA");
+                          try {
+                            const deviceId = localStorage.getItem("sp_device_id");
+                            const res = await fetch(`${API_BASE}/api/brokers/ZERODHA/sync`, {
+                              method: "POST",
+                              headers: { "x-device-id": deviceId || "" }
+                            });
+                            if (res.ok) {
+                              addToast({ type: "success", title: "Broker Synced", message: "Successfully synced Zerodha holdings!" });
+                              fetchData();
+                            } else {
+                              const err = await res.json();
+                              addToast({ type: "danger", title: "Sync Failed", message: err.error || "Failed to sync." });
+                            }
+                          } catch {
+                            addToast({ type: "danger", title: "Error", message: "Network error during sync." });
+                          } finally {
+                            setSyncingBroker(null);
+                          }
+                        }}
+                        disabled={syncingBroker === "ZERODHA"}
+                        className="flex-1 bg-green-custom hover:bg-green-custom/90 text-bg font-mono text-xs font-bold py-2.5 rounded cursor-pointer uppercase transition-opacity duration-150 disabled:opacity-50 text-center border-none"
+                      >
+                        {syncingBroker === "ZERODHA" ? "SYNCING..." : "SYNC ZERODHA"}
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!confirm("Are you sure you want to disconnect Zerodha? This will stop automatic synchronization.")) return;
+                          try {
+                            const deviceId = localStorage.getItem("sp_device_id");
+                            const res = await fetch(`${API_BASE}/api/brokers/ZERODHA`, {
+                              method: "DELETE",
+                              headers: { "x-device-id": deviceId || "" }
+                            });
+                            if (res.ok) {
+                              addToast({ type: "success", title: "Disconnected", message: "Zerodha disconnected successfully." });
+                              fetchData();
+                            } else {
+                              addToast({ type: "danger", title: "Error", message: "Failed to disconnect." });
+                            }
+                          } catch {
+                            addToast({ type: "danger", title: "Error", message: "Network error during disconnect." });
+                          }
+                        }}
+                        className="flex-1 bg-transparent hover:bg-red-dim/10 border border-red-custom/40 hover:border-red-custom text-red-custom font-mono text-xs font-bold py-2.5 rounded cursor-pointer uppercase transition-colors duration-150 text-center"
+                      >
+                        DISCONNECT
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              );
+            })()
+          ) : (
+            <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
+              <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"LINK DEMAT / BROKER ACCOUNT"}</div>
+              
+              <div className="flex flex-col gap-3">
+                <p className="text-[0.68rem] text-text-2 leading-relaxed">
+                  Connect your active Zerodha, Upstox, or Simulated Demat account to sync holdings instantly.
+                </p>
+
                 <div>
-                  <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">SELECT ZERODHA HOLDINGS CSV</label>
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+                  <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">SELECT BROKER</label>
+                  <select
+                    value={brokerSelect}
+                    onChange={(e) => setBrokerSelect(e.target.value)}
                     className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
-                  />
-                  <span className="text-[0.58rem] text-text-3 font-mono block mt-1">
-                    *Go to Zerodha Console &gt; Holdings &gt; click "Download XLSX/CSV" to get this file.
-                  </span>
+                  >
+                    <option value="DEMO">Demo / Simulation Broker</option>
+                    <option value="CSV">Upload Zerodha Console CSV (Free)</option>
+                    <option value="ZERODHA">Zerodha Kite (OAuth)</option>
+                    <option value="UPSTOX">Upstox (OAuth)</option>
+                  </select>
                 </div>
-              )}
 
-              {brokerSelect === "DEMO" && (
-                <>
+                {brokerSelect === "CSV" && (
                   <div>
-                    <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">CLIENT USER ID</label>
+                    <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">SELECT ZERODHA HOLDINGS CSV</label>
                     <input
-                      type="text"
-                      placeholder="e.g. AB1234"
-                      value={brokerUserId}
-                      onChange={(e) => setBrokerUserId(e.target.value)}
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                       className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
                     />
+                    <span className="text-[0.58rem] text-text-3 font-mono block mt-1">
+                      *Go to Zerodha Console &gt; Holdings &gt; click "Download XLSX/CSV" to get this file.
+                    </span>
                   </div>
-                  <div>
-                    <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">PASSWORD / PIN</label>
-                    <input
-                      type="password"
-                      placeholder="••••••••"
-                      value={brokerPassword}
-                      onChange={(e) => setBrokerPassword(e.target.value)}
-                      className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
-                    />
+                )}
+
+                {brokerSelect === "DEMO" && (
+                  <>
+                    <div>
+                      <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">CLIENT USER ID</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. AB1234"
+                        value={brokerUserId}
+                        onChange={(e) => setBrokerUserId(e.target.value)}
+                        className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-mono text-[0.55rem] text-text-3 mb-1 uppercase">PASSWORD / PIN</label>
+                      <input
+                        type="password"
+                        placeholder="••••••••"
+                        value={brokerPassword}
+                        onChange={(e) => setBrokerPassword(e.target.value)}
+                        className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {brokerSelect !== "DEMO" && brokerSelect !== "CSV" && (
+                  <div className="p-3 border border-border-custom bg-bg-2 font-mono text-[0.58rem] text-text-3 leading-relaxed">
+                    Notice: OAuth connection is active. Redirects to broker login page safely without sharing credentials.
                   </div>
-                </>
-              )}
+                )}
 
-              {brokerSelect !== "DEMO" && brokerSelect !== "CSV" && (
-                <div className="p-3 border border-border-custom bg-bg-2 font-mono text-[0.58rem] text-text-3 leading-relaxed">
-                  Notice: OAuth connection is active. Redirects to broker login page safely without sharing credentials.
-                </div>
-              )}
-
-              <button
-                onClick={handleConnectBroker}
-                disabled={connectingBroker || (brokerSelect === "DEMO" && (!brokerUserId.trim() || !brokerPassword.trim()))}
-                className="w-full font-mono text-xs font-bold text-bg border-none p-3 rounded cursor-pointer tracking-wider uppercase transition-colors duration-150 bg-green-custom hover:bg-green-custom/90 disabled:opacity-40"
-              >
-                {connectingBroker ? "CONNECTING..." : "CONNECT & SYNC DEMAT HOLDINGS →"}
-              </button>
-            </div>
-          </section>
+                <button
+                  onClick={handleConnectBroker}
+                  disabled={connectingBroker || (brokerSelect === "DEMO" && (!brokerUserId.trim() || !brokerPassword.trim()))}
+                  className="w-full font-mono text-xs font-bold text-bg border-none p-3 rounded cursor-pointer tracking-wider uppercase transition-colors duration-150 bg-green-custom hover:bg-green-custom/90 disabled:opacity-40"
+                >
+                  {connectingBroker ? "CONNECTING..." : "CONNECT & SYNC DEMAT HOLDINGS →"}
+                </button>
+              </div>
+            </section>
+          )}
           <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-5">
             <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"RECORD MANUAL TRANSACTION"}</div>
             <form onSubmit={handleRecordTransaction} className="mt-4">

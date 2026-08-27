@@ -28,9 +28,12 @@ router.get(
   asyncHandler(async (req, res) => {
     const provider = getBroker(req.params.broker);
     if (!provider) throw ApiError.notFound("Unsupported broker");
+    const referer = req.headers.referer;
+    const origin = referer ? new URL(referer).origin : "http://localhost:3000";
+
     if (!provider.configured) {
       const state = crypto.randomBytes(16).toString("hex");
-      return res.json({ authUrl: `http://localhost:3000/broker-login/${req.params.broker.toLowerCase()}?state=${req.user!.id}:${state}` });
+      return res.json({ authUrl: `${origin}/broker-login/${req.params.broker.toLowerCase()}?state=${req.user!.id}:${state}` });
     }
 
     const state = crypto.randomBytes(16).toString("hex");
@@ -158,9 +161,12 @@ router.get(
     if (!provider) throw ApiError.notFound("Zerodha provider not found");
     const state = crypto.randomBytes(16).toString("hex");
     
+    const referer = req.headers.referer;
+    const origin = referer ? new URL(referer).origin : "http://localhost:3000";
+
     // Check if provider is configured
     if (!provider.configured) {
-      return res.json({ authUrl: `http://localhost:3000/broker-login/zerodha?state=${req.user!.id}:${state}` });
+      return res.json({ authUrl: `${origin}/broker-login/zerodha?state=${req.user!.id}:${state}` });
     }
     
     return res.json({ authUrl: provider.getAuthUrl(`${req.user!.id}:${state}`) });

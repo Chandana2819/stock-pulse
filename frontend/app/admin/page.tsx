@@ -16,6 +16,11 @@ type DashboardMetrics = {
   activeAlerts: number;
   communityPosts: number;
   systemHealth: "HEALTHY" | "WARNING" | "ERROR";
+  zerodhaTotalConnected?: number;
+  zerodhaActiveConnections?: number;
+  zerodhaFailedConnections?: number;
+  zerodhaLastSyncTime?: string | null;
+  zerodhaSyncFailures?: number;
 };
 
 type RecentUser = {
@@ -172,6 +177,77 @@ export default function AdminDashboardPage() {
           <span className="font-mono text-[0.58rem] text-text-4 block mt-1.5 uppercase">
             Prisma connector status
           </span>
+        </div>
+      </div>
+
+      {/* Zerodha Kite Connect Integration Console */}
+      <div className="border border-border-custom bg-bg-1 p-6 rounded flex flex-col gap-4">
+        <div>
+          <h2 className="font-display text-sm tracking-[0.1em] text-red-custom uppercase">
+            ZERODHA KITE CONNECT INTEGRATION
+          </h2>
+          <p className="font-mono text-[0.6rem] text-text-3 mt-0.5 uppercase tracking-wider">
+            Operational statuses of synced Demat accounts and connection metrics
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-bg-2/30 p-4 border border-border-custom rounded">
+            <span className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider block mb-1">
+              Connected Accounts
+            </span>
+            <span className="font-mono text-xl font-bold text-text-custom">
+              {metrics.zerodhaActiveConnections || 0}
+            </span>
+            <span className="font-mono text-[0.55rem] text-text-4 block mt-1 uppercase">
+              Total registrations: {metrics.zerodhaTotalConnected || 0}
+            </span>
+          </div>
+
+          <div className="bg-bg-2/30 p-4 border border-border-custom rounded">
+            <span className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider block mb-1">
+              Broken Connections
+            </span>
+            <span className="font-mono text-xl font-bold text-red-custom">
+              {metrics.zerodhaFailedConnections || 0}
+            </span>
+            <span className="font-mono text-[0.55rem] text-text-4 block mt-1 uppercase">
+              Authentication errors
+            </span>
+          </div>
+
+          <div className="bg-bg-2/30 p-4 border border-border-custom rounded">
+            <span className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider block mb-1">
+              Sync Failures
+            </span>
+            <span className="font-mono text-xl font-bold text-text-custom">
+              {metrics.zerodhaSyncFailures || 0}
+            </span>
+            <span className="font-mono text-[0.55rem] text-text-4 block mt-1 uppercase">
+              Failed API requests
+            </span>
+          </div>
+
+          <div className="bg-bg-2/30 p-4 border border-border-custom rounded">
+            <span className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider block mb-1">
+              Last Sync Event
+            </span>
+            <span className="font-mono text-xs font-bold text-text-custom block truncate mt-1">
+              {metrics.zerodhaLastSyncTime
+                ? new Date(metrics.zerodhaLastSyncTime).toLocaleString("en-US", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  })
+                : "NEVER"}
+            </span>
+            <span className="font-mono text-[0.55rem] text-text-4 block mt-1 uppercase">
+              Most recent update
+            </span>
+          </div>
         </div>
       </div>
 
