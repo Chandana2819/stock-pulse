@@ -7,6 +7,7 @@ import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v } from "../lib/validate";
 import { requireAuth } from "../middleware/auth";
 import { audit } from "../lib/audit";
+import { env } from "../config/env";
 
 const router = express.Router();
 
@@ -55,6 +56,8 @@ router.get(
     
     if (provider.id === "ZERODHA") {
       console.log("Zerodha callback received");
+    } else if (provider.id === "UPSTOX") {
+      console.log("[UPSTOX] Callback received");
     }
 
     const query = req.query as Record<string, unknown>;
@@ -63,6 +66,9 @@ router.get(
     if (provider.id === "ZERODHA") {
       console.log(`request_token received: ${rawToken ? "yes" : "no"}`);
       console.log(`StockPulse user authenticated: ${req.user ? "yes" : "no"}`);
+    } else if (provider.id === "UPSTOX") {
+      console.log(`[UPSTOX] Code present: ${rawToken ? "true" : "false"}`);
+      console.log(`[UPSTOX] State present: ${query.state ? "true" : "false"}`);
     }
 
     if (typeof rawToken !== "string" || !rawToken) {
@@ -70,6 +76,23 @@ router.get(
     }
     
     const userId = req.user!.id;
+
+    // State validation (Upstox)
+    if (provider.id === "UPSTOX") {
+      const state = query.state;
+      if (typeof state !== "string" || !state) {
+        throw ApiError.badRequest("Missing state parameter");
+      }
+      const stateParts = state.split(":");
+      if (stateParts[0] !== userId) {
+        console.error(`[UPSTOX] State validation failed. Expected user: ${userId}, Got: ${state}`);
+        throw ApiError.badRequest("State validation failed: user ID mismatch");
+      }
+      console.log("[UPSTOX] State validation: success");
+      console.log(`[UPSTOX] API key configured: ${Boolean(env.upstoxApiKey) ? "true" : "false"}`);
+      console.log(`[UPSTOX] API secret configured: ${Boolean(env.upstoxApiSecret) ? "true" : "false"}`);
+      console.log(`[UPSTOX] Redirect URI configured: ${Boolean(env.upstoxRedirectUri) ? "true" : "false"}`);
+    }
     
     // Bypass encryption configuration check for mock bypass code
     const isMock = rawToken === "mock_code_123";
@@ -77,6 +100,8 @@ router.get(
 
     if (provider.id === "ZERODHA") {
       console.log("Zerodha session generation started");
+    } else if (provider.id === "UPSTOX") {
+      console.log("[UPSTOX] Token exchange started");
     }
 
     let tokenResult;
@@ -84,12 +109,25 @@ router.get(
       tokenResult = await provider.exchangeCode(rawToken);
       if (provider.id === "ZERODHA") {
         console.log("Zerodha session generation succeeded");
+      } else if (provider.id === "UPSTOX") {
+        console.log("[UPSTOX] Token exchange successful");
       }
-    } catch (err) {
+    } catch (err: any) {
       if (provider.id === "ZERODHA") {
         console.log("Zerodha session generation failed");
+        throw err;
+      } else if (provider.id === "UPSTOX") {
+        const status = err.response?.status || 500;
+        const data = err.response?.data;
+        console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
+        throw new ApiError(
+          status >= 400 && status < 500 ? 400 : 502,
+          `Upstox token exchange failed: ${data?.errors?.[0]?.message || data?.error_description || err.message}`,
+          "UPSTOX_TOKEN_EXCHANGE_FAILED"
+        );
+      } else {
+        throw err;
       }
-      throw err;
     }
 
     await prisma.brokerConnection.upsert({
@@ -117,6 +155,8 @@ router.get(
 
     if (provider.id === "ZERODHA") {
       console.log("Zerodha connection saved");
+    } else if (provider.id === "UPSTOX") {
+      console.log("[UPSTOX] Broker connection saved");
     }
 
     await audit(req, "broker.connected", { userId, meta: { broker: provider.id } });
