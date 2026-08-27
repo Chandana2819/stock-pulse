@@ -103,16 +103,7 @@ app.use("/api/signals", signalsRouter);
 // already covered above) — new frontend code should prefer /api/stocks/:symbol.
 app.use("/api", legacyAnalyzeRouter);
 
-app.get("/api/health", (_req, res) => res.json({
-  status: "ok",
-  uptime: process.uptime(),
-  timestamp: new Date().toISOString(),
-  env: {
-    ZERODHA_API_KEY: process.env.ZERODHA_API_KEY ? "present" : "missing",
-    ZERODHA_API_SECRET: process.env.ZERODHA_API_SECRET ? "present" : "missing",
-    ZERODHA_REDIRECT_URL: process.env.ZERODHA_REDIRECT_URL ? "present" : "missing",
-  }
-}));
+app.get("/api/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() }));
 
 app.use(notFoundHandler);
 app.use(errorHandler);
