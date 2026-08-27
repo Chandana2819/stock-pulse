@@ -112,6 +112,46 @@ export class ZerodhaKiteProvider implements BrokerProvider {
       placedAt: String(r.order_timestamp ?? ""),
     }));
   }
+
+  async getPositions(accessToken: string): Promise<any[]> {
+    if (accessToken === "mock_access_token_123") {
+      return [
+        {
+          symbol: "TCS.NS",
+          quantity: 10,
+          avgPrice: 3120.5,
+          lastPrice: 3215.2,
+          pnl: 947,
+          productType: "CNC",
+          exchange: "NSE",
+        },
+        {
+          symbol: "INFY.NS",
+          quantity: 20,
+          avgPrice: 1390.0,
+          lastPrice: 1410.5,
+          pnl: 410,
+          productType: "CNC",
+          exchange: "NSE",
+        }
+      ];
+    }
+
+    const res = await axios.get("https://api.kite.trade/portfolio/positions", {
+      headers: this.headers(accessToken),
+      timeout: 12000,
+    });
+    const netPositions: Array<Record<string, any>> = res.data?.data?.net ?? [];
+    return netPositions.map((p) => ({
+      symbol: String(p.tradingsymbol ?? ""),
+      quantity: Number(p.quantity ?? 0),
+      avgPrice: Number(p.average_price ?? 0),
+      lastPrice: Number(p.last_price ?? 0),
+      pnl: Number(p.pnl ?? 0),
+      productType: String(p.product ?? ""),
+      exchange: String(p.exchange ?? ""),
+    }));
+  }
 }
 
 export class UpstoxProvider implements BrokerProvider {

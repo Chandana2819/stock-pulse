@@ -294,6 +294,7 @@ model Holding {
   quantity   Float
   currency   String
   source     String   @default("SIMULATED") // SIMULATED | BROKER | MANUAL
+  broker     String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

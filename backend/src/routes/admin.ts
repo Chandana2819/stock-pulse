@@ -38,6 +38,26 @@ router.get(
     const activeAlerts = await prisma.alert.count({ where: { active: true } });
     const communityPosts = await prisma.communityPost.count();
 
+    // Zerodha Kite integration stats
+    const zerodhaTotalConnected = await prisma.brokerConnection.count({
+      where: { broker: "ZERODHA" }
+    });
+    const zerodhaActiveConnections = await prisma.brokerConnection.count({
+      where: { broker: "ZERODHA", status: "CONNECTED" }
+    });
+    const zerodhaFailedConnections = await prisma.brokerConnection.count({
+      where: { broker: "ZERODHA", status: "ERROR" }
+    });
+    const zerodhaLastSyncRecord = await prisma.brokerConnection.findFirst({
+      where: { broker: "ZERODHA", lastSyncAt: { not: null } },
+      orderBy: { lastSyncAt: "desc" },
+      select: { lastSyncAt: true }
+    });
+    const zerodhaLastSyncTime = zerodhaLastSyncRecord?.lastSyncAt || null;
+    const zerodhaSyncFailures = await prisma.brokerConnection.count({
+      where: { broker: "ZERODHA", lastError: { not: null } }
+    });
+
     let dbOk = true;
     try {
       await prisma.user.count();
@@ -76,6 +96,11 @@ router.get(
         activeAlerts,
         communityPosts,
         systemHealth: dbOk ? "HEALTHY" : "ERROR",
+        zerodhaTotalConnected,
+        zerodhaActiveConnections,
+        zerodhaFailedConnections,
+        zerodhaLastSyncTime,
+        zerodhaSyncFailures,
       },
       recentUsers,
       recentKyc: recentKyc.map((k) => ({

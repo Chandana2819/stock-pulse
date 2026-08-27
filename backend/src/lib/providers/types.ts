@@ -169,6 +169,7 @@ export interface BrokerProvider {
   exchangeCode(code: string): Promise<{ accessToken: string; refreshToken?: string; externalUserId?: string; expiresAt?: Date }>;
   getHoldings(accessToken: string): Promise<BrokerHolding[]>;
   getOrders(accessToken: string): Promise<BrokerOrder[]>;
+  getPositions?(accessToken: string): Promise<any[]>;
 }
 
 // ── Payments ───────────────────────────────────────────────────────────

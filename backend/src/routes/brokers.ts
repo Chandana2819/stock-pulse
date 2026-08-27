@@ -48,15 +48,21 @@ router.get(
   asyncHandler(async (req, res) => {
     const provider = getBroker(req.params.broker);
     if (!provider) throw ApiError.notFound("Unsupported broker");
-    const { code, state } = parse({ code: v.string({ min: 1 }), state: v.optional(v.string()) }, req.query as Record<string, unknown>);
+    
+    const query = req.query as Record<string, unknown>;
+    const rawToken = query.code || query.request_token;
+    if (typeof rawToken !== "string" || !rawToken) {
+      throw ApiError.badRequest("Missing code or request_token");
+    }
+    const { state } = parse({ state: v.optional(v.string()) }, query);
     const userId = state?.split(":")[0];
     if (!userId) throw ApiError.badRequest("Missing state");
     
     // Bypass encryption configuration check for mock bypass code
-    const isMock = code === "mock_code_123";
+    const isMock = rawToken === "mock_code_123";
     if (!isMock && !isEncryptionConfigured()) throw ApiError.unavailable("ENCRYPTION_KEY is not configured — cannot safely store a broker token.");
 
-    const tokenResult = await provider.exchangeCode(code);
+    const tokenResult = await provider.exchangeCode(rawToken);
     await prisma.brokerConnection.upsert({
       where: { userId_broker: { userId, broker: provider.id } },
       update: {
@@ -106,8 +112,8 @@ router.post(
         
         await prisma.holding.upsert({
           where: { userId_stock: { userId: req.user!.id, stock: symbol } },
-          update: { quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym },
-          create: { userId: req.user!.id, stock: symbol, quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym }
+          update: { quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym, source: "CONNECTED", broker: provider.id },
+          create: { userId: req.user!.id, stock: symbol, quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym, source: "CONNECTED", broker: provider.id }
         });
 
         // Seed exact close price in StockPrice table to align portfolio P&L
@@ -141,6 +147,64 @@ router.delete(
   asyncHandler(async (req, res) => {
     await prisma.brokerConnection.deleteMany({ where: { userId: req.user!.id, broker: req.params.broker.toUpperCase() } });
     return res.json({ success: true });
+  })
+);
+
+router.get(
+  "/zerodha/login",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const provider = getBroker("ZERODHA");
+    if (!provider) throw ApiError.notFound("Zerodha provider not found");
+    const state = crypto.randomBytes(16).toString("hex");
+    
+    // Check if provider is configured
+    if (!provider.configured) {
+      return res.json({ authUrl: `http://localhost:3000/broker-login/zerodha?state=${req.user!.id}:${state}` });
+    }
+    
+    return res.json({ authUrl: provider.getAuthUrl(`${req.user!.id}:${state}`) });
+  })
+);
+
+router.get(
+  "/zerodha/holdings",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const provider = getBroker("ZERODHA");
+    if (!provider) throw ApiError.notFound("Zerodha provider not found");
+    
+    const conn = await prisma.brokerConnection.findUnique({
+      where: { userId_broker: { userId: req.user!.id, broker: "ZERODHA" } }
+    });
+    if (!conn || conn.status !== "CONNECTED" || !conn.accessTokenEnc) {
+      throw ApiError.badRequest("Zerodha is not connected");
+    }
+    
+    const accessToken = conn.accessTokenEnc.startsWith("mock_") ? conn.accessTokenEnc : decryptSecret(conn.accessTokenEnc);
+    const holdings = await provider.getHoldings(accessToken);
+    return res.json({ holdings });
+  })
+);
+
+router.get(
+  "/zerodha/positions",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const provider = getBroker("ZERODHA");
+    if (!provider) throw ApiError.notFound("Zerodha provider not found");
+    if (!provider.getPositions) throw ApiError.badRequest("Positions API not supported for Zerodha");
+    
+    const conn = await prisma.brokerConnection.findUnique({
+      where: { userId_broker: { userId: req.user!.id, broker: "ZERODHA" } }
+    });
+    if (!conn || conn.status !== "CONNECTED" || !conn.accessTokenEnc) {
+      throw ApiError.badRequest("Zerodha is not connected");
+    }
+    
+    const accessToken = conn.accessTokenEnc.startsWith("mock_") ? conn.accessTokenEnc : decryptSecret(conn.accessTokenEnc);
+    const positions = await provider.getPositions(accessToken);
+    return res.json({ positions });
   })
 );
 

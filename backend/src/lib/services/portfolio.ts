@@ -57,10 +57,10 @@ export async function executeTransaction(
       if (existing) {
         const newQty = existing.quantity + quantity;
         const newAvg = (existing.avgPrice * existing.quantity + price * quantity) / newQty;
-        await tx.holding.update({ where: { id: existing.id }, data: { quantity: newQty, avgPrice: newAvg } });
+        await tx.holding.update({ where: { id: existing.id }, data: { quantity: newQty, avgPrice: newAvg, source: "MANUAL" } });
       } else {
         await tx.holding.create({
-          data: { userId: user.id, stock, displaySym, exchange, avgPrice: price, quantity, currency },
+          data: { userId: user.id, stock, displaySym, exchange, avgPrice: price, quantity, currency, source: "MANUAL" },
         });
       }
     } else {
