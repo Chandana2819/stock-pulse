@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
-import { API_BASE } from "../../lib/api";
+import { API_BASE, apiFetch } from "../../lib/api";
 
 export default function BrokerLoginPage() {
   const router = useRouter();
@@ -10,6 +10,12 @@ export default function BrokerLoginPage() {
   const searchParams = useSearchParams();
   const broker = (params.broker as string || "zerodha").toLowerCase();
   const state = searchParams.get("state") || "";
+
+  // Extract all callback parameters as requested
+  const requestToken = searchParams.get("request_token") || "";
+  const action = searchParams.get("action") || "";
+  const type = searchParams.get("type") || "";
+  const status = searchParams.get("status") || "";
 
   const [userId, setUserId] = useState("AB1234");
   const [password, setPassword] = useState("password123");
@@ -19,7 +25,7 @@ export default function BrokerLoginPage() {
 
   // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
   useEffect(() => {
-    const code = searchParams.get("code") || searchParams.get("request_token");
+    const code = searchParams.get("code") || requestToken;
     if (!code) return;
 
     let active = true;
@@ -27,23 +33,12 @@ export default function BrokerLoginPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/brokers/callback/${broker.toUpperCase()}?code=${code}&state=${state}`);
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "OAuth connection failed");
-        }
+        await apiFetch(`/api/brokers/callback/${broker.toUpperCase()}?code=${code}&state=${state}`);
         
-        // Trigger holdings sync with correct device-id
-        const deviceId = localStorage.getItem("sp_device_id") || "";
-        const syncRes = await fetch(`${API_BASE}/api/brokers/${broker.toUpperCase()}/sync`, {
+        // Trigger holdings sync with Bearer token authentication
+        await apiFetch(`/api/brokers/${broker.toUpperCase()}/sync`, {
           method: "POST",
-          headers: { "x-device-id": deviceId },
         });
-
-        if (!syncRes.ok) {
-          const data = await syncRes.json();
-          throw new Error(data.error || "Broker holdings sync failed");
-        }
 
         if (active) {
           router.push("/portfolio?synced=true");
@@ -60,31 +55,20 @@ export default function BrokerLoginPage() {
     return () => {
       active = false;
     };
-  }, [searchParams, broker, state, router]);
+  }, [searchParams, broker, state, router, requestToken, action, type, status]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      // Simulate callback to backend callback route
-      const res = await fetch(`${API_BASE}/api/brokers/callback/${broker.toUpperCase()}?code=mock_code_123&state=${state}`);
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Login simulation failed");
-      }
+      // Simulate callback to backend callback route using apiFetch
+      await apiFetch(`/api/brokers/callback/${broker.toUpperCase()}?code=mock_code_123&state=${state}`);
       
-      // Trigger holdings sync with correct device-id
-      const deviceId = localStorage.getItem("sp_device_id") || "";
-      const syncRes = await fetch(`${API_BASE}/api/brokers/${broker.toUpperCase()}/sync`, {
+      // Trigger holdings sync using apiFetch
+      await apiFetch(`/api/brokers/${broker.toUpperCase()}/sync`, {
         method: "POST",
-        headers: { "x-device-id": deviceId },
       });
-
-      if (!syncRes.ok) {
-        const data = await syncRes.json();
-        throw new Error(data.error || "Simulated holdings sync failed");
-      }
 
       router.push("/portfolio?synced=true");
     } catch (err) {

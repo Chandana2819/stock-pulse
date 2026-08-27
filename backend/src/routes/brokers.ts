@@ -48,24 +48,50 @@ router.get(
 
 router.get(
   "/callback/:broker",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const provider = getBroker(req.params.broker);
     if (!provider) throw ApiError.notFound("Unsupported broker");
     
+    if (provider.id === "ZERODHA") {
+      console.log("Zerodha callback received");
+    }
+
     const query = req.query as Record<string, unknown>;
     const rawToken = query.code || query.request_token;
+    
+    if (provider.id === "ZERODHA") {
+      console.log(`request_token received: ${rawToken ? "yes" : "no"}`);
+      console.log(`StockPulse user authenticated: ${req.user ? "yes" : "no"}`);
+    }
+
     if (typeof rawToken !== "string" || !rawToken) {
       throw ApiError.badRequest("Missing code or request_token");
     }
-    const { state } = parse({ state: v.optional(v.string()) }, query);
-    const userId = state?.split(":")[0];
-    if (!userId) throw ApiError.badRequest("Missing state");
+    
+    const userId = req.user!.id;
     
     // Bypass encryption configuration check for mock bypass code
     const isMock = rawToken === "mock_code_123";
     if (!isMock && !isEncryptionConfigured()) throw ApiError.unavailable("ENCRYPTION_KEY is not configured — cannot safely store a broker token.");
 
-    const tokenResult = await provider.exchangeCode(rawToken);
+    if (provider.id === "ZERODHA") {
+      console.log("Zerodha session generation started");
+    }
+
+    let tokenResult;
+    try {
+      tokenResult = await provider.exchangeCode(rawToken);
+      if (provider.id === "ZERODHA") {
+        console.log("Zerodha session generation succeeded");
+      }
+    } catch (err) {
+      if (provider.id === "ZERODHA") {
+        console.log("Zerodha session generation failed");
+      }
+      throw err;
+    }
+
     await prisma.brokerConnection.upsert({
       where: { userId_broker: { userId, broker: provider.id } },
       update: {
@@ -88,6 +114,11 @@ router.get(
         expiresAt: tokenResult.expiresAt,
       },
     });
+
+    if (provider.id === "ZERODHA") {
+      console.log("Zerodha connection saved");
+    }
+
     await audit(req, "broker.connected", { userId, meta: { broker: provider.id } });
     return res.json({ success: true, broker: provider.id });
   })
