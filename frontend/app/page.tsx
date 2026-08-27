@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Link from "next/link";
 import ResultCard from "./components/ResultCard";
 import MarketOverview from "./components/MarketOverview";
@@ -83,8 +83,34 @@ export default function Home() {
   const currentStockRef = useRef<string>("");
 
   const [signalsSummary, setSignalsSummary] = useState<any>(null);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [marketRisk, setMarketRisk] = useState<any>(null);
   const [indices, setIndices] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (!stock.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/search?q=${stock}`);
+        if (res.ok) {
+          const json = await res.json();
+          setSuggestions(json.stocks || []);
+          setShowSuggestions(true);
+        }
+      } catch (err) {
+        console.error("Error fetching suggestions:", err);
+      }
+    }, 200);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [stock]);
 
   useEffect(() => {
     setUsername(localStorage.getItem("sp_username"));
@@ -92,12 +118,23 @@ export default function Home() {
 
   const fetchSignalsOverview = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/signals`);
+      const deviceId = localStorage.getItem("sp_device_id");
+      const token = localStorage.getItem("sp_token");
+      const headers: Record<string, string> = {};
+      if (deviceId) {
+        headers["x-device-id"] = deviceId;
+      }
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${API_BASE}/api/signals`, { headers });
       if (res.ok) {
         const json = await res.json();
+        setRecommendations(json.items || []);
         setSignalsSummary(json.summary);
       }
-      const riskRes = await fetch(`${API_BASE}/api/signals/market-risk`);
+      const riskRes = await fetch(`${API_BASE}/api/signals/market-risk`, { headers });
       if (riskRes.ok) {
         const riskJson = await riskRes.json();
         setMarketRisk(riskJson);
@@ -122,6 +159,12 @@ export default function Home() {
   // Simulated Trading State
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 1000000, usd: 10000 });
   const [holdings, setHoldings] = useState<Holding[]>([]);
+
+  // Compute portfolio-based summary counts matching stock signals page
+  const displaySummary = useMemo(() => {
+    return signalsSummary;
+  }, [signalsSummary]);
+
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
 
@@ -298,9 +341,17 @@ export default function Home() {
 
   const handleAnalyze = () => {
     if (stock.trim()) {
+      setShowSuggestions(false);
       resetAutoRefresh();
       fetchData(stock.trim());
     }
+  };
+
+  const handleSelectSuggestion = (sym: string) => {
+    setStock(sym);
+    setShowSuggestions(false);
+    resetAutoRefresh();
+    fetchData(sym);
   };
 
   const resetAutoRefresh = () => {
@@ -563,19 +614,19 @@ export default function Home() {
             <div className="flex flex-col gap-4 justify-between h-full">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-center w-full">
                 <div className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{signalsSummary?.buy || 17}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary?.buy ?? 17}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY</span>
                 </div>
                 <div className="bg-red-dim/10 border border-red-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{signalsSummary?.sell || 29}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary?.sell ?? 29}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">SELL</span>
                 </div>
                 <div className="bg-amber-dim/10 border border-amber-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{signalsSummary?.hold || 55}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{displaySummary?.hold ?? 55}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD</span>
                 </div>
                 <div className="bg-blue-dim/10 border border-blue-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{signalsSummary?.wait || 33}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary?.wait ?? 33}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT</span>
                 </div>
               </div>
@@ -602,7 +653,7 @@ export default function Home() {
         <section className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
           
           {/* Left Column: Search Terminal */}
-          <div className="xl:col-span-7 flex flex-col gap-4 border border-border-custom bg-bg-1 p-5 rounded justify-between">
+          <div className="xl:col-span-7 flex flex-col gap-4 border border-border-custom bg-bg-1 p-5 rounded justify-between min-w-0">
             <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"SEARCH TERMINAL"}</div>
             
             <div className="flex flex-col gap-5 w-full my-auto">
@@ -615,7 +666,28 @@ export default function Home() {
                     onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
                     placeholder="Search Symbol (E.g. GOOGL, TCS, AAPL)"
                     spellCheck={false}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   />
+                  
+                  {/* Dropdown Suggestions */}
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-bg-1 border border-border-custom shadow-[0_10px_30px_rgba(0,0,0,0.6)] rounded overflow-hidden z-50 backdrop-blur-xl max-h-[220px] overflow-y-auto">
+                      {suggestions.map((s) => (
+                        <div
+                          key={s.symbol}
+                          onClick={() => handleSelectSuggestion(s.symbol)}
+                          className="flex items-center justify-between p-[0.65rem_1rem] cursor-pointer hover:bg-bg-3 border-b border-border-custom/30 last:border-b-0 transition-colors"
+                        >
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="font-mono text-xs font-bold text-text-custom tracking-[0.05em] uppercase">{s.display}</span>
+                            <span className="font-mono text-[0.62rem] text-text-3 truncate max-w-[280px]">{s.name}</span>
+                          </div>
+                          <span className="font-mono text-[0.58rem] text-green-custom px-1.5 py-0.5 border border-green-custom/30 rounded bg-green-dim/10 shrink-0 uppercase">{s.exchange}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto shrink-0">
                   <button className="flex-1 sm:flex-none flex items-center justify-center gap-2 p-[0.8rem_1.4rem] bg-green-custom text-bg border-none cursor-pointer font-mono text-[0.75rem] font-bold tracking-[0.12em] uppercase transition-all duration-150 whitespace-nowrap active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-opacity-90 rounded-r sm:rounded-l-none" onClick={handleAnalyze} disabled={loading}>
@@ -674,7 +746,7 @@ export default function Home() {
           </div>
 
           {/* Right Column: Output result display */}
-          <div className="xl:col-span-5 flex flex-col justify-between">
+          <div className="xl:col-span-5 flex flex-col justify-between min-w-0">
             {loading ? (
               <div className="flex flex-col items-center justify-center p-[4rem_2rem] gap-5 border border-border-custom bg-bg-1 rounded h-full">
                 <div className="flex items-end gap-[3px] h-8">

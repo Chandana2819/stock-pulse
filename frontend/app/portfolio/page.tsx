@@ -43,6 +43,7 @@ export default function PortfolioPage() {
   const [formType, setFormType] = useState<"BUY" | "SELL">("BUY");
   const [formQty, setFormQty] = useState("");
   const [formPrice, setFormPrice] = useState("");
+  const [formIsVirtual, setFormIsVirtual] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Broker states
@@ -140,6 +141,7 @@ export default function PortfolioPage() {
           type: formType,
           quantity: parseFloat(formQty),
           price: parseFloat(formPrice),
+          isVirtual: formIsVirtual,
         }),
       });
 
@@ -153,6 +155,7 @@ export default function PortfolioPage() {
         setFormStock("");
         setFormQty("");
         setFormPrice("");
+        setFormIsVirtual(false);
         fetchData();
         // Notify TopNav
         window.dispatchEvent(new CustomEvent("wallet-update"));
@@ -573,6 +576,19 @@ export default function PortfolioPage() {
                   className="w-full bg-bg border border-border-custom rounded p-2 text-text-custom font-mono text-xs outline-none focus:border-green-custom"
                   required
                 />
+              </div>
+
+              <div className="mb-6 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="formIsVirtual"
+                  checked={formIsVirtual}
+                  onChange={(e) => setFormIsVirtual(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-border-custom bg-bg accent-green-custom cursor-pointer"
+                />
+                <label htmlFor="formIsVirtual" className="font-mono text-[0.65rem] text-text-2 cursor-pointer select-none">
+                  Virtual Portfolio (External Platform — Don't deduct from wallet)
+                </label>
               </div>
 
               <button

@@ -65,6 +65,21 @@ export default function CommunityPage() {
   const [wlDesc, setWlDesc] = useState("");
   const [wlSymbols, setWlSymbols] = useState(""); // comma separated
 
+  const [currentUser, setCurrentUser] = useState<{ id: string; role: string } | null>(null);
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
+
+  const fetchCurrentUser = async () => {
+    try {
+      const data = await api.get<{ id: string; role: string }>("/api/user");
+      setCurrentUser(data);
+    } catch (err) {
+      console.error("Failed to fetch user profile", err);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "feed") {
       fetchPosts();
@@ -200,6 +215,16 @@ export default function CommunityPage() {
       );
     } catch (err: any) {
       console.error("Like watchlist error", err);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!confirm("Are you sure you want to delete this post?")) return;
+    try {
+      await api.del(`/api/community/posts/${postId}`);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    } catch (err: any) {
+      alert(err.message || "Failed to delete post");
     }
   };
 
@@ -340,7 +365,7 @@ export default function CommunityPage() {
                     </div>
                     <hr className="border-border-custom" />
                     {/* Action buttons */}
-                    <div className="flex items-center gap-6 font-mono text-[0.68rem]">
+                    <div className="flex items-center gap-6 font-mono text-[0.68rem] w-full">
                       <button
                         onClick={() => handleLikePost(post.id)}
                         className={`flex items-center gap-1.5 cursor-pointer transition-colors ${
@@ -359,6 +384,15 @@ export default function CommunityPage() {
                         <span>💬</span>
                         <span>{post.commentCount} Comments</span>
                       </button>
+                      {(currentUser?.role === "ADMIN" || post.authorId === currentUser?.id) && (
+                        <button
+                          onClick={() => handleDeletePost(post.id)}
+                          className="flex items-center gap-1.5 cursor-pointer text-red-custom hover:text-red-custom/80 transition-colors ml-auto font-mono text-[0.62rem] border border-red-custom/30 px-2 py-0.5 rounded hover:bg-red-dim/10"
+                        >
+                          <span>🗑️</span>
+                          <span>Delete</span>
+                        </button>
+                      )}
                     </div>
 
                     {/* COMMENTS PANEL */}

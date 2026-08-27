@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import TopNav from "./TopNav";
+import { apiFetch } from "../lib/api";
 
 // Custom SVG Icons for Sidebar
 const homeIcon = (
@@ -104,7 +105,6 @@ const kycIcon = (
 
 const SIDEBAR_LINKS_1 = [
   { href: "/", label: "Dashboard", icon: homeIcon },
-  { href: "/#market-overview", label: "Market Overview", icon: chartIcon },
   { href: "/portfolio", label: "Portfolio", icon: portfolioIcon },
   { href: "/stock-signals", label: "Stock Signals", icon: signalsIcon },
   { href: "/screener", label: "Screener", icon: screenerIcon },
@@ -159,6 +159,35 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, router]);
 
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAdmin, setCheckingAdmin] = useState(true);
+
+  useEffect(() => {
+    const checkAdminRole = async () => {
+      const username = localStorage.getItem("sp_username");
+      if (!username) {
+        setIsAdmin(false);
+        setCheckingAdmin(false);
+        return;
+      }
+      try {
+        const u = await apiFetch<{ role: string }>("/api/user");
+        const adminRoles = ["SUPER_ADMIN", "ADMIN", "KYC_ADMIN", "CONTENT_ADMIN", "SUPPORT_ADMIN"];
+        setIsAdmin(adminRoles.includes(u.role));
+      } catch (err) {
+        console.error("Error checking admin role:", err);
+        setIsAdmin(false);
+      } finally {
+        setCheckingAdmin(false);
+      }
+    };
+    if (authorized) {
+      checkAdminRole();
+    } else {
+      setCheckingAdmin(false);
+    }
+  }, [pathname, authorized]);
+
   useEffect(() => {
     const saved = localStorage.getItem("sp_theme");
     if (saved === "light") {
@@ -200,6 +229,41 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (pathname === "/login") {
+    return <>{children}</>;
+  }
+  // Enforce ADMIN role check on /admin paths
+  const isAdminPath = pathname === "/admin" || pathname?.startsWith("/admin/");
+  if (isAdminPath) {
+    if (checkingAdmin) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-bg font-mono text-xs text-text-3">
+          VERIFYING SECURITY CREDENTIALS...
+        </div>
+      );
+    }
+    if (!isAdmin) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-bg font-mono p-6 text-center text-text-custom">
+          <div className="w-16 h-16 text-red-custom mb-4">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold uppercase tracking-wider text-red-custom mb-2">Access Denied</h2>
+          <p className="text-text-3 text-[0.8rem] max-w-sm mb-6 leading-relaxed">
+            Administrator credentials are required to view this area. If you believe this is an error, please log out and sign back in.
+          </p>
+          <Link
+            href="/"
+            className="px-4 py-2 border border-border-bright text-text-custom bg-bg-2 hover:border-green-custom hover:text-green-custom transition-all text-xs font-bold uppercase rounded no-underline"
+          >
+            ← Return to Dashboard
+          </Link>
+        </div>
+      );
+    }
+
+    // Render child route (handled by layout.tsx inside /admin folder)
     return <>{children}</>;
   }
 
@@ -273,6 +337,26 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               );
             })}
           </div>
+
+          {/* Admin Links */}
+          {isAdmin && (
+            <div className="flex flex-col gap-1">
+              <span className="font-mono text-[0.72rem] text-red-custom uppercase tracking-wider px-3 mb-1 block">System</span>
+              <Link
+                href="/admin"
+                className={`flex items-center gap-3.5 py-2 px-3 rounded font-mono text-[0.82rem] tracking-wider transition-all duration-150 border ${
+                  pathname === "/admin"
+                    ? "bg-red-dim/15 border-red-custom/30 text-red-custom font-bold"
+                    : "border-transparent text-text-2 hover:bg-bg-3/50 hover:text-text-custom"
+                }`}
+              >
+                <svg className="w-4 h-4 shrink-0 text-red-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>Admin Panel</span>
+              </Link>
+            </div>
+          )}
 
           {/* Upgrade Card */}
           <div className="mt-auto bg-gradient-to-b from-bg-2 to-bg-3 p-4 rounded border border-border-custom flex flex-col gap-2.5 relative overflow-hidden group">
