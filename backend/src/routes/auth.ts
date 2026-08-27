@@ -1,13 +1,16 @@
 import express from "express";
 import crypto from "crypto";
 import { prisma } from "../lib/prisma";
-import { generateSalt, hashPasswordSecure, verifyPassword, createSessionToken, generateOtp, hashOtp, generateTotpSecret, verifyTotp } from "../lib/auth";
+import { generateSalt, hashPasswordSecure, verifyPassword, createSessionToken, generateTotpSecret, verifyTotp } from "../lib/auth";
 import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v, EMAIL_RE, PHONE_RE } from "../lib/validate";
 import { authLimiter, otpLimiter } from "../middleware/rateLimit";
 import { requireAuth, requireRealSession } from "../middleware/auth";
 import { audit } from "../lib/audit";
 import { pushNotification } from "../lib/services/notifications";
+import { env } from "../config/env";
+import { EmailService } from "../services/email.service";
+import { OtpService } from "../services/otp.service";
 
 const router = express.Router();
 router.use(authLimiter);
@@ -54,17 +57,34 @@ router.post(
 
     // Reuse the anonymous device record if this browser already had one, so
     // any watchlist/holdings built up pre-signup carry over.
+    const isOwnerOrAdmin = env.adminEmails.includes(email.toLowerCase());
+    const role = isOwnerOrAdmin ? "ADMIN" : "USER";
+
     let user = await prisma.user.findUnique({ where: { deviceId } });
     if (user) {
-      user = await prisma.user.update({ where: { id: user.id }, data: { username, email, password: hashed, salt } });
+      user = await prisma.user.update({ where: { id: user.id }, data: { username, email, password: hashed, salt, role } });
     } else {
-      user = await prisma.user.create({ data: { deviceId, username, email, password: hashed, salt } });
+      user = await prisma.user.create({ data: { deviceId, username, email, password: hashed, salt, role } });
     }
     await prisma.userProfile.upsert({ where: { userId: user.id }, update: {}, create: { userId: user.id } });
 
     const token = await issueSession(user.id, req);
     await audit(req, "auth.register", { userId: user.id });
     await pushNotification({ userId: user.id, category: "SECURITY", title: "Welcome to StockPulse", body: "Your account was created successfully." });
+
+    // Generate email verification OTP and welcome messages on registration
+    try {
+      const code = await OtpService.generateOTP(email, "VERIFY_EMAIL", "EMAIL", user.id);
+      await EmailService.sendEmailVerificationOTP(email, code);
+      await EmailService.sendWelcomeEmail(email, username);
+      
+      // If Brevo key is absent, print verification code in terminal for developer fallback
+      if (!process.env.BREVO_API_KEY) {
+        console.log(`[otp] VERIFY_EMAIL code for ${email}: ${code} (dev-mode, not actually sent)`);
+      }
+    } catch (e) {
+      console.error("[Register OTP Error]", e);
+    }
 
     return res.json({ success: true, token, deviceId: user.deviceId, user: publicUser(user) });
   })
@@ -118,14 +138,21 @@ router.post(
     if (channel === "EMAIL" && !EMAIL_RE.test(target)) throw ApiError.badRequest("Invalid email address");
     if (channel === "SMS" && !PHONE_RE.test(target)) throw ApiError.badRequest("Invalid phone number");
 
-    const code = generateOtp();
-    await prisma.otpCode.create({
-      data: { target, channel, purpose, codeHash: hashOtp(code), expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
-    });
+    const code = await OtpService.generateOTP(target, purpose, channel, req.user?.id);
 
-    // No SMTP/SMS provider is wired up in this environment — logging the code
-    // server-side keeps local development usable without fabricating delivery.
-    console.log(`[otp] ${purpose} code for ${target} via ${channel}: ${code} (dev-mode, not actually sent)`);
+    // Send email via Brevo if channel is EMAIL
+    if (channel === "EMAIL") {
+      if (purpose === "RESET_PASSWORD") {
+        await EmailService.sendPasswordResetOTP(target, code);
+      } else {
+        await EmailService.sendEmailVerificationOTP(target, code);
+      }
+    }
+
+    // Dev mode fallback logging
+    if (!process.env.BREVO_API_KEY) {
+      console.log(`[otp] ${purpose} code for ${target} via ${channel}: ${code} (dev-mode, not actually sent)`);
+    }
 
     return res.json({ success: true, message: `A verification code was generated for ${target}.`, devHint: process.env.NODE_ENV !== "production" ? code : undefined });
   })
@@ -139,16 +166,7 @@ router.post(
       req.body
     );
 
-    const otp = await prisma.otpCode.findFirst({
-      where: { target, purpose, consumedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!otp || otp.attempts >= 5) throw ApiError.badRequest("Code expired or invalid — request a new one");
-    if (otp.codeHash !== hashOtp(code)) {
-      await prisma.otpCode.update({ where: { id: otp.id }, data: { attempts: { increment: 1 } } });
-      throw ApiError.badRequest("Incorrect code");
-    }
-    await prisma.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } });
+    await OtpService.verifyOTP(target, purpose, code);
 
     if (purpose === "LOGIN") {
       let user = await prisma.user.findFirst({ where: { OR: [{ email: target }, { phone: target }] } });
@@ -179,44 +197,113 @@ router.post(
   asyncHandler(async (req, res) => {
     const { email } = parse({ email: v.string({ min: 5, max: 120, lower: true, pattern: EMAIL_RE }) }, req.body);
     const user = await prisma.user.findUnique({ where: { email } });
-    // Always respond the same way to avoid confirming which emails are registered.
+    
     if (user) {
-      const code = generateOtp();
-      await prisma.otpCode.create({
-        data: { userId: user.id, target: email, channel: "EMAIL", purpose: "RESET_PASSWORD", codeHash: hashOtp(code), expiresAt: new Date(Date.now() + 15 * 60 * 1000) },
-      });
-      console.log(`[otp] password reset code for ${email}: ${code} (dev-mode, not actually sent)`);
+      try {
+        const code = await OtpService.generateOTP(email, "RESET_PASSWORD", "EMAIL", user.id);
+        await EmailService.sendPasswordResetOTP(email, code);
+
+        // Dev mode fallback logging
+        if (!process.env.BREVO_API_KEY) {
+          console.log(`[otp] RESET_PASSWORD code for ${email}: ${code} (dev-mode, not actually sent)`);
+        }
+      } catch (err) {
+        // Safe console-only logging
+        console.error("[ForgotPassword Error]", err);
+      }
     }
-    return res.json({ success: true, message: "If that email is registered, a reset code has been sent." });
+    
+    return res.json({ message: "If an account exists for this email, a verification code has been sent." });
+  })
+);
+
+router.post(
+  "/verify-reset-otp",
+  otpLimiter,
+  asyncHandler(async (req, res) => {
+    const { email, otp } = parse({
+      email: v.string({ min: 5, max: 120, lower: true, pattern: EMAIL_RE }),
+      otp: v.string({ min: 6, max: 6 })
+    }, req.body);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw ApiError.badRequest("Invalid or expired reset code");
+    }
+
+    // Verify OTP
+    await OtpService.verifyOTP(email, "RESET_PASSWORD", otp);
+
+    // Issue secure short-lived reset authorization token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes validity
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      }
+    });
+
+    return res.json({ resetToken });
   })
 );
 
 router.post(
   "/reset-password",
   asyncHandler(async (req, res) => {
-    const { email, code, newPassword } = parse(
-      { email: v.string({ min: 5, max: 120, lower: true, pattern: EMAIL_RE }), code: v.string({ min: 4, max: 8 }), newPassword: v.string({ min: 8, max: 128 }) },
-      req.body
-    );
-    const otp = await prisma.otpCode.findFirst({
-      where: { target: email, purpose: "RESET_PASSWORD", consumedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: "desc" },
+    const { resetToken, newPassword } = parse({
+      resetToken: v.string({ min: 10 }),
+      newPassword: v.string({ min: 8, max: 128 })
+    }, req.body);
+
+    const tokenHash = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const tokenRecord = await prisma.passwordResetToken.findFirst({
+      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
+      include: { user: true }
     });
-    if (!otp || otp.codeHash !== hashOtp(code)) throw ApiError.badRequest("Invalid or expired reset code");
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) throw ApiError.badRequest("Invalid or expired reset code");
+    if (!tokenRecord || !tokenRecord.user) {
+      throw ApiError.badRequest("Invalid or expired reset token");
+    }
 
+    const user = tokenRecord.user;
     const salt = generateSalt();
+
     await prisma.$transaction([
       prisma.user.update({ where: { id: user.id }, data: { password: hashPasswordSecure(newPassword, salt), salt } }),
-      prisma.otpCode.update({ where: { id: otp.id }, data: { consumedAt: new Date() } }),
+      prisma.passwordResetToken.update({ where: { id: tokenRecord.id }, data: { usedAt: new Date() } }),
       prisma.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } }),
     ]);
+
     await audit(req, "auth.password_reset", { userId: user.id });
     await pushNotification({ userId: user.id, category: "SECURITY", priority: "HIGH", title: "Password changed", body: "Your password was reset. All other sessions were signed out." });
+    
+    // Security alert email
+    await EmailService.sendSecurityAlert(user.email || "", "Password Changed", "Your StockPulse password was successfully updated recently.");
 
     return res.json({ success: true });
+  })
+);
+
+router.post(
+  "/verify-email",
+  asyncHandler(async (req, res) => {
+    const { email, otp } = parse({
+      email: v.string({ min: 5, max: 120, lower: true, pattern: EMAIL_RE }),
+      otp: v.string({ min: 6, max: 6 })
+    }, req.body);
+
+    await OtpService.verifyOTP(email, "VERIFY_EMAIL", otp);
+
+    await prisma.user.update({
+      where: { email },
+      data: { emailVerified: true },
+    });
+
+    return res.json({ success: true, verified: true });
   })
 );
 

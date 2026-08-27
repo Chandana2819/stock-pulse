@@ -25,7 +25,8 @@ export async function executeTransaction(
   stockSymbol: string,
   type: "BUY" | "SELL",
   quantity: number,
-  price: number
+  price: number,
+  isVirtual = false
 ) {
   const stock = stockSymbol.toUpperCase();
   const isGlobal = !stock.endsWith(".NS") && !stock.endsWith(".BO");
@@ -42,12 +43,14 @@ export async function executeTransaction(
     if (!user) throw ApiError.notFound("User session not found");
 
     if (type === "BUY") {
-      if (currency === "INR") {
-        if (user.walletInr < totalCost) throw ApiError.badRequest("Insufficient INR funds");
-        await tx.user.update({ where: { id: user.id }, data: { walletInr: user.walletInr - totalCost } });
-      } else {
-        if (user.walletUsd < totalCost) throw ApiError.badRequest("Insufficient USD funds");
-        await tx.user.update({ where: { id: user.id }, data: { walletUsd: user.walletUsd - totalCost } });
+      if (!isVirtual) {
+        if (currency === "INR") {
+          if (user.walletInr < totalCost) throw ApiError.badRequest("Insufficient INR funds");
+          await tx.user.update({ where: { id: user.id }, data: { walletInr: user.walletInr - totalCost } });
+        } else {
+          if (user.walletUsd < totalCost) throw ApiError.badRequest("Insufficient USD funds");
+          await tx.user.update({ where: { id: user.id }, data: { walletUsd: user.walletUsd - totalCost } });
+        }
       }
 
       const existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
@@ -64,10 +67,12 @@ export async function executeTransaction(
       const existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
       if (!existing || existing.quantity < quantity) throw ApiError.badRequest("Insufficient stock shares to execute sell");
 
-      if (currency === "INR") {
-        await tx.user.update({ where: { id: user.id }, data: { walletInr: user.walletInr + totalCost } });
-      } else {
-        await tx.user.update({ where: { id: user.id }, data: { walletUsd: user.walletUsd + totalCost } });
+      if (!isVirtual) {
+        if (currency === "INR") {
+          await tx.user.update({ where: { id: user.id }, data: { walletInr: user.walletInr + totalCost } });
+        } else {
+          await tx.user.update({ where: { id: user.id }, data: { walletUsd: user.walletUsd + totalCost } });
+        }
       }
 
       if (existing.quantity === quantity) {

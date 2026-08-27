@@ -140,6 +140,33 @@ router.post(
   })
 );
 
+// Delete a post (allowed for post author or admin)
+router.delete(
+  "/posts/:id",
+  asyncHandler(async (req, res) => {
+    const postId = req.params.id;
+    const userId = req.user!.id;
+    const role = req.user!.role;
+
+    const post = await prisma.communityPost.findUnique({ where: { id: postId } });
+    if (!post) throw ApiError.notFound("Post not found");
+
+    if (post.userId !== userId && role !== "ADMIN") {
+      throw ApiError.forbidden("You do not have permission to delete this post");
+    }
+
+    await prisma.communityPost.delete({ where: { id: postId } });
+
+    await audit(req, "COMMUNITY_POST_DELETE", {
+      userId,
+      entity: "CommunityPost",
+      entityId: postId,
+    });
+
+    return res.json({ success: true, message: "Post deleted successfully" });
+  })
+);
+
 // ─── COMMENTS ───
 
 // Get comments for a post

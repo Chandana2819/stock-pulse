@@ -21,13 +21,19 @@ router.get(
 router.post(
   "/",
   asyncHandler(async (req, res) => {
-    const { stock, type, quantity, price } = parse(
-      { stock: v.string({ min: 1, max: 24, pattern: SYMBOL_RE }), type: v.enumOf(["BUY", "SELL"] as const), quantity: v.number({ min: 0.0001 }), price: v.number({ min: 0.01 }) },
+    const { stock, type, quantity, price, isVirtual } = parse(
+      { 
+        stock: v.string({ min: 1, max: 24, pattern: SYMBOL_RE }), 
+        type: v.enumOf(["BUY", "SELL"] as const), 
+        quantity: v.number({ min: 0.0001 }), 
+        price: v.number({ min: 0.01 }),
+        isVirtual: v.optional(v.boolean())
+      },
       req.body
     );
 
-    const transaction = await executeTransaction(req.user!.id, stock, type, quantity, price);
-    await audit(req, "portfolio.transaction", { entity: "Transaction", entityId: transaction.id, meta: { stock, type, quantity, price } });
+    const transaction = await executeTransaction(req.user!.id, stock, type, quantity, price, !!isVirtual);
+    await audit(req, "portfolio.transaction", { entity: "Transaction", entityId: transaction.id, meta: { stock, type, quantity, price, isVirtual: !!isVirtual } });
     await pushNotification({
       userId: req.user!.id,
       category: "ORDER",

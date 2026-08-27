@@ -96,9 +96,11 @@ export function requireRealSession(req: Request, _res: Response, next: NextFunct
   next();
 }
 
+import { ROLE_PERMISSIONS } from "./rbac";
+
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(ApiError.unauthorized());
-  if (req.user.role !== "ADMIN") return next(ApiError.forbidden("Administrator access required"));
+  if (!ROLE_PERMISSIONS[req.user.role]) return next(ApiError.forbidden("Administrator access required"));
   next();
 }
 

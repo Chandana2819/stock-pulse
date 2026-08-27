@@ -79,9 +79,26 @@ router.get(
 
     // Calculate signals overview counts
     const buyCount = recommendations.filter((r: any) => r.action.includes("BUY")).length;
-    const sellCount = recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
-    const holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
-    const waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
+    
+    let sellCount = 0;
+    let holdCount = 0;
+    let waitCount = 0;
+
+    if (req.user) {
+      const userHoldings = await prisma.holding.findMany({
+        where: { userId: req.user.id }
+      });
+      const heldSymbols = new Set(userHoldings.map((h: any) => h.stock.toUpperCase().trim()));
+      
+      const portfolioRecs = recommendations.filter((r: any) => heldSymbols.has(r.symbol.toUpperCase().trim()));
+      sellCount = portfolioRecs.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
+      holdCount = portfolioRecs.filter((r: any) => r.action === "HOLD").length;
+      waitCount = portfolioRecs.filter((r: any) => r.action === "WAIT").length;
+    } else {
+      sellCount = recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
+      holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
+      waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
+    }
 
     return res.json({
       summary: {
