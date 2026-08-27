@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiRequestError, API_BASE } from "../lib/api";
+import { api, ApiRequestError, API_BASE, apiFetch } from "../lib/api";
 
 type SignalItem = {
   id: string;
@@ -112,16 +112,12 @@ export default function StockSignalsPage() {
       setRiskData(risk);
 
       // Fetch user holdings to filter SELL, HOLD, and WAIT signals
-      const deviceId = localStorage.getItem("sp_device_id");
-      if (deviceId) {
-        const holdRes = await fetch(`${API_BASE}/api/portfolio`, {
-          headers: { "x-device-id": deviceId },
-        });
-        if (holdRes.ok) {
-          const holdData = await holdRes.json();
-          const symbols = (holdData.holdings || []).map((h: any) => h.stock.toUpperCase().trim());
-          setHoldingStocks(symbols);
-        }
+      try {
+        const holdData = await apiFetch<{ holdings: any[] }>("/api/portfolio");
+        const symbols = (holdData.holdings || []).map((h: any) => h.stock.toUpperCase().trim());
+        setHoldingStocks(symbols);
+      } catch (err) {
+        console.error("Failed to load portfolio holdings for AI signals:", err);
       }
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Failed to retrieve stock signals");

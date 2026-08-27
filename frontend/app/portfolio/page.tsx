@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
 import PortfolioDoctor from "../components/PortfolioDoctor";
-import { API_BASE } from "../lib/api";
+import { API_BASE, apiFetch } from "../lib/api";
 
 type Holding = {
   id: string;
@@ -37,6 +37,7 @@ export default function PortfolioPage() {
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 0, usd: 0 });
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [aiSignals, setAiSignals] = useState<any[]>([]);
 
   // Transaction form states
   const [formStock, setFormStock] = useState("");
@@ -62,36 +63,34 @@ export default function PortfolioPage() {
   }, []);
 
   const fetchData = useCallback(async () => {
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
     setLoading(true);
     try {
       // 1. Fetch Holdings & Wallet
-      const holdRes = await fetch(`${API_BASE}/api/portfolio`, {
-        headers: { "x-device-id": deviceId },
-      });
-      if (holdRes.ok) {
-        const holdData = await holdRes.json();
-        setHoldings(holdData.holdings || []);
-        setWallet(holdData.user || { inr: 0, usd: 0 });
+      const holdData = await apiFetch<{ holdings: Holding[]; user?: { walletInr: number; walletUsd: number } }>("/api/portfolio");
+      setHoldings(holdData.holdings || []);
+      if (holdData.user) {
+        setWallet({
+          inr: holdData.user.walletInr,
+          usd: holdData.user.walletUsd,
+        });
+      } else {
+        setWallet({ inr: 0, usd: 0 });
       }
 
       // 2. Fetch Transactions
-      const txRes = await fetch(`${API_BASE}/api/transactions`, {
-        headers: { "x-device-id": deviceId },
-      });
-      if (txRes.ok) {
-        const txData = await txRes.json();
-        setTransactions(Array.isArray(txData) ? txData : txData?.items ?? []);
-      }
+      const txData = await apiFetch<any>("/api/transactions");
+      setTransactions(Array.isArray(txData) ? txData : txData?.items ?? []);
 
       // 3. Fetch Broker Connections
-      const brokerRes = await fetch(`${API_BASE}/api/brokers`, {
-        headers: { "x-device-id": deviceId },
-      });
-      if (brokerRes.ok) {
-        const brokerData = await brokerRes.json();
-        setBrokerConnections(brokerData.connections || []);
+      const brokerData = await apiFetch<{ connections: any[] }>("/api/brokers");
+      setBrokerConnections(brokerData.connections || []);
+
+      // 4. Fetch AI Signals
+      try {
+        const signalsData = await apiFetch<{ items: any[] }>("/api/signals");
+        setAiSignals(signalsData.items || []);
+      } catch (err) {
+        console.error("Failed to load AI signals for portfolio:", err);
       }
     } catch (e) {
       console.error("Failed to load portfolio statistics:", e);
@@ -109,25 +108,19 @@ export default function PortfolioPage() {
   const handleDeletePosition = async (stock: string) => {
     if (!confirm(`Are you sure you want to force-delete the position in ${stock}? This will wipe out the holding record.`)) return;
 
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
-
     try {
-      const res = await fetch(`${API_BASE}/api/portfolio?stock=${stock}`, {
+      await apiFetch(`/api/portfolio?stock=${stock}`, {
         method: "DELETE",
-        headers: { "x-device-id": deviceId },
       });
-
-      if (res.ok) {
-        addToast({ type: "success", title: "Position Deleted", message: `Successfully wiped ${stock} holding.` });
-        fetchData();
-        window.dispatchEvent(new CustomEvent("wallet-update"));
-      } else {
-        const err = await res.json();
-        addToast({ type: "danger", title: "Deletion Failed", message: err.error || "Wipe failed." });
-      }
-    } catch {
-      addToast({ type: "danger", title: "Error", message: "Network error wiping position." });
+      addToast({ type: "success", title: "Position Deleted", message: `Successfully wiped ${stock} holding.` });
+      fetchData();
+      window.dispatchEvent(new CustomEvent("wallet-update"));
+    } catch (err) {
+      addToast({
+        type: "danger",
+        title: "Deletion Failed",
+        message: err instanceof Error ? err.message : "Wipe failed.",
+      });
     }
   };
 
@@ -136,17 +129,10 @@ export default function PortfolioPage() {
     e.preventDefault();
     if (!formStock.trim() || !formQty || !formPrice) return;
 
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
-
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/transactions`, {
+      await apiFetch("/api/transactions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-device-id": deviceId,
-        },
         body: JSON.stringify({
           stock: formStock.toUpperCase().trim(),
           type: formType,
@@ -156,25 +142,24 @@ export default function PortfolioPage() {
         }),
       });
 
-      const data = await res.json();
-      if (res.ok) {
-        addToast({
-          type: formType === "BUY" ? "success" : "info",
-          title: "Transaction Logged",
-          message: `${formType} ${formQty} shares of ${formStock.toUpperCase()} recorded.`,
-        });
-        setFormStock("");
-        setFormQty("");
-        setFormPrice("");
-        setFormIsVirtual(false);
-        fetchData();
-        // Notify TopNav
-        window.dispatchEvent(new CustomEvent("wallet-update"));
-      } else {
-        addToast({ type: "danger", title: "Failed", message: data.error || "Transaction invalid." });
-      }
-    } catch {
-      addToast({ type: "danger", title: "Error", message: "Network error recording transaction." });
+      addToast({
+        type: formType === "BUY" ? "success" : "info",
+        title: "Transaction Logged",
+        message: `${formType} ${formQty} shares of ${formStock.toUpperCase()} recorded.`,
+      });
+      setFormStock("");
+      setFormQty("");
+      setFormPrice("");
+      setFormIsVirtual(false);
+      fetchData();
+      // Notify TopNav
+      window.dispatchEvent(new CustomEvent("wallet-update"));
+    } catch (err) {
+      addToast({
+        type: "danger",
+        title: "Failed",
+        message: err instanceof Error ? err.message : "Transaction invalid.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -297,18 +282,17 @@ export default function PortfolioPage() {
         window.dispatchEvent(new CustomEvent("wallet-update"));
       } else {
         // Redirect to OAuth
-        const deviceId = localStorage.getItem("sp_device_id");
-        const res = await fetch(`${API_BASE}/api/brokers/${brokerSelect.toLowerCase()}/connect`, {
-          headers: { "x-device-id": deviceId || "" },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        try {
+          const data = await apiFetch<{ authUrl?: string }>(`/api/brokers/${brokerSelect.toLowerCase()}/connect`);
           if (data.authUrl) {
             window.location.href = data.authUrl;
           }
-        } else {
-          const data = await res.json();
-          addToast({ type: "danger", title: "Connection Failed", message: data.error || "Integration not active." });
+        } catch (err) {
+          addToast({
+            type: "danger",
+            title: "Connection Failed",
+            message: err instanceof Error ? err.message : "Integration not active.",
+          });
         }
       }
     } catch {
@@ -421,31 +405,51 @@ export default function PortfolioPage() {
                       <th className="p-4 text-right">LIVE PRICE</th>
                       <th className="p-4 text-right">TOTAL VALUE</th>
                       <th className="p-4 text-right">UNREALIZED P&amp;L</th>
+                      <th className="p-4 text-center">AI SIGNAL</th>
                       <th className="p-4 text-center">ACTIONS</th>
                     </tr>
                   </thead>
                   <tbody className="font-mono">
-                    {holdings.map((h) => (
-                      <tr key={h.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors duration-150">
-                        <td className="p-4 font-bold text-text-custom">{h.displaySym}</td>
-                        <td className="p-4 text-text-3 text-[0.7rem]">{h.exchange}</td>
-                        <td className="p-4 text-right text-text-custom">{h.quantity.toLocaleString()}</td>
-                        <td className="p-4 text-right text-text-custom">{fmt(h.avgPrice, h.currency)}</td>
-                        <td className="p-4 text-right text-cyan-custom">{fmt(h.currentPrice, h.currency)}</td>
-                        <td className="p-4 text-right text-text-custom">{fmt(h.value, h.currency)}</td>
-                        <td className={`p-4 text-right font-bold ${h.pl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
-                          {h.pl >= 0 ? "+" : ""}{h.pl.toFixed(2)} ({h.plPct >= 0 ? "+" : ""}{h.plPct.toFixed(2)}%)
-                        </td>
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => handleDeletePosition(h.stock)}
-                            className="font-mono text-[0.65rem] bg-transparent border border-red-custom text-red-custom py-1 px-2 rounded cursor-pointer transition-colors duration-150 hover:bg-red-dim hover:text-red-custom"
-                          >
-                            RESET
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {holdings.map((h) => {
+                      const sig = aiSignals.find(s => s.symbol.toUpperCase().trim() === h.stock.toUpperCase().trim());
+                      return (
+                        <tr key={h.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors duration-150">
+                          <td className="p-4 font-bold text-text-custom">{h.displaySym}</td>
+                          <td className="p-4 text-text-3 text-[0.7rem]">{h.exchange}</td>
+                          <td className="p-4 text-right text-text-custom">{h.quantity.toLocaleString()}</td>
+                          <td className="p-4 text-right text-text-custom">{fmt(h.avgPrice, h.currency)}</td>
+                          <td className="p-4 text-right text-cyan-custom">{fmt(h.currentPrice, h.currency)}</td>
+                          <td className="p-4 text-right text-text-custom">{fmt(h.value, h.currency)}</td>
+                          <td className={`p-4 text-right font-bold ${h.pl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                            {h.pl >= 0 ? "+" : ""}{h.pl.toFixed(2)} ({h.plPct >= 0 ? "+" : ""}{h.plPct.toFixed(2)}%)
+                          </td>
+                          <td className="p-4 text-center">
+                            {sig ? (
+                              <span className={`inline-block font-mono text-[0.65rem] font-bold px-2 py-0.5 border rounded uppercase ${
+                                sig.action.includes("BUY") ? "bg-green-dim/15 border-green-custom/30 text-green-custom" :
+                                (sig.action.includes("SELL") || sig.action === "REDUCE") ? "bg-red-dim/15 border-red-custom/30 text-red-custom" :
+                                sig.action === "HOLD" ? "bg-blue-custom/10 border-blue-custom/30 text-blue-custom" :
+                                "bg-amber-custom/10 border-amber-custom/30 text-amber-custom"
+                              }`}>
+                                {sig.action.includes("BUY") ? "🟢" : 
+                                 (sig.action.includes("SELL") || sig.action === "REDUCE") ? "🔴" : 
+                                 sig.action === "HOLD" ? "🟡" : "⚪"} {sig.action}
+                              </span>
+                            ) : (
+                              <span className="font-mono text-[0.65rem] text-text-4 uppercase">No Signal</span>
+                            )}
+                          </td>
+                          <td className="p-4 text-center">
+                             <button
+                              onClick={() => handleDeletePosition(h.stock)}
+                              className="font-mono text-[0.65rem] bg-transparent border border-red-custom text-red-custom py-1 px-2 rounded cursor-pointer transition-colors duration-150 hover:bg-red-dim hover:text-red-custom"
+                            >
+                              RESET
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -504,20 +508,17 @@ export default function PortfolioPage() {
                         onClick={async () => {
                           setSyncingBroker("ZERODHA");
                           try {
-                            const deviceId = localStorage.getItem("sp_device_id");
-                            const res = await fetch(`${API_BASE}/api/brokers/ZERODHA/sync`, {
+                            await apiFetch("/api/brokers/ZERODHA/sync", {
                               method: "POST",
-                              headers: { "x-device-id": deviceId || "" }
                             });
-                            if (res.ok) {
-                              addToast({ type: "success", title: "Broker Synced", message: "Successfully synced Zerodha holdings!" });
-                              fetchData();
-                            } else {
-                              const err = await res.json();
-                              addToast({ type: "danger", title: "Sync Failed", message: err.error || "Failed to sync." });
-                            }
-                          } catch {
-                            addToast({ type: "danger", title: "Error", message: "Network error during sync." });
+                            addToast({ type: "success", title: "Broker Synced", message: "Successfully synced Zerodha holdings!" });
+                            fetchData();
+                          } catch (err) {
+                            addToast({
+                              type: "danger",
+                              title: "Sync Failed",
+                              message: err instanceof Error ? err.message : "Failed to sync.",
+                            });
                           } finally {
                             setSyncingBroker(null);
                           }
@@ -531,19 +532,17 @@ export default function PortfolioPage() {
                         onClick={async () => {
                           if (!confirm("Are you sure you want to disconnect Zerodha? This will stop automatic synchronization.")) return;
                           try {
-                            const deviceId = localStorage.getItem("sp_device_id");
-                            const res = await fetch(`${API_BASE}/api/brokers/ZERODHA`, {
+                            await apiFetch("/api/brokers/ZERODHA", {
                               method: "DELETE",
-                              headers: { "x-device-id": deviceId || "" }
                             });
-                            if (res.ok) {
-                              addToast({ type: "success", title: "Disconnected", message: "Zerodha disconnected successfully." });
-                              fetchData();
-                            } else {
-                              addToast({ type: "danger", title: "Error", message: "Failed to disconnect." });
-                            }
-                          } catch {
-                            addToast({ type: "danger", title: "Error", message: "Network error during disconnect." });
+                            addToast({ type: "success", title: "Disconnected", message: "Zerodha disconnected successfully." });
+                            fetchData();
+                          } catch (err) {
+                            addToast({
+                              type: "danger",
+                              title: "Error",
+                              message: err instanceof Error ? err.message : "Failed to disconnect.",
+                            });
                           }
                         }}
                         className="flex-1 bg-transparent hover:bg-red-dim/10 border border-red-custom/40 hover:border-red-custom text-red-custom font-mono text-xs font-bold py-2.5 rounded cursor-pointer uppercase transition-colors duration-150 text-center"
