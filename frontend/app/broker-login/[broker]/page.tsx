@@ -17,11 +17,27 @@ export default function BrokerLoginPage() {
   const type = searchParams.get("type") || "";
   const status = searchParams.get("status") || "";
 
-  const [userId, setUserId] = useState("AB1234");
+  const [userId, setUserId] = useState(broker === "upstox" ? "9876543210" : "AB1234");
   const [password, setPassword] = useState("password123");
-  const [pin, setPin] = useState("123456");
+  const [pin, setPin] = useState(broker === "upstox" ? "1995" : "123456");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const fetchConfig = async () => {
+      try {
+        const data = await apiFetch<{ available: any[] }>("/api/brokers");
+        const match = data.available?.find(b => b.id.toLowerCase() === broker);
+        if (match) {
+          setConfigured(match.configured);
+        }
+      } catch (err) {
+        console.error("Failed to load broker config:", err);
+      }
+    };
+    fetchConfig();
+  }, [broker]);
 
   // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
   useEffect(() => {
@@ -77,71 +93,141 @@ export default function BrokerLoginPage() {
     }
   };
 
+  const isUpstox = broker === "upstox";
+  const brandName = isUpstox ? "UPSTOX CONNECT" : "KITE CONNECT";
+  const portalName = isUpstox ? "Upstox Login Simulation Portal" : "Demat Login Simulation Portal";
+  const userFieldLabel = isUpstox ? "Upstox User ID / Mobile" : "Kite User ID";
+  const passFieldLabel = "Password";
+  const pinFieldLabel = isUpstox ? "Year of Birth (YYYY)" : "6-Digit PIN";
+  const brandColor = isUpstox ? "#5e35b1" : "#ff5722";
+  const brandColorHover = isUpstox ? "#4527a0" : "#e64a19";
+  const noticeMsg = isUpstox 
+    ? "Notice: Developer keys not configured. Running in secure demo connection mode to Upstox API."
+    : "Notice: Developer keys not configured. Running in secure demo connection mode to Zerodha Kite API.";
+
+  if (loading && !error) {
+    return (
+      <div className="min-h-screen bg-[#111111] flex items-center justify-center p-4">
+        <div className="max-w-[420px] w-full bg-[#1b1b1b] border border-border-custom p-8 rounded text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 mx-auto mb-4" style={{ borderColor: brandColor }}></div>
+          <h2 className="font-mono text-xs text-text-custom uppercase tracking-[0.15em] mb-2">
+            CONNECTING TO {isUpstox ? "UPSTOX" : "ZERODHA KITE"}...
+          </h2>
+          <p className="font-mono text-[0.68rem] text-text-3 leading-relaxed">
+            Exchanging secure authorization credentials and synchronizing active holdings.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    const isSegmentInactive = error.includes("No segments") || error.includes("segment");
+    return (
+      <div className="min-h-screen bg-[#111111] flex items-center justify-center p-4">
+        <div className="max-w-[420px] w-full bg-[#1b1b1b] border border-border-custom shadow-2xl p-8 rounded flex flex-col gap-6">
+          <div className="text-center border-b border-border-custom pb-4">
+            <span className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider block mb-1">CONNECTION STATE</span>
+            <h2 className="font-display text-lg font-bold text-red-custom uppercase tracking-wide">
+              {isUpstox ? "UPSTOX CONNECTION ERROR" : "ZERODHA CONNECTION ERROR"}
+            </h2>
+          </div>
+
+          {isUpstox && isSegmentInactive ? (
+            <div className="p-4 border border-amber-custom bg-amber-custom/5 font-mono text-xs rounded text-text-custom leading-relaxed">
+              <div className="font-bold text-amber-custom mb-2">⚠️ INACTIVE ACCOUNT SEGMENTS</div>
+              <p className="mb-2 text-[0.75rem]">Your Upstox account appears to have no active trading segments.</p>
+              <p className="text-[0.68rem] text-text-2">
+                Please reactivate your Equity/F&O segments directly from the Upstox app or web dashboard, and then try connecting again.
+              </p>
+            </div>
+          ) : (
+            <div className="p-4 border border-red-custom bg-red-dim/10 font-mono text-xs rounded text-text-custom leading-relaxed">
+              <div className="font-bold text-red-custom mb-1">❌ ERROR DETAILS</div>
+              <p className="text-[0.72rem] text-text-2 mt-1">{error}</p>
+            </div>
+          )}
+
+          <button
+            onClick={() => router.push("/portfolio")}
+            className="w-full bg-bg-2 hover:bg-bg border border-border-custom text-text-custom font-mono text-xs py-3 rounded uppercase transition-colors duration-150 cursor-pointer"
+          >
+            ← Return to Portfolio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#111111] flex items-center justify-center p-4">
       <div className="max-w-[420px] w-full bg-[#1b1b1b] border border-border-custom shadow-2xl p-8 rounded">
         
         {/* Logo Header */}
         <div className="text-center mb-6">
-          <div className="inline-block bg-[#ff5722] text-white font-display text-xl font-bold tracking-[0.1em] px-3 py-1 mb-2">
-            KITE CONNECT
+          <div 
+            className="inline-block text-white font-display text-xl font-bold tracking-[0.1em] px-3 py-1 mb-2"
+            style={{ backgroundColor: brandColor }}
+          >
+            {brandName}
           </div>
           <h2 className="text-xs text-text-3 font-mono uppercase tracking-[0.1em]">
-            Demat Login Simulation Portal
+            {portalName}
           </h2>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 border border-red-custom bg-red-dim font-mono text-[0.68rem] text-red-custom">
-            Error: {error}
-          </div>
-        )}
-
         <form onSubmit={handleLogin} className="flex flex-col gap-4">
           <div>
-            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">Kite User ID</label>
+            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">{userFieldLabel}</label>
             <input
               type="text"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
-              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-[#ff5722]"
+              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
               required
             />
           </div>
 
           <div>
-            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">Password</label>
+            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">{passFieldLabel}</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-[#ff5722]"
+              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
               required
             />
           </div>
 
           <div>
-            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">6-Digit PIN</label>
+            <label className="block font-mono text-[0.65rem] text-text-3 mb-1 uppercase">{pinFieldLabel}</label>
             <input
               type="password"
-              maxLength={6}
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-[#ff5722]"
+              className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
               required
             />
           </div>
 
-          <div className="p-3 bg-[#ff5722]/5 border border-[#ff5722]/20 font-mono text-[0.55rem] text-[#ff5722] leading-relaxed mt-2 rounded">
-            Notice: Developer keys not configured. Running in secure demo connection mode to Zerodha Kite API.
-          </div>
+          {configured === false && (
+            <div 
+              className="p-3 font-mono text-[0.55rem] leading-relaxed mt-2 rounded border"
+              style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}33`, color: brandColor }}
+            >
+              {noticeMsg}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#ff5722] hover:bg-[#e64a19] text-white font-mono text-xs font-bold p-3 rounded mt-2 tracking-wider uppercase transition-colors duration-150"
+            className="w-full text-white font-mono text-xs font-bold p-3 rounded mt-2 tracking-wider uppercase transition-colors duration-150 cursor-pointer border-none"
+            style={{ backgroundColor: brandColor }}
+            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = brandColorHover)}
+            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = brandColor)}
           >
-            {loading ? "AUTHORIZING..." : "LOGIN & SECURE SYNC →"}
+            LOGIN & SECURE SYNC →
           </button>
         </form>
       </div>

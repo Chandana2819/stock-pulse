@@ -459,33 +459,45 @@ export default function PortfolioPage() {
 
         {/* Right Column: Record Form & Tx Feed */}
         <div className="flex flex-col gap-6">
-          {/* Link Demat Broker Form */}
-          {brokerConnections.some(c => c.broker === "ZERODHA" && c.status === "CONNECTED") ? (
-            (() => {
-              const zerodhaConn = brokerConnections.find(c => c.broker === "ZERODHA");
+          {brokerConnections.some(c => c.status === "CONNECTED") ? (
+            brokerConnections.filter(c => c.status === "CONNECTED").map((conn) => {
+              const brokerId = conn.broker;
+              const isZerodha = brokerId === "ZERODHA";
+              const title = isZerodha ? "ZERODHA KITE CONNECTION" : "UPSTOX CONNECTION";
+              const syncBtnLabel = isZerodha ? "SYNC ZERODHA" : "SYNC UPSTOX";
+              const disconnectConfirm = isZerodha 
+                ? "Are you sure you want to disconnect Zerodha? This will stop automatic synchronization."
+                : "Are you sure you want to disconnect Upstox? This will stop automatic synchronization.";
+              const syncToastSuccess = isZerodha
+                ? "Successfully synced Zerodha holdings!"
+                : "Successfully synced Upstox holdings!";
+              const disconnectToastSuccess = isZerodha
+                ? "Zerodha disconnected successfully."
+                : "Upstox disconnected successfully.";
+
               return (
-                <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
-                  <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"ZERODHA KITE CONNECTION"}</div>
+                <section key={conn.id} className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4 mb-4">
+                  <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{title}</div>
                   
                   <div className="flex flex-col gap-3">
                     <div className="flex justify-between items-center border-b border-border-custom pb-2.5">
                       <span className="font-mono text-[0.65rem] text-text-3 uppercase">Status</span>
                       <span className={`font-mono text-xs font-bold uppercase ${
-                        syncingBroker === "ZERODHA" 
+                        syncingBroker === brokerId 
                           ? "text-blue-custom animate-pulse" 
-                          : zerodhaConn.status === "CONNECTED" 
+                          : conn.status === "CONNECTED" 
                             ? "text-green-custom" 
                             : "text-red-custom"
                       }`}>
-                        {syncingBroker === "ZERODHA" ? "Syncing" : "Connected"}
+                        {syncingBroker === brokerId ? "Syncing" : "Connected"}
                       </span>
                     </div>
 
                     <div className="flex justify-between items-center border-b border-border-custom pb-2.5">
                       <span className="font-mono text-[0.65rem] text-text-3 uppercase">Last Synced</span>
                       <span className="font-mono text-xs text-text-custom">
-                        {zerodhaConn.lastSyncAt 
-                          ? new Date(zerodhaConn.lastSyncAt).toLocaleString("en-US", {
+                        {conn.lastSyncAt 
+                          ? new Date(conn.lastSyncAt).toLocaleString("en-US", {
                               day: "numeric",
                               month: "short",
                               year: "numeric",
@@ -497,21 +509,21 @@ export default function PortfolioPage() {
                       </span>
                     </div>
 
-                    {zerodhaConn.lastError && (
-                      <div className="p-2.5 bg-red-dim/15 border border-red-custom/20 rounded text-[0.62rem] text-red-custom font-mono">
-                        Error: {zerodhaConn.lastError}
+                    {conn.lastError && (
+                      <div className="p-3 border border-red-custom bg-red-dim font-mono text-[0.58rem] text-red-custom leading-relaxed">
+                        Last Error: {conn.lastError}
                       </div>
                     )}
 
                     <div className="flex gap-2 mt-2">
                       <button
                         onClick={async () => {
-                          setSyncingBroker("ZERODHA");
+                          setSyncingBroker(brokerId);
                           try {
-                            await apiFetch("/api/brokers/ZERODHA/sync", {
+                            await apiFetch(`/api/brokers/${brokerId}/sync`, {
                               method: "POST",
                             });
-                            addToast({ type: "success", title: "Broker Synced", message: "Successfully synced Zerodha holdings!" });
+                            addToast({ type: "success", title: "Broker Synced", message: syncToastSuccess });
                             fetchData();
                           } catch (err) {
                             addToast({
@@ -523,19 +535,19 @@ export default function PortfolioPage() {
                             setSyncingBroker(null);
                           }
                         }}
-                        disabled={syncingBroker === "ZERODHA"}
+                        disabled={syncingBroker === brokerId}
                         className="flex-1 bg-green-custom hover:bg-green-custom/90 text-bg font-mono text-xs font-bold py-2.5 rounded cursor-pointer uppercase transition-opacity duration-150 disabled:opacity-50 text-center border-none"
                       >
-                        {syncingBroker === "ZERODHA" ? "SYNCING..." : "SYNC ZERODHA"}
+                        {syncingBroker === brokerId ? "SYNCING..." : syncBtnLabel}
                       </button>
                       <button
                         onClick={async () => {
-                          if (!confirm("Are you sure you want to disconnect Zerodha? This will stop automatic synchronization.")) return;
+                          if (!confirm(disconnectConfirm)) return;
                           try {
-                            await apiFetch("/api/brokers/ZERODHA", {
+                            await apiFetch(`/api/brokers/${brokerId}`, {
                               method: "DELETE",
                             });
-                            addToast({ type: "success", title: "Disconnected", message: "Zerodha disconnected successfully." });
+                            addToast({ type: "success", title: "Disconnected", message: disconnectToastSuccess });
                             fetchData();
                           } catch (err) {
                             addToast({
@@ -553,7 +565,7 @@ export default function PortfolioPage() {
                   </div>
                 </section>
               );
-            })()
+            })
           ) : (
             <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-4">
               <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"LINK DEMAT / BROKER ACCOUNT"}</div>
