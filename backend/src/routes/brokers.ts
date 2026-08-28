@@ -1,5 +1,6 @@
 import express from "express";
 import crypto from "crypto";
+import axios from "axios";
 import { prisma } from "../lib/prisma";
 import { listBrokers, getBroker } from "../lib/providers";
 import { encryptSecret, decryptSecret, isEncryptionConfigured } from "../lib/crypto";
@@ -10,6 +11,46 @@ import { audit } from "../lib/audit";
 import { env } from "../config/env";
 
 const router = express.Router();
+
+router.get(
+  "/test-token-exchange",
+  asyncHandler(async (req, res) => {
+    const key = env.upstoxApiKey || "";
+    const secret = env.upstoxApiSecret || "";
+    const redirect = (req.query.redirect as string) || env.upstoxRedirectUri || "";
+
+    const body = new URLSearchParams({
+      code: "dummy_auth_code_for_testing",
+      client_id: key,
+      client_secret: secret,
+      redirect_uri: redirect,
+      grant_type: "authorization_code",
+    });
+
+    let status = 0;
+    let responseData = null;
+    let errorMsg = "";
+
+    try {
+      const apiRes = await axios.post("https://api.upstox.com/v2/login/authorization/token", body.toString(), {
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        timeout: 12000,
+      });
+      status = apiRes.status;
+      responseData = apiRes.data;
+    } catch (err: any) {
+      status = err.response?.status || 500;
+      responseData = err.response?.data;
+      errorMsg = err.message;
+    }
+
+    return res.json({
+      status,
+      responseData,
+      errorMsg
+    });
+  })
+);
 
 router.get(
   "/",
