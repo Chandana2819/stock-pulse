@@ -197,9 +197,21 @@ router.get(
         try {
           const fs = require("fs");
           const path = require("path");
+          const pAny = provider as any;
           fs.writeFileSync(
             path.join(__dirname, "../../upstox_last_error.json"),
-            JSON.stringify({ status, data, time: new Date().toISOString() }, null, 2)
+            JSON.stringify({
+              status,
+              data,
+              time: new Date().toISOString(),
+              sentParams: {
+                codeLength: rawToken?.length || 0,
+                clientIdLength: pAny.apiKey?.length || 0,
+                clientIdPreview: pAny.apiKey ? `${pAny.apiKey.slice(0, 4)}...${pAny.apiKey.slice(-4)}` : null,
+                clientSecretLength: pAny.apiSecret?.length || 0,
+                redirectUri: pAny.getRedirectUri ? pAny.getRedirectUri() : null,
+              }
+            }, null, 2)
           );
         } catch (fsErr) {
           console.error("Failed to write diagnostic file:", fsErr);
