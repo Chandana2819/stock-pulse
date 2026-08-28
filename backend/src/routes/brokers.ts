@@ -53,6 +53,24 @@ router.get(
 );
 
 router.get(
+  "/get-last-error",
+  asyncHandler(async (req, res) => {
+    try {
+      const fs = require("fs");
+      const path = require("path");
+      const filePath = path.join(__dirname, "../../upstox_last_error.json");
+      if (fs.existsSync(filePath)) {
+        const fileContent = fs.readFileSync(filePath, "utf8");
+        return res.json(JSON.parse(fileContent));
+      }
+      return res.json({ message: "No errors logged yet" });
+    } catch (err: any) {
+      return res.json({ error: err.message });
+    }
+  })
+);
+
+router.get(
   "/",
   requireAuth,
   asyncHandler(async (req, res) => {
@@ -175,6 +193,17 @@ router.get(
         const data = err.response?.data;
         console.log(`[UPSTOX] Token exchange response: ${status}`);
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
+
+        try {
+          const fs = require("fs");
+          const path = require("path");
+          fs.writeFileSync(
+            path.join(__dirname, "../../upstox_last_error.json"),
+            JSON.stringify({ status, data, time: new Date().toISOString() }, null, 2)
+          );
+        } catch (fsErr) {
+          console.error("Failed to write diagnostic file:", fsErr);
+        }
 
         const upstoxErrorCode = data?.errors?.[0]?.errorCode || data?.error_code;
         const upstoxMessage = data?.errors?.[0]?.message || data?.error_description || err.message;
