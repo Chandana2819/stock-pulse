@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { getBroker } from "../providers";
+import { getBroker, marketDataProvider } from "../providers";
 import { decryptSecret } from "../crypto";
 
 export async function syncUserBroker(userId: string, brokerId: string) {
@@ -74,25 +74,30 @@ export async function syncUserBroker(userId: string, brokerId: string) {
         }
       });
 
-      // Seed exact close price in StockPrice table to align portfolio P&L
-      let currentPrice = h.avgPrice;
-      if (symbol === "TCS.NS") currentPrice = 3310.00;
-      else if (symbol === "INFY.NS") currentPrice = 1400.00;
-      else if (symbol === "RELIANCE.NS") currentPrice = 2339.805;
+      // Seed today's close price in StockPrice table from a live quote so
+      // portfolio P&L and signals reflect the real market, not a stale value.
+      const quote = await marketDataProvider.getQuote(symbol).catch(() => null);
+      const currentPrice = quote && quote.price > 0 ? quote.price : h.avgPrice;
 
       const today = new Date();
       today.setUTCHours(0, 0, 0, 0);
       await prisma.stockPrice.upsert({
         where: { symbol_date: { symbol, date: today } },
-        update: { close: currentPrice },
+        update: {
+          open: quote?.open ?? currentPrice,
+          high: quote?.dayHigh ?? currentPrice,
+          low: quote?.dayLow ?? currentPrice,
+          close: currentPrice,
+          volume: quote?.volume ?? 1000
+        },
         create: {
           symbol,
           date: today,
-          open: currentPrice,
-          high: currentPrice,
-          low: currentPrice,
+          open: quote?.open ?? currentPrice,
+          high: quote?.dayHigh ?? currentPrice,
+          low: quote?.dayLow ?? currentPrice,
           close: currentPrice,
-          volume: 1000
+          volume: quote?.volume ?? 1000
         }
       });
     }
