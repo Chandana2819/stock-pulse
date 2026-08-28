@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiRequestError, API_BASE, apiFetch } from "../lib/api";
+import { api, ApiRequestError, apiFetch } from "../lib/api";
 
 type SignalItem = {
   id: string;
@@ -74,12 +74,16 @@ type BacktestResult = {
 };
 
 export default function StockSignalsPage() {
+  const router = useRouter();
   const [items, setItems] = useState<SignalItem[]>([]);
+  const [portfolioSignals, setPortfolioSignals] = useState<any[]>([]);
+  const [brokerConnection, setBrokerConnection] = useState<{ connected: boolean; broker: string | null; expired: boolean; lastSyncAt: string | null; lastError: string | null } | null>(null);
   const [summary, setSummary] = useState<SignalsSummary | null>(null);
   const [riskData, setRiskData] = useState<MarketRiskData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [holdingStocks, setHoldingStocks] = useState<string[]>([]);
+  const [scanning, setScanning] = useState(false);
+  const [scanTime, setScanTime] = useState<string | null>(null);
 
   // Filters state
   const [sectorFilter, setSectorFilter] = useState<string>("");
@@ -104,20 +108,22 @@ export default function StockSignalsPage() {
       if (exchangeFilter) params.set("exchange", exchangeFilter);
       params.set("sortBy", sortBy);
 
-      const res = await api.get<{ summary: SignalsSummary; items: SignalItem[] }>(`/api/signals?${params.toString()}`);
+      const res = await api.get<{
+        summary: SignalsSummary;
+        items: SignalItem[];
+        brokerConnection: any;
+        portfolioSignals: any[];
+      }>(`/api/signals?${params.toString()}`);
+      
       setItems(res.items);
       setSummary(res.summary);
+      setBrokerConnection(res.brokerConnection);
+      setPortfolioSignals(res.portfolioSignals || []);
 
       const risk = await api.get<MarketRiskData>("/api/signals/market-risk");
       setRiskData(risk);
-
-      // Fetch user holdings to filter SELL, HOLD, and WAIT signals
-      try {
-        const holdData = await apiFetch<{ holdings: any[] }>("/api/portfolio");
-        const symbols = (holdData.holdings || []).map((h: any) => h.stock.toUpperCase().trim());
-        setHoldingStocks(symbols);
-      } catch (err) {
-        console.error("Failed to load portfolio holdings for AI signals:", err);
+      if (risk?.createdAt) {
+        setScanTime(new Date(risk.createdAt).toLocaleTimeString());
       }
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Failed to retrieve stock signals");
@@ -131,12 +137,39 @@ export default function StockSignalsPage() {
   }, [loadData]);
 
   const handleRefreshScan = async () => {
+    setScanning(true);
+    setError(null);
     try {
-      await api.post("/api/signals/scan", {});
-      alert("Background scan triggered successfully! Please wait a moment and refresh.");
-      loadData();
-    } catch {
-      alert("Failed to trigger scan.");
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        summary: SignalsSummary;
+        items: SignalItem[];
+        brokerConnection: any;
+        portfolioSignals: any[];
+      }>("/api/signals/scan", {
+        queryFilters: {
+          sector: sectorFilter,
+          exchange: exchangeFilter,
+          sortBy
+        }
+      });
+
+      setItems(res.items);
+      setSummary(res.summary);
+      setBrokerConnection(res.brokerConnection);
+      setPortfolioSignals(res.portfolioSignals || []);
+
+      const risk = await api.get<MarketRiskData>("/api/signals/market-risk");
+      setRiskData(risk);
+      if (risk?.createdAt) {
+        setScanTime(new Date(risk.createdAt).toLocaleTimeString());
+      }
+      alert("Market scan and broker sync completed successfully!");
+    } catch (e) {
+      setError(e instanceof ApiRequestError ? e.message : "Failed to trigger scan.");
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -164,7 +197,6 @@ export default function StockSignalsPage() {
     );
   };
 
-  // Scroll helper
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
     if (el) {
@@ -187,20 +219,14 @@ export default function StockSignalsPage() {
 
   const riskEmoji = riskData?.classification.includes("HIGH") ? "🔴" : riskData?.classification.includes("MODERATE") ? "🟡" : "🟢";
 
-  // Segment signals by category (restricting SELL, HOLD, and WAIT to owned stocks only)
-  const buySignals = items.filter((item) => item.action.includes("BUY"));
-  const sellSignals = items.filter((item) => 
-    (item.action.includes("SELL") || item.action === "REDUCE") && 
-    holdingStocks.includes(item.symbol.toUpperCase().trim())
-  );
-  const holdSignals = items.filter((item) => 
-    item.action === "HOLD" && 
-    holdingStocks.includes(item.symbol.toUpperCase().trim())
-  );
-  const waitSignals = items.filter((item) => 
-    item.action === "WAIT" && 
-    holdingStocks.includes(item.symbol.toUpperCase().trim())
-  );
+  // Filter market list: exclude portfolio assets so they don't show up twice
+  const portfolioSymbols = new Set(portfolioSignals.map((s) => s.symbol.toUpperCase().trim()));
+  const marketItems = items.filter((item) => !portfolioSymbols.has(item.symbol.toUpperCase().trim()));
+
+  const buySignals = marketItems.filter((item) => item.action.includes("BUY"));
+  const sellSignals = marketItems.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const holdSignals = marketItems.filter((item) => item.action === "HOLD");
+  const waitSignals = marketItems.filter((item) => item.action === "WAIT");
 
   return (
     <div className="max-w-[1200px] mx-auto w-full p-4 sm:p-8 flex flex-col gap-8">
@@ -215,18 +241,140 @@ export default function StockSignalsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-right font-mono text-[0.62rem] text-text-4">
-            <div>SCAN STATUS: <span className="text-green-custom font-bold">● Data Updated</span></div>
-            <div>SCAN RUN TIME: {riskData?.createdAt ? new Date(riskData.createdAt).toLocaleTimeString() : "Pending"}</div>
+            <div>SCAN STATUS: <span className="text-green-custom font-bold">● {scanning ? "Scanning..." : "Data Updated"}</span></div>
+            <div>SCAN RUN TIME: {scanTime ?? "Pending"}</div>
           </div>
-          <button onClick={handleRefreshScan} className="font-mono text-[0.65rem] tracking-[0.12em] bg-bg-3 border border-border-bright text-text-custom px-4 py-2 hover:bg-bg-4">
-            RUN LIVE SCAN NOW
+          <button 
+            onClick={handleRefreshScan} 
+            disabled={scanning}
+            className="font-mono text-[0.65rem] tracking-[0.12em] bg-bg-3 border border-border-bright text-text-custom px-4 py-2 hover:bg-bg-4 disabled:opacity-50"
+          >
+            {scanning ? "SCANNING..." : "RUN LIVE SCAN NOW"}
           </button>
         </div>
       </div>
 
+      {/* Broker Connection Status Indicator */}
+      <div className="border border-border-custom bg-bg-1 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="font-mono text-xs text-text-3 uppercase tracking-wider">Broker Connection:</span>
+          {brokerConnection?.connected ? (
+            <span className="text-[0.68rem] font-mono font-bold text-green-custom px-2 py-0.5 border border-green-custom bg-green-dim">
+              🟢 ZERODHA CONNECTED
+            </span>
+          ) : (
+            <span className="text-[0.68rem] font-mono font-bold text-red-custom px-2 py-0.5 border border-red-custom bg-red-dim">
+              🔴 ZERODHA DISCONNECTED
+            </span>
+          )}
+        </div>
+        
+        {brokerConnection?.expired && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-red-dim border border-red-custom p-3 w-full sm:w-auto">
+            <span className="text-xs font-mono text-red-custom">
+              ⚠️ Zerodha session expired. Stale portfolio data hidden.
+            </span>
+            <button
+              onClick={() => router.push("/portfolio")}
+              className="font-mono text-[0.62rem] tracking-wider bg-red-custom text-bg font-bold px-3 py-1 hover:opacity-85 shrink-0"
+            >
+              RECONNECT ZERODHA
+            </button>
+          </div>
+        )}
+        
+        {!brokerConnection?.connected && !brokerConnection?.expired && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+            <span className="text-xs text-text-3 font-mono">
+              Connect Zerodha to personalize your portfolio signals.
+            </span>
+            <button
+              onClick={() => router.push("/portfolio")}
+              className="font-mono text-[0.62rem] tracking-wider bg-bg-3 border border-border-bright text-text-custom px-3 py-1 hover:bg-bg-4 shrink-0"
+            >
+              CONNECT BROKER
+            </button>
+          </div>
+        )}
+      </div>
+
       {error && (
         <div className="border border-red-custom bg-red-dim p-4 font-mono text-xs text-red-custom">
-          ⚠️ ERROR: {error}. Please ensure the backend server and database are running, and database schema has been pushed using `npx prisma db push`.
+          ⚠️ ERROR: {error}
+        </div>
+      )}
+
+      {/* MY PORTFOLIO SIGNALS */}
+      {brokerConnection?.connected && (
+        <div className="border border-border-bright bg-bg-1 p-6 flex flex-col gap-4">
+          <h2 className="font-display text-2xl tracking-[0.1em] text-text-custom border-b border-border-custom pb-2">
+            💼 MY PORTFOLIO SIGNALS
+          </h2>
+          {portfolioSignals.length === 0 ? (
+            <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono">
+              No holdings found. Purchase assets or verify your synced holdings.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[750px]">
+                <thead>
+                  <tr className="border-b border-border-custom text-text-3 font-mono text-[0.58rem] tracking-wider uppercase">
+                    <th className="py-3 px-2">Stock</th>
+                    <th className="py-3 px-2 text-right">Qty</th>
+                    <th className="py-3 px-2 text-right">Avg Price</th>
+                    <th className="py-3 px-2 text-right">LTP</th>
+                    <th className="py-3 px-2 text-right">P&L</th>
+                    <th className="py-3 px-2 text-center">Signal</th>
+                    <th className="py-3 px-2 text-center">Confidence</th>
+                    <th className="py-3 px-2 text-center">Risk</th>
+                    <th className="py-3 px-2 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {portfolioSignals.map((item) => {
+                    const isPlPositive = item.unrealizedPnl >= 0;
+                    const signalStyle = item.action.includes("BUY") ? "text-green-custom border-green-custom bg-green-dim" :
+                                        item.action.includes("SELL") || item.action === "REDUCE" ? "text-red-custom border-red-custom bg-red-dim" :
+                                        item.action === "HOLD" ? "text-blue-custom border-blue-custom bg-blue-dim" :
+                                        "text-amber-custom border-amber-custom bg-amber-dim";
+                    return (
+                      <tr key={item.symbol} className="border-b border-border-custom hover:bg-bg-2 text-xs transition-colors duration-100">
+                        <td className="py-3 px-2">
+                          <div className="font-bold font-display text-sm text-text-custom">{item.displaySymbol}</div>
+                          <span className="text-[0.62rem] text-text-4 font-mono">{item.exchange}</span>
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono">{item.quantity}</td>
+                        <td className="py-3 px-2 text-right font-mono">₹{item.avgPrice.toFixed(2)}</td>
+                        <td className="py-3 px-2 text-right font-mono">₹{item.currentPrice.toFixed(2)}</td>
+                        <td className={`py-3 px-2 text-right font-mono font-bold ${isPlPositive ? "text-green-custom" : "text-red-custom"}`}>
+                          {isPlPositive ? "+" : ""}₹{item.unrealizedPnl.toFixed(2)}
+                        </td>
+                        <td className="py-3 px-2 text-center">
+                          <span className={`font-mono text-[0.62rem] font-bold px-2 py-0.5 border ${signalStyle}`}>
+                            {item.action}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-center font-mono">{item.confidence}%</td>
+                        <td className={`py-3 px-2 text-center font-mono font-bold ${
+                          item.risk === "LOW" ? "text-green-custom" :
+                          item.risk === "MODERATE" ? "text-blue-custom" :
+                          item.risk === "HIGH" ? "text-amber-custom" : "text-red-custom"
+                        }`}>{item.risk}</td>
+                        <td className="py-3 px-2 text-center">
+                          <button
+                            onClick={() => router.push(`/stock/${encodeURIComponent(item.displaySymbol)}`)}
+                            className="font-mono text-[0.58rem] tracking-wider border border-border-bright text-text-custom px-2 py-1 hover:bg-bg-3"
+                          >
+                            Details
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -311,7 +459,7 @@ export default function StockSignalsPage() {
 
       {/* Global Sorters and Filters Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-custom pb-3">
-        <span className="font-mono text-[0.68rem] tracking-[0.15em] text-text-3 uppercase">UNIVERSE INTELLIGENCE REPORT</span>
+        <span className="font-mono text-[0.68rem] tracking-[0.15em] text-text-3 uppercase">🌍 BROAD MARKET WATCH SIGNALS</span>
         <div className="flex items-center gap-3 flex-wrap">
           <select
             value={sectorFilter}
@@ -448,15 +596,16 @@ export default function StockSignalsPage() {
                 onChange={(e) => setBacktestDays(Number(e.target.value))}
                 className="font-mono text-[0.62rem] bg-bg-2 border border-border-custom text-text-2 p-1.5"
               >
-                <option value={90}>90 DAYS</option>
-                <option value={180}>180 DAYS</option>
-                <option value={365}>1 YEAR</option>
+                <option value={30}>30 DAYS LOOKBACK</option>
+                <option value={90}>90 DAYS LOOKBACK</option>
+                <option value={180}>180 DAYS LOOKBACK</option>
+                <option value={365}>365 DAYS LOOKBACK</option>
               </select>
             </div>
 
             <button
               onClick={handleRunBacktest}
-              disabled={backtesting || backtestStocks.length === 0}
+              disabled={backtesting}
               className="font-mono text-[0.65rem] tracking-[0.12em] bg-green-custom border border-none text-bg font-bold px-4 py-2 hover:opacity-85 disabled:opacity-50"
             >
               {backtesting ? "SIMULATING..." : "RUN SIMULATED BACKTEST"}

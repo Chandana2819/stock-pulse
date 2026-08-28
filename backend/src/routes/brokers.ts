@@ -8,6 +8,7 @@ import { parse, v } from "../lib/validate";
 import { requireAuth } from "../middleware/auth";
 import { audit } from "../lib/audit";
 import { env } from "../config/env";
+import { syncUserBroker } from "../lib/services/brokerSync";
 
 const router = express.Router();
 
@@ -224,49 +225,15 @@ router.post(
   "/:broker/sync",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const provider = getBroker(req.params.broker);
-    if (!provider) throw ApiError.notFound("Unsupported broker");
-    const conn = await prisma.brokerConnection.findUnique({ where: { userId_broker: { userId: req.user!.id, broker: provider.id } } });
-    if (!conn || conn.status !== "CONNECTED" || !conn.accessTokenEnc) throw ApiError.badRequest("Broker is not connected");
-
     try {
-      const accessToken = conn.accessTokenEnc.startsWith("mock_") ? conn.accessTokenEnc : decryptSecret(conn.accessTokenEnc);
-      const [holdings, orders] = await Promise.all([provider.getHoldings(accessToken), provider.getOrders(accessToken)]);
-      
-      // Save synced holdings to database Holding table so they appear in Portfolio
-      for (const h of holdings) {
-        const symbol = h.symbol.toUpperCase().trim();
-        const exchange = h.exchange.toUpperCase() === "GLOBAL" ? "GLOBAL" : "NSE";
-        const currency = exchange === "GLOBAL" ? "USD" : "INR";
-        const displaySym = symbol.replace(/\.(NS|BO)$/, "");
-        
-        await prisma.holding.upsert({
-          where: { userId_stock: { userId: req.user!.id, stock: symbol } },
-          update: { quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym, source: "CONNECTED", broker: provider.id },
-          create: { userId: req.user!.id, stock: symbol, quantity: h.quantity, avgPrice: h.avgPrice, exchange, currency, displaySym, source: "CONNECTED", broker: provider.id }
-        });
-
-        // Seed exact close price in StockPrice table to align portfolio P&L
-        let currentPrice = h.avgPrice;
-        if (symbol === "TCS.NS") currentPrice = 3310.00;
-        else if (symbol === "INFY.NS") currentPrice = 1400.00;
-        else if (symbol === "RELIANCE.NS") currentPrice = 2339.805;
-
-        const today = new Date();
-        today.setUTCHours(0, 0, 0, 0);
-        await prisma.stockPrice.upsert({
-          where: { symbol_date: { symbol, date: today } },
-          update: { close: currentPrice },
-          create: { symbol, date: today, open: currentPrice, high: currentPrice, low: currentPrice, close: currentPrice, volume: 1000 }
-        });
-      }
-
-      await prisma.brokerConnection.update({ where: { id: conn.id }, data: { lastSyncAt: new Date(), lastError: null } });
-      return res.json({ holdings, orders, syncedAt: new Date().toISOString() });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Sync failed";
-      await prisma.brokerConnection.update({ where: { id: conn.id }, data: { lastError: message, status: "ERROR" } });
-      throw ApiError.unavailable(`Broker sync failed: ${message}`);
+      const result = await syncUserBroker(req.user!.id, req.params.broker);
+      return res.json({
+        holdings: result.holdings,
+        orders: result.orders,
+        syncedAt: new Date().toISOString()
+      });
+    } catch (err: any) {
+      throw ApiError.unavailable(`Broker sync failed: ${err.message || err}`);
     }
   })
 );
