@@ -231,6 +231,13 @@ export class RecommendationEngine {
       reasons.push("WAIT: Data quality checks are low. Recommendation engine requires additional data.");
     }
 
+    // Override: If technical trend is BEARISH (downtrend), we must NOT recommend BUY or STRONG BUY.
+    // We should cap the action to WAIT or HOLD to prevent catching a falling knife.
+    if ((action === "BUY" || action === "STRONG BUY") && input.indicators?.trend === "DOWNTREND") {
+      action = "WAIT";
+      warnings.push("BUY setup overridden: Technical trend is bearish (downtrend).");
+    }
+
     // 7. Calculate Entry Zone, Stop-Loss, and Target (Only for BUY/STRONG BUY)
     let entryZone: RecommendationResult["entryZone"] = null;
     let stopLoss: RecommendationResult["stopLoss"] = null;

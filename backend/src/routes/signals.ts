@@ -104,7 +104,12 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
         const recsMap = new Map<string, any>(recommendations.map(r => [r.symbol.toUpperCase().trim(), r]));
 
         for (const h of enrichedHoldings) {
-          const symbol = h.stock.toUpperCase().trim();
+          let symbol = h.stock.toUpperCase().trim();
+          if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
+            symbol = `${symbol}.NS`;
+          } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
+            symbol = `${symbol}.BO`;
+          }
           let rec = recsMap.get(symbol);
 
           if (!rec) {
@@ -217,10 +222,10 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
             dataQuality: rec.dataQuality,
             quantity: h.quantity,
             avgPrice: h.avgPrice,
-            currentPrice: h.currentPrice || h.avgPrice,
-            unrealizedPnl: h.pl || 0,
-            investedValue: h.cost || 0,
-            currentValue: h.value || 0,
+            currentPrice: h.currentPrice,
+            unrealizedPnl: h.pl,
+            investedValue: h.cost,
+            currentValue: h.value,
           });
         }
       }
@@ -244,6 +249,9 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
   }
 
+  const latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
+  const scanTime = latestRisk ? latestRisk.createdAt : new Date();
+
   return {
     summary: {
       total: recommendations.length,
@@ -255,6 +263,7 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     items,
     brokerConnection,
     portfolioSignals,
+    scanTime,
   };
 }
 

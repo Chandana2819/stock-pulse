@@ -113,18 +113,19 @@ export default function StockSignalsPage() {
         items: SignalItem[];
         brokerConnection: any;
         portfolioSignals: any[];
+        scanTime: string;
       }>(`/api/signals?${params.toString()}`);
       
       setItems(res.items);
       setSummary(res.summary);
       setBrokerConnection(res.brokerConnection);
       setPortfolioSignals(res.portfolioSignals || []);
+      if (res.scanTime) {
+        setScanTime(res.scanTime);
+      }
 
       const risk = await api.get<MarketRiskData>("/api/signals/market-risk");
       setRiskData(risk);
-      if (risk?.createdAt) {
-        setScanTime(new Date(risk.createdAt).toLocaleTimeString());
-      }
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Failed to retrieve stock signals");
     } finally {
@@ -147,6 +148,7 @@ export default function StockSignalsPage() {
         items: SignalItem[];
         brokerConnection: any;
         portfolioSignals: any[];
+        scanTime: string;
       }>("/api/signals/scan", {
         queryFilters: {
           sector: sectorFilter,
@@ -159,12 +161,12 @@ export default function StockSignalsPage() {
       setSummary(res.summary);
       setBrokerConnection(res.brokerConnection);
       setPortfolioSignals(res.portfolioSignals || []);
+      if (res.scanTime) {
+        setScanTime(res.scanTime);
+      }
 
       const risk = await api.get<MarketRiskData>("/api/signals/market-risk");
       setRiskData(risk);
-      if (risk?.createdAt) {
-        setScanTime(new Date(risk.createdAt).toLocaleTimeString());
-      }
       alert("Market scan and broker sync completed successfully!");
     } catch (e) {
       setError(e instanceof ApiRequestError ? e.message : "Failed to trigger scan.");
@@ -228,6 +230,10 @@ export default function StockSignalsPage() {
   const holdSignals = marketItems.filter((item) => item.action === "HOLD");
   const waitSignals = marketItems.filter((item) => item.action === "WAIT");
 
+  const scanDate = scanTime ? new Date(scanTime) : null;
+  const formattedScanTime = scanDate ? scanDate.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" }) + " IST" : "Pending";
+  const isStale = scanDate ? (Date.now() - scanDate.getTime() > 4 * 3600 * 1000) : false;
+
   return (
     <div className="max-w-[1200px] mx-auto w-full p-4 sm:p-8 flex flex-col gap-8">
       
@@ -241,8 +247,15 @@ export default function StockSignalsPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="text-right font-mono text-[0.62rem] text-text-4">
-            <div>SCAN STATUS: <span className="text-green-custom font-bold">● {scanning ? "Scanning..." : "Data Updated"}</span></div>
-            <div>SCAN RUN TIME: {scanTime ?? "Pending"}</div>
+            <div>
+              SCAN STATUS:{" "}
+              {isStale ? (
+                <span className="text-red-custom font-bold">● STALE DATA</span>
+              ) : (
+                <span className="text-green-custom font-bold">● {scanning ? "Scanning..." : "Data Updated"}</span>
+              )}
+            </div>
+            <div>SCAN RUN TIME: {formattedScanTime}</div>
           </div>
           <button 
             onClick={handleRefreshScan} 
@@ -332,7 +345,7 @@ export default function StockSignalsPage() {
                 </thead>
                 <tbody>
                   {portfolioSignals.map((item) => {
-                    const isPlPositive = item.unrealizedPnl >= 0;
+                    const isPlPositive = item.unrealizedPnl != null && item.unrealizedPnl >= 0;
                     const signalStyle = item.action.includes("BUY") ? "text-green-custom border-green-custom bg-green-dim" :
                                         item.action.includes("SELL") || item.action === "REDUCE" ? "text-red-custom border-red-custom bg-red-dim" :
                                         item.action === "HOLD" ? "text-blue-custom border-blue-custom bg-blue-dim" :
@@ -345,9 +358,11 @@ export default function StockSignalsPage() {
                         </td>
                         <td className="py-3 px-2 text-right font-mono">{item.quantity}</td>
                         <td className="py-3 px-2 text-right font-mono">₹{item.avgPrice.toFixed(2)}</td>
-                        <td className="py-3 px-2 text-right font-mono">₹{item.currentPrice.toFixed(2)}</td>
-                        <td className={`py-3 px-2 text-right font-mono font-bold ${isPlPositive ? "text-green-custom" : "text-red-custom"}`}>
-                          {isPlPositive ? "+" : ""}₹{item.unrealizedPnl.toFixed(2)}
+                        <td className="py-3 px-2 text-right font-mono">
+                          {item.currentPrice != null ? `₹${item.currentPrice.toFixed(2)}` : <span className="text-[0.62rem] text-text-4 italic">Live price unavailable</span>}
+                        </td>
+                        <td className={`py-3 px-2 text-right font-mono font-bold ${item.unrealizedPnl != null ? (isPlPositive ? "text-green-custom" : "text-red-custom") : "text-text-4"}`}>
+                          {item.unrealizedPnl != null ? `${isPlPositive ? "+" : ""}₹${item.unrealizedPnl.toFixed(2)}` : "-"}
                         </td>
                         <td className="py-3 px-2 text-center">
                           <span className={`font-mono text-[0.62rem] font-bold px-2 py-0.5 border ${signalStyle}`}>

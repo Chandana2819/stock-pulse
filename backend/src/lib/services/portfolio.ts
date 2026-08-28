@@ -94,7 +94,18 @@ export async function getEnrichedHoldings(userId: string) {
   const holdings = await prisma.holding.findMany({ where: { userId }, orderBy: { stock: "asc" } });
   if (holdings.length === 0) return [];
 
-  const symbols = holdings.map((h) => h.stock);
+  // Map each database symbol to its proper Yahoo Finance provider symbol based on its exchange suffix
+  const symbols = holdings.map((h) => {
+    const symbol = h.stock.toUpperCase().trim();
+    if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
+      return `${symbol}.NS`;
+    }
+    if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
+      return `${symbol}.BO`;
+    }
+    return symbol;
+  });
+
   let quotes: Record<string, { price: number } | null> = {};
   try {
     quotes = await marketDataProvider.getQuotes(symbols);
@@ -102,13 +113,14 @@ export async function getEnrichedHoldings(userId: string) {
     console.error("Failed to fetch live quotes during enrichment:", e);
   }
 
-  return holdings.map((h) => {
-    const live = quotes[h.stock];
-    const currentPrice = live?.price ?? h.avgPrice;
+  return holdings.map((h, i) => {
+    const providerSymbol = symbols[i];
+    const live = quotes[providerSymbol];
+    const currentPrice = live?.price ?? null;
     const cost = h.avgPrice * h.quantity;
-    const value = currentPrice * h.quantity;
-    const pl = value - cost;
-    const plPct = cost > 0 ? (pl / cost) * 100 : 0;
+    const value = currentPrice != null ? currentPrice * h.quantity : null;
+    const pl = currentPrice != null ? value! - cost : null;
+    const plPct = (currentPrice != null && cost > 0) ? (pl! / cost) * 100 : null;
     return { ...h, currentPrice, cost, value, pl, plPct };
   });
 }
@@ -125,7 +137,7 @@ export async function computePortfolioXirr(userId: string): Promise<number | nul
     date: t.createdAt,
     amount: t.type === "BUY" ? -t.totalCost : t.totalCost,
   }));
-  const currentValue = holdings.reduce((sum, h) => sum + h.value, 0);
+  const currentValue = holdings.reduce((sum, h) => sum + (h.value ?? 0), 0);
   if (currentValue > 0) flows.push({ date: new Date(), amount: currentValue });
 
   return xirr(flows);

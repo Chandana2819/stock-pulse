@@ -53,7 +53,7 @@ router.get(
 
     const lite: HoldingLite[] = holdings.map((h) => {
       const entry = lookupUniverse(h.stock);
-      return { stock: h.stock, displaySym: h.displaySym, currency: h.currency as "INR" | "USD", value: h.value, sectorKey: entry?.sectorKey ?? null, sector: entry?.sector ?? null };
+      return { stock: h.stock, displaySym: h.displaySym, currency: h.currency as "INR" | "USD", value: h.value ?? 0, sectorKey: entry?.sectorKey ?? null, sector: entry?.sector ?? null };
     });
 
     const health = diagnosePortfolio({
@@ -76,7 +76,7 @@ router.get(
       prisma.transaction.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: "asc" } }),
     ]);
 
-    const totalValue = holdings.reduce((s, h) => s + h.value, 0);
+    const totalValue = holdings.reduce((s, h) => s + (h.value ?? 0), 0);
     const totalCost = holdings.reduce((s, h) => s + h.cost, 0);
     const unrealizedPl = totalValue - totalCost;
 

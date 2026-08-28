@@ -310,7 +310,7 @@ export async function runMarketScan(): Promise<void> {
   const niftySymbol = "^NSEI"; 
   const sensexSymbol = "^BSESN";
   const bankNiftySymbol = "^NSEBANK";
-  const vixSymbol = "INDIAVIX.NS";
+  const vixSymbol = "^INDIAVIX";
   
   const riskQuotes = await marketDataProvider.getQuotes([niftySymbol, sensexSymbol, bankNiftySymbol, vixSymbol, "^GSPC", "^IXIC", "^DJI"]);
   

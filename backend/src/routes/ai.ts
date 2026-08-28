@@ -134,7 +134,7 @@ router.post(
         const [holdings, profile] = await Promise.all([getEnrichedHoldings(req.user.id), ensureProfile(req.user.id)]);
         const lite: HoldingLite[] = holdings.map((h) => {
           const entry = lookupUniverse(h.stock);
-          return { stock: h.stock, displaySym: h.displaySym, currency: h.currency as "INR" | "USD", value: h.value, sectorKey: entry?.sectorKey ?? null, sector: entry?.sector ?? null };
+          return { stock: h.stock, displaySym: h.displaySym, currency: h.currency as "INR" | "USD", value: h.value ?? 0, sectorKey: entry?.sectorKey ?? null, sector: entry?.sector ?? null };
         });
         const health = diagnosePortfolio({ holdings: lite, cashInr: 0, cashUsd: 0, usdToInr: USD_INR_FALLBACK, riskTolerance: profile.riskTolerance as "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE" });
         if (intent.type === "PORTFOLIO_EXPOSURE" && intent.sectorHint) {
@@ -155,11 +155,11 @@ router.post(
           break;
         }
         const holdings = await getEnrichedHoldings(req.user.id);
-        const totalPl = holdings.reduce((s, h) => s + h.pl, 0);
-        const biggest = [...holdings].sort((a, b) => Math.abs(b.pl) - Math.abs(a.pl))[0];
+        const totalPl = holdings.reduce((s, h) => s + (h.pl ?? 0), 0);
+        const biggest = [...holdings].sort((a, b) => Math.abs(b.pl ?? 0) - Math.abs(a.pl ?? 0))[0];
         answer = holdings.length === 0
           ? "You don't have any holdings yet, so there's nothing to move."
-          : `Your portfolio's unrealized P&L is currently ${totalPl >= 0 ? "+" : ""}${totalPl.toFixed(2)}. ${biggest ? `${biggest.displaySym} is the biggest single contributor at ${biggest.pl >= 0 ? "+" : ""}${biggest.pl.toFixed(2)}.` : ""} For a day-by-day cause, check the "why is this stock moving" panel on each holding.`;
+          : `Your portfolio's unrealized P&L is currently ${totalPl >= 0 ? "+" : ""}${totalPl.toFixed(2)}. ${biggest ? `${biggest.displaySym} is the biggest single contributor at ${biggest.pl != null && biggest.pl >= 0 ? "+" : ""}${(biggest.pl ?? 0).toFixed(2)}.` : ""} For a day-by-day cause, check the "why is this stock moving" panel on each holding.`;
         confidence = 65;
         break;
       }

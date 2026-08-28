@@ -82,7 +82,7 @@ router.get(
     let holdingsCount = 0;
     if (req.user) {
       const [holdings, profile] = await Promise.all([getEnrichedHoldings(req.user.id), ensureProfile(req.user.id).catch(() => null)]);
-      portfolioValue = holdings.reduce((s, h) => s + h.value, 0);
+      portfolioValue = holdings.reduce((s, h) => s + (h.value ?? 0), 0);
       holdingsCount = holdings.length;
       const nifty = indices.find((i) => i.symbol === "NIFTY 50");
       if (nifty?.pctChange != null && portfolioValue > 0) {
