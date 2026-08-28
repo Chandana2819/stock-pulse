@@ -225,10 +225,13 @@ export default function StockSignalsPage() {
   const portfolioSymbols = new Set(portfolioSignals.map((s) => s.symbol.toUpperCase().trim()));
   const marketItems = items.filter((item) => !portfolioSymbols.has(item.symbol.toUpperCase().trim()));
 
+  // buySignals are general market buy recommendations
   const buySignals = marketItems.filter((item) => item.action.includes("BUY"));
-  const sellSignals = marketItems.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
-  const holdSignals = marketItems.filter((item) => item.action === "HOLD");
-  const waitSignals = marketItems.filter((item) => item.action === "WAIT");
+
+  // sellSignals, holdSignals, waitSignals are strictly restricted to portfolio holdings
+  const sellSignals = portfolioSignals.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const holdSignals = portfolioSignals.filter((item) => item.action === "HOLD");
+  const waitSignals = portfolioSignals.filter((item) => item.action === "WAIT");
 
   const scanDate = scanTime ? new Date(scanTime) : null;
   const formattedScanTime = scanDate ? scanDate.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" }) + " IST" : "Pending";
