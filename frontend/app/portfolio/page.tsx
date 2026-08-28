@@ -232,6 +232,7 @@ export default function PortfolioPage() {
   };
 
   const handleConnectBroker = async () => {
+    if (connectingBroker) return;
     if (brokerSelect === "CSV") {
       if (!csvFile) {
         alert("Please select a CSV file to upload.");

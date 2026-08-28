@@ -75,10 +75,8 @@ export default function BrokerLoginPage() {
               errMsg = "Upstox Redirect URI mismatch. Please verify that the Redirect URI configured in the Upstox Developer App console exactly matches the URL used by StockPulse.";
             } else if (code === "UPSTOX_INVALID_AUTHORIZATION_CODE") {
               errMsg = "The authorization code from Upstox is invalid, expired, or has already been used. Please try connecting your broker again.";
-            } else if (code === "UPSTOX_TOKEN_EXCHANGE_FAILED") {
-              errMsg = "Failed to exchange authorization code for an access token. Please check your credentials and try again.";
-            } else if (code === "UPSTOX_PROVIDER_ERROR") {
-              errMsg = "An error occurred on Upstox's side during token exchange. Please try again later.";
+            } else if (code === "UPSTOX_TOKEN_EXCHANGE_FAILED" || code === "UPSTOX_PROVIDER_ERROR") {
+              errMsg = "Upstox could not complete the authentication request. Please try again. If the problem continues, Upstox may be experiencing an authentication/OTP service issue.";
             }
           }
           

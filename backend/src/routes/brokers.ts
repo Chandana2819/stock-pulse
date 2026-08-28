@@ -37,13 +37,25 @@ router.get(
       return res.json({ authUrl: `${origin}/broker-login/${req.params.broker.toLowerCase()}?state=${req.user!.id}:${state}` });
     }
 
+    if (provider.id === "UPSTOX") {
+      console.log("[UPSTOX] OAuth initialization");
+      console.log(`[UPSTOX] Client ID configured: ${Boolean(env.upstoxApiKey) ? "true" : "false"}`);
+      console.log(`[UPSTOX] Redirect URI configured: ${Boolean(env.upstoxRedirectUri) ? "true" : "false"}`);
+    }
+
     const state = crypto.randomBytes(16).toString("hex");
     await prisma.brokerConnection.upsert({
       where: { userId_broker: { userId: req.user!.id, broker: provider.id } },
       update: { status: "DISCONNECTED", lastError: null },
       create: { userId: req.user!.id, broker: provider.id, status: "DISCONNECTED" },
     });
-    return res.json({ authUrl: provider.getAuthUrl(`${req.user!.id}:${state}`) });
+
+    const authUrl = provider.getAuthUrl(`${req.user!.id}:${state}`);
+    if (provider.id === "UPSTOX") {
+      console.log("[UPSTOX] Authorization URL generated");
+      console.log("[UPSTOX] OAuth request started");
+    }
+    return res.json({ authUrl });
   })
 );
 
@@ -110,6 +122,7 @@ router.get(
       if (provider.id === "ZERODHA") {
         console.log("Zerodha session generation succeeded");
       } else if (provider.id === "UPSTOX") {
+        console.log("[UPSTOX] Token exchange response: 200");
         console.log("[UPSTOX] Token exchange successful");
       }
     } catch (err: any) {
@@ -119,6 +132,7 @@ router.get(
       } else if (provider.id === "UPSTOX") {
         const status = err.response?.status || 500;
         const data = err.response?.data;
+        console.log(`[UPSTOX] Token exchange response: ${status}`);
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
 
         const upstoxErrorCode = data?.errors?.[0]?.errorCode;
