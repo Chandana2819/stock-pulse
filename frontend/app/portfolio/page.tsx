@@ -311,7 +311,7 @@ export default function PortfolioPage() {
       .filter((h) => h.currency === curr)
       .forEach((h) => {
         totalCost += h.cost;
-        totalValue += h.value;
+        totalValue += h.value ?? 0;
       });
     const totalPL = totalValue - totalCost;
     const totalPLPct = totalCost > 0 ? (totalPL / totalCost) * 100 : 0;
@@ -421,8 +421,8 @@ export default function PortfolioPage() {
                           <td className="p-4 text-right text-text-custom">{fmt(h.avgPrice, h.currency)}</td>
                           <td className="p-4 text-right text-cyan-custom">{fmt(h.currentPrice, h.currency)}</td>
                           <td className="p-4 text-right text-text-custom">{fmt(h.value, h.currency)}</td>
-                          <td className={`p-4 text-right font-bold ${h.pl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
-                            {h.pl >= 0 ? "+" : ""}{h.pl.toFixed(2)} ({h.plPct >= 0 ? "+" : ""}{h.plPct.toFixed(2)}%)
+                          <td className={`p-4 text-right font-bold ${h.pl != null ? (h.pl >= 0 ? "text-green-custom" : "text-red-custom") : "text-text-4"}`}>
+                            {h.pl != null ? `${h.pl >= 0 ? "+" : ""}${h.pl.toFixed(2)} (${h.plPct >= 0 ? "+" : ""}${h.plPct.toFixed(2)}%)` : "—"}
                           </td>
                           <td className="p-4 text-center">
                             {sig ? (

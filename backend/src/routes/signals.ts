@@ -86,8 +86,8 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
   let portfolioSignals: any[] = [];
 
   if (userId) {
-    const conn = await prisma.brokerConnection.findFirst({
-      where: { userId }
+    const conn = await prisma.brokerConnection.findUnique({
+      where: { userId_broker: { userId, broker: "ZERODHA" } }
     });
     if (conn) {
       const isExpired = conn.expiresAt ? conn.expiresAt < new Date() : false;
@@ -351,9 +351,9 @@ router.post(
   "/scan",
   asyncHandler(async (req, res) => {
     // 1. Sync connected user broker if active
-    if (req.user) {
-      const conn = await prisma.brokerConnection.findFirst({
-        where: { userId: req.user.id }
+  if (req.user) {
+      const conn = await prisma.brokerConnection.findUnique({
+        where: { userId_broker: { userId: req.user.id, broker: "ZERODHA" } }
       });
       if (conn && conn.status === "CONNECTED") {
         try {
