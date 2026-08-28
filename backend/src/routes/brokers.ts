@@ -12,6 +12,37 @@ import { env } from "../config/env";
 const router = express.Router();
 
 router.get(
+  "/test-config",
+  asyncHandler(async (req, res) => {
+    const key = env.upstoxApiKey || "";
+    const secret = env.upstoxApiSecret || "";
+    const redirect = env.upstoxRedirectUri || "";
+
+    return res.json({
+      key: {
+        configured: Boolean(key),
+        length: key.length,
+        hasQuotes: (key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'")),
+        hasWhitespace: key.trim() !== key,
+        preview: key ? `${key.slice(0, 4)}...${key.slice(-4)}` : null,
+      },
+      secret: {
+        configured: Boolean(secret),
+        length: secret.length,
+        hasQuotes: (secret.startsWith('"') && secret.endsWith('"')) || (secret.startsWith("'") && secret.endsWith("'")),
+        hasWhitespace: secret.trim() !== secret,
+      },
+      redirect: {
+        configured: Boolean(redirect),
+        value: redirect,
+        length: redirect.length,
+        hasWhitespace: redirect.trim() !== redirect,
+      }
+    });
+  })
+);
+
+router.get(
   "/",
   requireAuth,
   asyncHandler(async (req, res) => {
