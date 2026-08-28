@@ -38,12 +38,6 @@ router.get(
       return res.json({ authUrl: `${origin}/broker-login/${req.params.broker.toLowerCase()}?state=${req.user!.id}:${state}` });
     }
 
-    if (provider.id === "UPSTOX") {
-      console.log("[UPSTOX] OAuth initialization");
-      console.log(`[UPSTOX] Client ID configured: ${Boolean(env.upstoxApiKey) ? "true" : "false"}`);
-      console.log(`[UPSTOX] Redirect URI configured: ${Boolean(env.upstoxRedirectUri) ? "true" : "false"}`);
-    }
-
     const state = crypto.randomBytes(16).toString("hex");
     await prisma.brokerConnection.upsert({
       where: { userId_broker: { userId: req.user!.id, broker: provider.id } },
@@ -52,10 +46,6 @@ router.get(
     });
 
     const authUrl = provider.getAuthUrl(`${req.user!.id}:${state}`);
-    if (provider.id === "UPSTOX") {
-      console.log("[UPSTOX] Authorization URL generated");
-      console.log("[UPSTOX] OAuth request started");
-    }
     return res.json({ authUrl });
   })
 );
@@ -67,22 +57,8 @@ router.get(
     const provider = getBroker(req.params.broker);
     if (!provider) throw ApiError.notFound("Unsupported broker");
     
-    if (provider.id === "ZERODHA") {
-      console.log("Zerodha callback received");
-    } else if (provider.id === "UPSTOX") {
-      console.log("[UPSTOX] Callback received");
-    }
-
     const query = req.query as Record<string, unknown>;
     const rawToken = query.code || query.request_token;
-    
-    if (provider.id === "ZERODHA") {
-      console.log(`request_token received: ${rawToken ? "yes" : "no"}`);
-      console.log(`StockPulse user authenticated: ${req.user ? "yes" : "no"}`);
-    } else if (provider.id === "UPSTOX") {
-      console.log(`[UPSTOX] Code present: ${rawToken ? "true" : "false"}`);
-      console.log(`[UPSTOX] State present: ${query.state ? "true" : "false"}`);
-    }
 
     if (typeof rawToken !== "string" || !rawToken) {
       throw ApiError.badRequest("Missing code or request_token");
@@ -98,66 +74,24 @@ router.get(
       }
       const stateParts = state.split(":");
       if (stateParts[0] !== userId) {
-        console.error(`[UPSTOX] State validation failed. Expected user: ${userId}, Got: ${state}`);
         throw ApiError.badRequest("State validation failed: user ID mismatch");
       }
-      console.log("[UPSTOX] State validation: success");
-      console.log(`[UPSTOX] API key configured: ${Boolean(env.upstoxApiKey) ? "true" : "false"}`);
-      console.log(`[UPSTOX] API secret configured: ${Boolean(env.upstoxApiSecret) ? "true" : "false"}`);
-      console.log(`[UPSTOX] Redirect URI configured: ${Boolean(env.upstoxRedirectUri) ? "true" : "false"}`);
     }
-    
-    // Bypass encryption configuration check for mock bypass code
-    const isMock = rawToken === "mock_code_123";
-    if (!isMock && !isEncryptionConfigured()) throw ApiError.unavailable("ENCRYPTION_KEY is not configured — cannot safely store a broker token.");
 
-    if (provider.id === "ZERODHA") {
-      console.log("Zerodha session generation started");
-    } else if (provider.id === "UPSTOX") {
-      console.log("[UPSTOX] Token exchange started");
-    }
+    // Bypass encryption configuration check for the mock bypass code — dev/test only, never in production.
+    const isMock = !env.isProd && rawToken === "mock_code_123";
+    if (!isMock && !isEncryptionConfigured()) throw ApiError.unavailable("ENCRYPTION_KEY is not configured — cannot safely store a broker token.");
 
     let tokenResult;
     try {
       tokenResult = await provider.exchangeCode(rawToken);
-      if (provider.id === "ZERODHA") {
-        console.log("Zerodha session generation succeeded");
-      } else if (provider.id === "UPSTOX") {
-        console.log("[UPSTOX] Token exchange response: 200");
-        console.log("[UPSTOX] Token exchange successful");
-      }
     } catch (err: any) {
       if (provider.id === "ZERODHA") {
-        console.log("Zerodha session generation failed");
         throw err;
       } else if (provider.id === "UPSTOX") {
         const status = err.response?.status || 500;
         const data = err.response?.data;
-        console.log(`[UPSTOX] Token exchange response: ${status}`);
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
-
-        try {
-          const fs = require("fs");
-          const path = require("path");
-          const pAny = provider as any;
-          fs.writeFileSync(
-            path.join(__dirname, "../../upstox_last_error.json"),
-            JSON.stringify({
-              status,
-              data,
-              time: new Date().toISOString(),
-              sentParams: {
-                codeLength: rawToken?.length || 0,
-                clientIdLength: pAny.apiKey?.length || 0,
-                clientIdPreview: pAny.apiKey ? `${pAny.apiKey.slice(0, 4)}...${pAny.apiKey.slice(-4)}` : null,
-                clientSecretLength: pAny.apiSecret?.length || 0,
-                redirectUri: pAny.getRedirectUri ? pAny.getRedirectUri() : null,
-              }
-            }, null, 2)
-          );
-        } catch (fsErr) {
-          console.error("Failed to write diagnostic file:", fsErr);
-        }
 
         const upstoxErrorCode = data?.errors?.[0]?.errorCode || data?.error_code;
         const upstoxMessage = data?.errors?.[0]?.message || data?.error_description || err.message;
@@ -209,12 +143,6 @@ router.get(
         expiresAt: tokenResult.expiresAt,
       },
     });
-
-    if (provider.id === "ZERODHA") {
-      console.log("Zerodha connection saved");
-    } else if (provider.id === "UPSTOX") {
-      console.log("[UPSTOX] Broker connection saved");
-    }
 
     await audit(req, "broker.connected", { userId, meta: { broker: provider.id } });
     return res.json({ success: true, broker: provider.id });

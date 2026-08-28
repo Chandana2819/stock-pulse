@@ -90,7 +90,7 @@ export async function runBacktest(options: {
             durationDays: null,
           };
         }
-      } else if (decision.action.includes("SELL") || decision.action.includes("REDUCE")) {
+      } else if (decision.action.includes("SELL")) {
         sellSignalsCount++;
         // Sell signal - Exit trade if holding
         if (activeTrade) {

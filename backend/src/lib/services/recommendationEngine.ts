@@ -2,7 +2,7 @@ import type { IndicatorSnapshot } from "../indicators";
 import type { FundamentalsData } from "../providers/types";
 import { SCORING_WEIGHTS } from "../../config/scoring";
 
-export type SignalAction = "STRONG BUY" | "BUY" | "HOLD" | "WAIT" | "REDUCE" | "SELL" | "STRONG SELL";
+export type SignalAction = "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL";
 
 export type RecommendationResult = {
   symbol: string;
@@ -30,10 +30,14 @@ export class RecommendationEngine {
     marketRiskScore: number; // 0-100
     candlesCount: number;
     newsSentimentScore: number | null; // -1 to +1
+    /** Labels of upstream data calls that threw (e.g. "fundamentals", "news", "sector") —
+     *  distinct from a provider returning a legitimate empty result. Surfaced verbatim
+     *  as warnings so a data outage is visible instead of silently degrading the score. */
+    providerErrors?: string[];
   }): RecommendationResult {
     const reasons: string[] = [];
     const warnings: string[] = [];
-    
+
     // 1. Data Quality Evaluation
     let dataQuality = 100;
     if (input.candlesCount < 30) {
@@ -49,6 +53,13 @@ export class RecommendationEngine {
     if (!input.indicators) {
       dataQuality -= 25;
     }
+    if (input.providerErrors && input.providerErrors.length > 0) {
+      dataQuality -= 10 * input.providerErrors.length;
+      for (const label of input.providerErrors) {
+        warnings.push(`Data source unavailable: ${label} could not be fetched (temporary provider error, not a lack of data).`);
+      }
+    }
+    dataQuality = Math.max(0, dataQuality);
 
     // 2. Score calculations for each pillar
     let technicalScore = 50; // default neutral
@@ -60,6 +71,7 @@ export class RecommendationEngine {
     let fundamentalsScore = 50;
     let valuationScore = 50;
     let relativeStrengthScore = 50;
+    let sentimentScore = 50;
 
     // A. Technical Trend Pillar
     if (input.indicators) {
@@ -176,6 +188,16 @@ export class RecommendationEngine {
       }
     }
 
+    // I. News Sentiment
+    if (input.newsSentimentScore != null) {
+      sentimentScore = Math.max(0, Math.min(100, 50 + input.newsSentimentScore * 50));
+      if (input.newsSentimentScore > 0.25) {
+        reasons.push("Recent news sentiment is positive.");
+      } else if (input.newsSentimentScore < -0.25) {
+        warnings.push("Recent news sentiment is negative.");
+      }
+    }
+
     // 3. Compute weighted score
     const score = Math.round(
       technicalScore * SCORING_WEIGHTS.technicalTrend +
@@ -186,7 +208,8 @@ export class RecommendationEngine {
       sectorScore * SCORING_WEIGHTS.sectorStrength +
       fundamentalsScore * SCORING_WEIGHTS.fundamentals +
       valuationScore * SCORING_WEIGHTS.valuation +
-      relativeStrengthScore * SCORING_WEIGHTS.relativeStrength
+      relativeStrengthScore * SCORING_WEIGHTS.relativeStrength +
+      sentimentScore * SCORING_WEIGHTS.newsSentiment
     );
 
     // 4. Calculate Market Condition Adjusted Confidence
@@ -210,31 +233,29 @@ export class RecommendationEngine {
     const marketTooRisky = input.marketRiskScore >= 75;
 
     if (score >= 80) {
-      action = marketTooRisky ? "WAIT" : "STRONG BUY";
-      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into WAIT.");
+      action = marketTooRisky ? "HOLD" : "STRONG BUY";
+      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into HOLD.");
     } else if (score >= 68) {
-      action = marketTooRisky ? "WAIT" : "BUY";
-      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into WAIT.");
+      action = marketTooRisky ? "HOLD" : "BUY";
+      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into HOLD.");
     } else if (score <= 25) {
       action = "STRONG SELL";
-    } else if (score <= 38) {
-      action = "SELL";
     } else if (score <= 46) {
-      action = "REDUCE";
+      action = "SELL";
     } else if (score >= 58 && score < 68) {
-      action = "WAIT";
+      action = "HOLD";
       reasons.push("Short-term momentum or volume setup is incomplete; waiting for confirmation.");
     }
 
     if (dataQuality < 60) {
-      action = "WAIT";
-      reasons.push("WAIT: Data quality checks are low. Recommendation engine requires additional data.");
+      action = "HOLD";
+      reasons.push("HOLD: Data quality checks are low. Recommendation engine requires additional data.");
     }
 
     // Override: If technical trend is BEARISH (downtrend), we must NOT recommend BUY or STRONG BUY.
-    // We should cap the action to WAIT or HOLD to prevent catching a falling knife.
+    // We should cap the action to HOLD to prevent catching a falling knife.
     if ((action === "BUY" || action === "STRONG BUY") && input.indicators?.trend === "DOWNTREND") {
-      action = "WAIT";
+      action = "HOLD";
       warnings.push("BUY setup overridden: Technical trend is bearish (downtrend).");
     }
 

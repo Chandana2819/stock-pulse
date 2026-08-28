@@ -155,7 +155,6 @@ model StockMeta {
   updatedAt  DateTime @updatedAt
 
   fundamentals Fundamentals?
-  scores       StockScore[]
 
   @@index([sector])
   @@index([exchange])
@@ -191,33 +190,6 @@ model Fundamentals {
   raw             String?
   source          String    @default("yahoo-finance")
   fetchedAt       DateTime  @default(now())
-}
-
-model MarketRiskSnapshot {
-  id             String   @id @default(uuid())
-  score          Int
-  classification String
-  factors        String // JSON
-  reasons        String // JSON
-  createdAt      DateTime @default(now())
-
-  @@index([createdAt])
-}
-
-model StockScore {
-  id          String    @id @default(uuid())
-  symbol      String
-  stock       StockMeta @relation(fields: [symbol], references: [symbol], onDelete: Cascade)
-  decision    String // BUY | HOLD | WAIT | REDUCE | AVOID | WATCH
-  confidence  Int
-  totalScore  Int
-  pillars     String // JSON
-  reasons     String // JSON string[]
-  risks       String // JSON string[]
-  wouldChange String // JSON string[]
-  createdAt   DateTime  @default(now())
-
-  @@index([symbol, createdAt])
 }
 
 model NewsArticle {
@@ -293,7 +265,7 @@ model Holding {
   avgPrice   Float
   quantity   Float
   currency   String
-  source     String   @default("SIMULATED") // SIMULATED | BROKER | MANUAL
+  source     String   @default("MANUAL") // MANUAL | CONNECTED
   broker     String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

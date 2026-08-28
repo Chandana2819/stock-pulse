@@ -13,7 +13,7 @@ import { prisma } from "../lib/prisma";
 
 const router = express.Router();
 
-async function currentMarketRiskScore(): Promise<number | null> {
+export async function currentMarketRiskScore(): Promise<number | null> {
   try {
     const resolved = CORE_INDICES.slice(0, 7).map((n) => resolveIndexSymbol(n));
     const quotes = await marketDataProvider.getQuotes(resolved.map((r) => r.providerSymbol));

@@ -29,6 +29,7 @@ export type DecisionResult = {
   reasons: string[];
   mainRisk: string;
   wouldChange: string[];
+  dataWarnings: string[];
 };
 
 export type DecisionInput = {
@@ -45,6 +46,10 @@ export type DecisionInput = {
   portfolioWeightPct: number | null; // this stock's % of the user's portfolio, if held
   riskTolerance: "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE";
   horizonYears: number;
+  /** Labels of upstream data calls that threw (e.g. "fundamentals", "news", "sector performance") —
+   *  distinct from a provider returning a legitimate empty result. Surfaced verbatim so a data
+   *  outage is visible instead of silently degrading the decision. */
+  providerErrors?: string[];
 };
 
 function clampScore(n: number) {
@@ -267,5 +272,9 @@ export function computeDecision(input: DecisionInput): DecisionResult {
   if (!input.fundamentals) wouldChange.push("Fundamentals data becoming available for this symbol");
   if (wouldChange.length === 0) wouldChange.push("A material change in any of the pillars above");
 
-  return { decision, confidence, totalScore: adjusted, pillars, reasons, mainRisk, wouldChange };
+  const dataWarnings = (input.providerErrors ?? []).map(
+    (label) => `Data source unavailable: ${label} could not be fetched (temporary provider error, not a lack of data).`
+  );
+
+  return { decision, confidence, totalScore: adjusted, pillars, reasons, mainRisk, wouldChange, dataWarnings };
 }

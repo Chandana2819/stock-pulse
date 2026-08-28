@@ -1,15 +1,41 @@
 import express from "express";
-import { analyzeLogic } from "../lib/logic";
-import { resolveStockQuote, marketDataProvider, newsProvider } from "../lib/providers";
+import { buildStockAnalysis } from "../lib/services/stockAnalysis";
+import { currentMarketRiskScore } from "./stocks";
 import { asyncHandler } from "../lib/http";
+import type { Decision } from "../lib/engine/decision";
 
 const router = express.Router();
 
+const RISK_LABEL: Record<string, string> = {
+  LOW: "Low",
+  MODERATE: "Medium",
+  HIGH: "High",
+  "VERY HIGH": "High",
+};
+
+const SIGNAL_BY_DECISION: Record<Decision, "bullish" | "bearish" | "neutral"> = {
+  BUY: "bullish",
+  WATCH: "bullish",
+  HOLD: "neutral",
+  WAIT: "neutral",
+  REDUCE: "bearish",
+  AVOID: "bearish",
+};
+
+const ALERT_BY_DECISION: Record<Decision, "danger" | "warning" | "success" | "info"> = {
+  BUY: "success",
+  WATCH: "info",
+  HOLD: "info",
+  WAIT: "warning",
+  REDUCE: "warning",
+  AVOID: "danger",
+};
+
 /**
  * Legacy /api/analyze — kept byte-compatible with the original v1 frontend
- * response shape (stock/price/candles/risk/suggestion/action/reason/news) so
- * older cached frontend bundles keep working. New frontend code calls
- * /api/stocks/:symbol, which returns the full decision-engine breakdown.
+ * response shape (stock/price/candles/risk/suggestion/action/reason/news),
+ * but now backed by the same explainable decision engine (lib/engine/decision.ts)
+ * that powers /api/stocks/:symbol, instead of the old same-day-%-change heuristic.
  */
 router.post(
   "/analyze",
@@ -18,8 +44,10 @@ router.post(
     stock = (stock ?? "").toString().toUpperCase();
     if (!stock.trim()) return res.status(400).json({ error: "Stock symbol is required" });
 
-    const { quote, resolved } = await resolveStockQuote(stock);
-    if (!quote) {
+    const marketRiskScore = await currentMarketRiskScore();
+    const analysis = await buildStockAnalysis(stock, { marketRiskScore });
+
+    if (!analysis.found) {
       return res.json({
         stock,
         price: 0,
@@ -35,9 +63,14 @@ router.post(
       });
     }
 
-    const candles = await marketDataProvider.getCandles(resolved.providerSymbol, "3M");
-    const analysis = analyzeLogic(resolved.providerSymbol, quote.price, quote.prevClose ?? undefined);
-    const news = await newsProvider.getNews(`${resolved.displaySymbol} stock`, 10).catch(() => []);
+    const { quote, candles, decision, news, resolved } = analysis;
+    const action: string = decision.validationFailed ? "WAIT" : decision.decision;
+    const signal = decision.validationFailed ? "neutral" : SIGNAL_BY_DECISION[decision.decision as Decision];
+    const alertLevel = decision.validationFailed ? "warning" : ALERT_BY_DECISION[decision.decision as Decision];
+    const suggestion = decision.validationFailed
+      ? decision.validationReason
+      : decision.reasons[0] ?? "See full analysis for details.";
+    const reason = decision.validationFailed ? decision.validationReason : decision.mainRisk;
 
     return res.json({
       stock: resolved.providerSymbol,
@@ -50,7 +83,12 @@ router.post(
       volume: quote.volume,
       avgVolume: quote.avgVolume,
       candles,
-      ...analysis,
+      risk: RISK_LABEL[decision.riskLevel] ?? decision.riskLevel,
+      suggestion,
+      action,
+      reason,
+      signal,
+      alertLevel,
       news: news.length ? news : [{ title: `No major news for ${stock}`, link: "#", pubDate: "", source: "" }],
     });
   })

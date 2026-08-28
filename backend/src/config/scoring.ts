@@ -11,6 +11,7 @@ export type ScoringWeights = {
   fundamentals: number;
   valuation: number;
   relativeStrength: number;
+  newsSentiment: number;
 };
 
 export const SCORING_WEIGHTS: ScoringWeights = {
@@ -19,10 +20,11 @@ export const SCORING_WEIGHTS: ScoringWeights = {
   volume: 0.10,
   volatilityRisk: 0.10,
   marketCondition: 0.10,
-  sectorStrength: 0.10,
+  sectorStrength: 0.05,
   fundamentals: 0.15,
   valuation: 0.05,
   relativeStrength: 0.05,
+  newsSentiment: 0.05,
 };
 
 // Simple check to ensure weights total 100% (1.0)

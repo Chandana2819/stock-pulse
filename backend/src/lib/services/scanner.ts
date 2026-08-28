@@ -5,6 +5,7 @@ import { computeIndicators, pctChange } from "../indicators";
 import { computeMarketRisk } from "../engine/marketRisk";
 import { RecommendationEngine, type SignalAction } from "./recommendationEngine";
 import { getSectorChangeForKey } from "./market";
+import { analyzeHeadline } from "../engine/sentiment";
 
 function generateModeledPrices(symbol: string, basePrice: number, dailyVol: number, trend: number, count = 90) {
   const candles = [];
@@ -313,7 +314,19 @@ export async function runMarketScan(): Promise<void> {
   const vixSymbol = "^INDIAVIX";
   
   const riskQuotes = await marketDataProvider.getQuotes([niftySymbol, sensexSymbol, bankNiftySymbol, vixSymbol, "^GSPC", "^IXIC", "^DJI"]);
-  
+
+  // Real 55-day NIFTY return, used as the market benchmark for each stock's relative-strength pillar.
+  let niftyReturn55: number | null = null;
+  try {
+    const niftyCandles = await marketDataProvider.getCandles(niftySymbol, "3M");
+    const niftyCloses = niftyCandles.map((c) => c.close).filter((c) => Number.isFinite(c));
+    const p55 = niftyCloses[niftyCloses.length - 55] || niftyCloses[0];
+    const pNow = niftyCloses[niftyCloses.length - 1];
+    if (p55 && pNow != null && p55 > 0) niftyReturn55 = (pNow - p55) / p55;
+  } catch {
+    niftyReturn55 = null;
+  }
+
   const marketRiskResult = computeMarketRisk({
     niftyChange: pctChange(riskQuotes[niftySymbol]?.price, riskQuotes[niftySymbol]?.prevClose),
     sensexChange: pctChange(riskQuotes[sensexSymbol]?.price, riskQuotes[sensexSymbol]?.prevClose),
@@ -371,13 +384,14 @@ export async function runMarketScan(): Promise<void> {
       const uItem = lookupUniverse(stock.symbol);
       if (!uItem) continue;
 
+      const providerErrors: string[] = [];
       const [prices, fundamentals, newsRaw] = await Promise.all([
         prisma.stockPrice.findMany({
           where: { symbol: stock.symbol },
           orderBy: { date: "asc" },
         }),
-        marketDataProvider.getFundamentals(stock.symbol).catch(() => null),
-        newsProvider.getNews(`${uItem.display} stock`, 5).catch(() => []),
+        marketDataProvider.getFundamentals(stock.symbol).catch(() => { providerErrors.push("fundamentals"); return null; }),
+        newsProvider.getNews(`${uItem.display} stock`, 5).catch(() => { providerErrors.push("news"); return []; }),
       ]);
 
       if (prices.length < 30) {
@@ -394,9 +408,12 @@ export async function runMarketScan(): Promise<void> {
         volume: p.volume,
       }));
 
-      const indicators = computeIndicators(candles);
-      const sentimentScore = newsRaw.length > 0 ? 0.1 : 0.0;
-      const sectorChange = await getSectorChangeForKey(uItem.sectorKey).catch(() => null);
+      const indicators = computeIndicators(candles, niftyReturn55);
+      const headlineScores = newsRaw.map((n) => analyzeHeadline(n.title, stock.symbol).sentimentScore);
+      const sentimentScore = headlineScores.length
+        ? headlineScores.reduce((a, s) => a + s, 0) / headlineScores.length
+        : 0.0;
+      const sectorChange = await getSectorChangeForKey(uItem.sectorKey).catch(() => { providerErrors.push("sector performance"); return null; });
 
       const rec = RecommendationEngine.generate({
         symbol: stock.symbol,
@@ -406,6 +423,7 @@ export async function runMarketScan(): Promise<void> {
         fundamentals,
         sectorChangePct: sectorChange,
         marketRiskScore: marketRiskResult.score,
+        providerErrors,
         candlesCount: prices.length,
         newsSentimentScore: sentimentScore,
       });

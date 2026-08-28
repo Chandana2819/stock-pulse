@@ -224,7 +224,7 @@ export type IndicatorSnapshot = {
   maxDrawdown30d: number | null;
 };
 
-export function computeIndicators(candles: Candle[]): IndicatorSnapshot {
+export function computeIndicators(candles: Candle[], benchmarkReturn55d?: number | null): IndicatorSnapshot {
   const closes = candles.map((c) => c.close).filter((c) => Number.isFinite(c));
   const m = macd(closes);
   const bb = bollinger(closes);
@@ -240,10 +240,12 @@ export function computeIndicators(candles: Candle[]): IndicatorSnapshot {
     else trend = "SIDEWAYS";
   }
 
-  // Relative Strength (stock return vs hypothetical 2% market index return over 55 days)
+  // Relative Strength (stock return vs actual market index return over 55 days).
+  // Null when no real benchmark return was supplied — never fabricated.
   const price55 = closes[closes.length - 55] || closes[0] || 0;
-  const stockReturn = price55 > 0 ? (price - price55) / price55 : 0;
-  const relativeStrength = stockReturn - 0.02; // relative performance
+  const stockReturn = price55 > 0 && price != null ? (price - price55) / price55 : null;
+  const relativeStrength =
+    stockReturn != null && benchmarkReturn55d != null ? stockReturn - benchmarkReturn55d : null;
 
   return {
     sma20: s20,

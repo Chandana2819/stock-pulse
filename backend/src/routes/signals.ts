@@ -10,6 +10,7 @@ import { getSectorChangeForKey } from "../lib/services/market";
 import { computeIndicators } from "../lib/indicators";
 import { RecommendationEngine } from "../lib/services/recommendationEngine";
 import { syncUserBroker } from "../lib/services/brokerSync";
+import { analyzeHeadline } from "../lib/engine/sentiment";
 
 const router = express.Router();
 
@@ -54,8 +55,8 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
   if (actionFilter) {
     if (actionFilter === "BUY") {
       items = items.filter((item: any) => item.action.includes("BUY"));
-    } else if (actionFilter === "SELL" || actionFilter === "REDUCE") {
-      items = items.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE");
+    } else if (actionFilter === "SELL") {
+      items = items.filter((item: any) => item.action.includes("SELL"));
     } else {
       items = items.filter((item: any) => item.action === actionFilter);
     }
@@ -103,6 +104,18 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
         const enrichedHoldings = await getEnrichedHoldings(userId);
         const recsMap = new Map<string, any>(recommendations.map(r => [r.symbol.toUpperCase().trim(), r]));
 
+        // Real 55-day NIFTY return, used as the market benchmark for each stock's relative-strength pillar.
+        let niftyReturn55: number | null = null;
+        try {
+          const niftyCandles = await marketDataProvider.getCandles("^NSEI", "3M");
+          const niftyCloses = niftyCandles.map((c) => c.close).filter((c) => Number.isFinite(c));
+          const p55 = niftyCloses[niftyCloses.length - 55] || niftyCloses[0];
+          const pNow = niftyCloses[niftyCloses.length - 1];
+          if (p55 && pNow != null && p55 > 0) niftyReturn55 = (pNow - p55) / p55;
+        } catch {
+          niftyReturn55 = null;
+        }
+
         for (const h of enrichedHoldings) {
           let symbol = h.stock.toUpperCase().trim();
           if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
@@ -147,19 +160,25 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
                 }
               }
 
+              const providerErrors: string[] = [];
               const [fundamentals, newsRaw] = await Promise.all([
-                marketDataProvider.getFundamentals(symbol).catch(() => null),
-                newsProvider.getNews(`${h.displaySym} stock`, 5).catch(() => []),
+                marketDataProvider.getFundamentals(symbol).catch(() => { providerErrors.push("fundamentals"); return null; }),
+                newsProvider.getNews(`${h.displaySym} stock`, 5).catch(() => { providerErrors.push("news"); return []; }),
               ]);
 
               const uItem = lookupUniverse(symbol);
-              const sectorChange = uItem ? await getSectorChangeForKey(uItem.sectorKey).catch(() => null) : null;
+              const sectorChange = uItem
+                ? await getSectorChangeForKey(uItem.sectorKey).catch(() => { providerErrors.push("sector performance"); return null; })
+                : null;
 
               const riskSnapshot = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
               const riskScore = riskSnapshot ? riskSnapshot.score : 50;
 
-              const indicators = candles.length >= 30 ? computeIndicators(candles) : null;
-              const sentimentScore = newsRaw.length > 0 ? 0.1 : 0.0;
+              const indicators = candles.length >= 30 ? computeIndicators(candles, niftyReturn55) : null;
+              const headlineScores = newsRaw.map((n) => analyzeHeadline(n.title, symbol).sentimentScore);
+              const sentimentScore = headlineScores.length
+                ? headlineScores.reduce((a, s) => a + s, 0) / headlineScores.length
+                : 0.0;
 
               const generatedRec = RecommendationEngine.generate({
                 symbol,
@@ -171,6 +190,7 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
                 marketRiskScore: riskScore,
                 candlesCount: candles.length,
                 newsSentimentScore: sentimentScore,
+                providerErrors,
               });
 
               rec = {
@@ -190,7 +210,7 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
             } catch (err) {
               console.error(`[signals] Failed to calculate dynamic signals for ${symbol}:`, err);
               rec = {
-                action: "WAIT",
+                action: "HOLD",
                 score: 50,
                 confidence: 50,
                 risk: "MODERATE",
@@ -232,22 +252,13 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     }
   }
 
-  // Calculate signals overview counts
+  // Market-wide overview counts (across the whole scanned universe). Kept
+  // independent of broker connection state so all three numbers describe the
+  // same population — callers that want portfolio-only sell/hold use
+  // `portfolioSignals` directly instead (see stock-signals page).
   const buyCount = recommendations.filter((r: any) => r.action.includes("BUY")).length;
-  
-  let sellCount = 0;
-  let holdCount = 0;
-  let waitCount = 0;
-
-  if (userId && brokerConnection.connected) {
-    sellCount = portfolioSignals.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
-    holdCount = portfolioSignals.filter((r: any) => r.action === "HOLD").length;
-    waitCount = portfolioSignals.filter((r: any) => r.action === "WAIT").length;
-  } else {
-    sellCount = recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
-    holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
-    waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
-  }
+  const sellCount = recommendations.filter((r: any) => r.action.includes("SELL")).length;
+  const holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
 
   const latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
   const scanTime = latestRisk ? latestRisk.createdAt : new Date();
@@ -258,7 +269,6 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
       buy: buyCount,
       sell: sellCount,
       hold: holdCount,
-      wait: waitCount,
     },
     items,
     brokerConnection,

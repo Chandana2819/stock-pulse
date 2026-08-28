@@ -32,11 +32,12 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
   const entry = lookupUniverse(symbol);
   const sectorKey = entry?.sectorKey ?? null;
 
+  const providerErrors: string[] = [];
   const [candles, fundamentals, newsRaw, sectorChangePct] = await Promise.all([
     marketDataProvider.getCandles(symbol, "6M"),
-    marketDataProvider.getFundamentals(symbol).catch(() => null),
-    newsProvider.getNews(`${resolved.displaySymbol} stock`, opts.newsLimit ?? 10).catch(() => []),
-    getSectorChangeForKey(sectorKey).catch(() => null),
+    marketDataProvider.getFundamentals(symbol).catch(() => { providerErrors.push("fundamentals"); return null; }),
+    newsProvider.getNews(`${resolved.displaySymbol} stock`, opts.newsLimit ?? 10).catch(() => { providerErrors.push("news"); return []; }),
+    getSectorChangeForKey(sectorKey).catch(() => { providerErrors.push("sector performance"); return null; }),
   ]);
 
   // Data Validation
@@ -107,6 +108,7 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     portfolioWeightPct: opts.portfolioWeightPct ?? null,
     riskTolerance: opts.riskTolerance ?? "MODERATE",
     horizonYears: opts.horizonYears ?? 5,
+    providerErrors,
   };
 
   let decision: any;
@@ -120,6 +122,9 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
       reasons: [],
       mainRisk: validationReason,
       wouldChange: [],
+      dataWarnings: providerErrors.map(
+        (label) => `Data source unavailable: ${label} could not be fetched (temporary provider error, not a lack of data).`
+      ),
       validationFailed: true,
       validationReason,
       riskLevel: "MODERATE" as const,

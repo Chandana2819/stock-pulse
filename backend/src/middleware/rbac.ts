@@ -71,12 +71,10 @@ export function requirePermission(permission: Permission) {
 
 /** Check if the user is any valid administrator role. */
 export function requireAnyAdmin(req: Request, _res: Response, next: NextFunction) {
-  console.log("[requireAnyAdmin] req.path:", req.path, "user:", req.user);
   if (!req.user) return next(ApiError.unauthorized("Authentication required"));
   if (req.user.status !== "ACTIVE") return next(ApiError.forbidden("Account is suspended"));
 
   const role = req.user.role;
-  console.log("[requireAnyAdmin] checking role:", role, "permissions:", ROLE_PERMISSIONS[role]);
   if (!ROLE_PERMISSIONS[role]) {
     return next(ApiError.forbidden("Access Denied: Administrator role required"));
   }
