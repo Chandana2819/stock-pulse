@@ -1,6 +1,5 @@
 import express from "express";
 import crypto from "crypto";
-import axios from "axios";
 import { prisma } from "../lib/prisma";
 import { listBrokers, getBroker } from "../lib/providers";
 import { encryptSecret, decryptSecret, isEncryptionConfigured } from "../lib/crypto";
@@ -11,77 +10,6 @@ import { audit } from "../lib/audit";
 import { env } from "../config/env";
 
 const router = express.Router();
-
-router.get(
-  "/test-config",
-  asyncHandler(async (req, res) => {
-    const key = env.upstoxApiKey || "";
-    const secret = env.upstoxApiSecret || "";
-    const redirect = env.upstoxRedirectUri || "";
-
-    return res.json({
-      key: {
-        configured: Boolean(key),
-        length: key.length,
-        hasQuotes: (key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'")),
-        hasWhitespace: key.trim() !== key,
-        preview: key ? `${key.slice(0, 4)}...${key.slice(-4)}` : null,
-      },
-      secret: {
-        configured: Boolean(secret),
-        length: secret.length,
-        hasQuotes: (secret.startsWith('"') && secret.endsWith('"')) || (secret.startsWith("'") && secret.endsWith("'")),
-        hasWhitespace: secret.trim() !== secret,
-      },
-      redirect: {
-        configured: Boolean(redirect),
-        value: redirect,
-        length: redirect.length,
-        hasWhitespace: redirect.trim() !== redirect,
-      }
-    });
-  })
-);
-
-router.get(
-  "/test-token-exchange",
-  asyncHandler(async (req, res) => {
-    const key = env.upstoxApiKey || "";
-    const secret = env.upstoxApiSecret || "";
-    const redirect = env.upstoxRedirectUri || "";
-
-    const body = new URLSearchParams({
-      code: "dummy_auth_code_for_testing",
-      client_id: key,
-      client_secret: secret,
-      redirect_uri: redirect,
-      grant_type: "authorization_code",
-    });
-
-    let status = 0;
-    let responseData = null;
-    let errorMsg = "";
-
-    try {
-      const apiRes = await axios.post("https://api.upstox.com/v2/login/authorization/token", body.toString(), {
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        timeout: 12000,
-      });
-      status = apiRes.status;
-      responseData = apiRes.data;
-    } catch (err: any) {
-      status = err.response?.status || 500;
-      responseData = err.response?.data;
-      errorMsg = err.message;
-    }
-
-    return res.json({
-      status,
-      responseData,
-      errorMsg
-    });
-  })
-);
 
 router.get(
   "/",
@@ -207,17 +135,21 @@ router.get(
         console.log(`[UPSTOX] Token exchange response: ${status}`);
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
 
-        const upstoxErrorCode = data?.errors?.[0]?.errorCode;
+        const upstoxErrorCode = data?.errors?.[0]?.errorCode || data?.error_code;
         const upstoxMessage = data?.errors?.[0]?.message || data?.error_description || err.message;
 
-        let apiErrorCode = "UPSTOX_TOKEN_EXCHANGE_FAILED";
+        let apiErrorCode = "UPSTOX_UNKNOWN_ERROR";
         if (upstoxErrorCode === "UDAPI100016" || upstoxErrorCode === "UDAPI100069") {
           apiErrorCode = "UPSTOX_INVALID_CLIENT";
-        } else if (upstoxErrorCode === "UDAPI100068") {
+        } else if (upstoxErrorCode === "UDAPI100068" || upstoxErrorCode === "UDAPI100070") {
           apiErrorCode = "UPSTOX_INVALID_REDIRECT_URI";
         } else if (upstoxErrorCode === "UDAPI100057") {
           apiErrorCode = "UPSTOX_INVALID_AUTHORIZATION_CODE";
-        } else if (upstoxErrorCode) {
+        } else if (status === 403) {
+          apiErrorCode = "UPSTOX_ACCOUNT_ERROR";
+        } else if (status === 400) {
+          apiErrorCode = "UPSTOX_AUTHENTICATION_ERROR";
+        } else if (status >= 500) {
           apiErrorCode = "UPSTOX_PROVIDER_ERROR";
         }
 

@@ -70,13 +70,20 @@ export default function BrokerLoginPage() {
           if (err && typeof err === "object" && "code" in err) {
             const code = (err as any).code;
             if (code === "UPSTOX_INVALID_CLIENT") {
-              errMsg = "Upstox configuration is invalid. Please contact the administrator to verify the Client ID and Secret settings.";
+              errMsg = "Invalid Upstox application credentials. Please verify the StockPulse Upstox API Key and Secret.";
             } else if (code === "UPSTOX_INVALID_REDIRECT_URI") {
-              errMsg = "Upstox Redirect URI mismatch. Please verify that the Redirect URI configured in the Upstox Developer App console exactly matches the URL used by StockPulse.";
+              errMsg = "Redirect URI mismatch. Please verify the Upstox application configuration.";
             } else if (code === "UPSTOX_INVALID_AUTHORIZATION_CODE") {
-              errMsg = "The authorization code from Upstox is invalid, expired, or has already been used. Please try connecting your broker again.";
-            } else if (code === "UPSTOX_TOKEN_EXCHANGE_FAILED" || code === "UPSTOX_PROVIDER_ERROR") {
-              errMsg = "Upstox could not complete the authentication request. Please try again. If the problem continues, Upstox may be experiencing an authentication/OTP service issue.";
+              errMsg = "The authorization code is invalid or has already been used. Please try connecting again.";
+            } else if (code === "UPSTOX_ACCOUNT_ERROR") {
+              errMsg = "Upstox requires an account-level action before the connection can be completed.";
+            } else if (
+              code === "UPSTOX_PROVIDER_ERROR" || 
+              code === "UPSTOX_AUTHENTICATION_ERROR" || 
+              code === "UPSTOX_UNKNOWN_ERROR" ||
+              code === "UPSTOX_TOKEN_EXCHANGE_FAILED"
+            ) {
+              errMsg = "Upstox could not complete authentication. Please try again later.";
             }
           }
           
