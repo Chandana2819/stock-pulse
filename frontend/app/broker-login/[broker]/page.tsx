@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams, useParams } from "next/navigation";
 import { API_BASE, apiFetch } from "../../lib/api";
 
@@ -24,6 +24,8 @@ export default function BrokerLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
 
+  const hasCalledCallback = useRef(false);
+
   useEffect(() => {
     const fetchConfig = async () => {
       try {
@@ -42,8 +44,9 @@ export default function BrokerLoginPage() {
   // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
   useEffect(() => {
     const code = searchParams.get("code") || requestToken;
-    if (!code) return;
+    if (!code || hasCalledCallback.current) return;
 
+    hasCalledCallback.current = true;
     let active = true;
     const executeCallback = async () => {
       setLoading(true);
@@ -61,7 +64,25 @@ export default function BrokerLoginPage() {
         }
       } catch (err) {
         if (active) {
-          setError(err instanceof Error ? err.message : "OAuth connection failed");
+          let errMsg = err instanceof Error ? err.message : "OAuth connection failed";
+          
+          // Map provider-specific API error codes to user-friendly messages
+          if (err && typeof err === "object" && "code" in err) {
+            const code = (err as any).code;
+            if (code === "UPSTOX_INVALID_CLIENT") {
+              errMsg = "Upstox configuration is invalid. Please contact the administrator to verify the Client ID and Secret settings.";
+            } else if (code === "UPSTOX_INVALID_REDIRECT_URI") {
+              errMsg = "Upstox Redirect URI mismatch. Please verify that the Redirect URI configured in the Upstox Developer App console exactly matches the URL used by StockPulse.";
+            } else if (code === "UPSTOX_INVALID_AUTHORIZATION_CODE") {
+              errMsg = "The authorization code from Upstox is invalid, expired, or has already been used. Please try connecting your broker again.";
+            } else if (code === "UPSTOX_TOKEN_EXCHANGE_FAILED") {
+              errMsg = "Failed to exchange authorization code for an access token. Please check your credentials and try again.";
+            } else if (code === "UPSTOX_PROVIDER_ERROR") {
+              errMsg = "An error occurred on Upstox's side during token exchange. Please try again later.";
+            }
+          }
+          
+          setError(errMsg);
           setLoading(false);
         }
       }

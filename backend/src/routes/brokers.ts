@@ -120,10 +120,25 @@ router.get(
         const status = err.response?.status || 500;
         const data = err.response?.data;
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
+
+        const upstoxErrorCode = data?.errors?.[0]?.errorCode;
+        const upstoxMessage = data?.errors?.[0]?.message || data?.error_description || err.message;
+
+        let apiErrorCode = "UPSTOX_TOKEN_EXCHANGE_FAILED";
+        if (upstoxErrorCode === "UDAPI100016" || upstoxErrorCode === "UDAPI100069") {
+          apiErrorCode = "UPSTOX_INVALID_CLIENT";
+        } else if (upstoxErrorCode === "UDAPI100068") {
+          apiErrorCode = "UPSTOX_INVALID_REDIRECT_URI";
+        } else if (upstoxErrorCode === "UDAPI100057") {
+          apiErrorCode = "UPSTOX_INVALID_AUTHORIZATION_CODE";
+        } else if (upstoxErrorCode) {
+          apiErrorCode = "UPSTOX_PROVIDER_ERROR";
+        }
+
         throw new ApiError(
           status >= 400 && status < 500 ? 400 : 502,
-          `Upstox token exchange failed: ${data?.errors?.[0]?.message || data?.error_description || err.message}`,
-          "UPSTOX_TOKEN_EXCHANGE_FAILED"
+          `Upstox token exchange failed: ${upstoxMessage}`,
+          apiErrorCode
         );
       } else {
         throw err;
