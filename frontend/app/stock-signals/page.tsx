@@ -30,7 +30,6 @@ type SignalsSummary = {
   buy: number;
   sell: number;
   hold: number;
-  wait: number;
 };
 
 type RiskFactor = {
@@ -228,10 +227,9 @@ export default function StockSignalsPage() {
   // buySignals are general market buy recommendations
   const buySignals = marketItems.filter((item) => item.action.includes("BUY"));
 
-  // sellSignals, holdSignals, waitSignals are strictly restricted to portfolio holdings
-  const sellSignals = portfolioSignals.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  // sellSignals, holdSignals are strictly restricted to portfolio holdings
+  const sellSignals = portfolioSignals.filter((item) => item.action.includes("SELL"));
   const holdSignals = portfolioSignals.filter((item) => item.action === "HOLD");
-  const waitSignals = portfolioSignals.filter((item) => item.action === "WAIT");
 
   const scanDate = scanTime ? new Date(scanTime) : null;
   const formattedScanTime = scanDate ? scanDate.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" }) + " IST" : "Pending";
@@ -350,7 +348,7 @@ export default function StockSignalsPage() {
                   {portfolioSignals.map((item) => {
                     const isPlPositive = item.unrealizedPnl != null && item.unrealizedPnl >= 0;
                     const signalStyle = item.action.includes("BUY") ? "text-green-custom border-green-custom bg-green-dim" :
-                                        item.action.includes("SELL") || item.action === "REDUCE" ? "text-red-custom border-red-custom bg-red-dim" :
+                                        item.action.includes("SELL") ? "text-red-custom border-red-custom bg-red-dim" :
                                         item.action === "HOLD" ? "text-blue-custom border-blue-custom bg-blue-dim" :
                                         "text-amber-custom border-amber-custom bg-amber-dim";
                     return (
@@ -398,34 +396,27 @@ export default function StockSignalsPage() {
 
       {/* Signals Summary Counts Panel */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <button 
-            onClick={() => scrollToSection("buy-section")} 
+        <div className="grid grid-cols-3 gap-4">
+          <button
+            onClick={() => scrollToSection("buy-section")}
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-green-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
             <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟢 BUY SIGNALS</span>
             <span className="font-mono text-2xl font-bold text-green-custom">{buySignals.length}</span>
           </button>
-          <button 
-            onClick={() => scrollToSection("sell-section")} 
+          <button
+            onClick={() => scrollToSection("sell-section")}
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-red-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🔴 SELL / REDUCE</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🔴 SELL</span>
             <span className="font-mono text-2xl font-bold text-red-custom">{sellSignals.length}</span>
           </button>
-          <button 
-            onClick={() => scrollToSection("hold-section")} 
+          <button
+            onClick={() => scrollToSection("hold-section")}
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-blue-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
             <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟡 HOLD</span>
             <span className="font-mono text-2xl font-bold text-blue-custom">{holdSignals.length}</span>
-          </button>
-          <button 
-            onClick={() => scrollToSection("wait-section")} 
-            className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-amber-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
-          >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">⚪ WAIT</span>
-            <span className="font-mono text-2xl font-bold text-amber-custom">{waitSignals.length}</span>
           </button>
         </div>
       )}
@@ -532,13 +523,13 @@ export default function StockSignalsPage() {
           </div>
         </div>
 
-        {/* 🔴 SELL / REDUCE */}
+        {/* 🔴 SELL */}
         <div id="sell-section" className="border border-red-custom bg-bg-1 p-6 flex flex-col gap-4">
-          <h2 className="font-display text-2xl tracking-[0.1em] text-red-custom border-b border-border-custom pb-2">🔴 SELL / REDUCE SIGNALS</h2>
+          <h2 className="font-display text-2xl tracking-[0.1em] text-red-custom border-b border-border-custom pb-2">🔴 SELL SIGNALS</h2>
           <div className="flex flex-col gap-4">
             {sellSignals.length === 0 ? (
               <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
-                No active SELL or REDUCE signals currently calculated.
+                No active SELL signals currently calculated.
               </div>
             ) : (
               sellSignals.map((item) => (
@@ -558,22 +549,6 @@ export default function StockSignalsPage() {
               </div>
             ) : (
               holdSignals.map((item) => (
-                <SignalCard key={item.id} item={item} />
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* ⚪ WAIT */}
-        <div id="wait-section" className="border border-amber-custom bg-bg-1 p-6 flex flex-col gap-4">
-          <h2 className="font-display text-2xl tracking-[0.1em] text-amber-custom border-b border-border-custom pb-2">⚪ WAIT SIGNALS</h2>
-          <div className="flex flex-col gap-4">
-            {waitSignals.length === 0 ? (
-              <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
-                No active WAIT signals currently calculated.
-              </div>
-            ) : (
-              waitSignals.map((item) => (
                 <SignalCard key={item.id} item={item} />
               ))
             )}
@@ -692,7 +667,7 @@ function SignalCard({ item }: { item: SignalItem }) {
   const currency = isGlobal ? "$" : "₹";
   
   const cardStyle = item.action.includes("BUY") ? "text-green-custom border-green-custom bg-green-dim" :
-                    item.action.includes("SELL") || item.action === "REDUCE" ? "text-red-custom border-red-custom bg-red-dim" :
+                    item.action.includes("SELL") ? "text-red-custom border-red-custom bg-red-dim" :
                     item.action === "HOLD" ? "text-blue-custom border-blue-custom bg-blue-dim" :
                     "text-amber-custom border-amber-custom bg-amber-dim";
 

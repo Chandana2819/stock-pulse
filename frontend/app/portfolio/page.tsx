@@ -329,14 +329,14 @@ export default function PortfolioPage() {
 
   return (
     <div className="grid grid-rows-[auto_1fr_auto] min-h-[calc(100vh-32px)] pt-4">
-      <main className="grid grid-cols-1 lg:grid-cols-[1fr_360px] max-w-[1100px] mx-auto w-full p-4 sm:p-8 gap-4 sm:gap-8">
+      <main className="grid grid-cols-1 xl:grid-cols-[1fr_360px] max-w-[1100px] mx-auto w-full p-4 sm:p-8 gap-4 sm:gap-8">
 
         <div className="lg:col-span-2">
           <PortfolioDoctor />
         </div>
 
         {/* Left Column: Active Positions */}
-        <div>
+        <div className="min-w-0">
           <section className="flex flex-col gap-5 mt-0">
             <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"PORTFOLIO SUMMARY"}</div>
             
@@ -428,12 +428,12 @@ export default function PortfolioPage() {
                             {sig ? (
                               <span className={`inline-block font-mono text-[0.65rem] font-bold px-2 py-0.5 border rounded uppercase ${
                                 sig.action.includes("BUY") ? "bg-green-dim/15 border-green-custom/30 text-green-custom" :
-                                (sig.action.includes("SELL") || sig.action === "REDUCE") ? "bg-red-dim/15 border-red-custom/30 text-red-custom" :
+                                sig.action.includes("SELL") ? "bg-red-dim/15 border-red-custom/30 text-red-custom" :
                                 sig.action === "HOLD" ? "bg-blue-custom/10 border-blue-custom/30 text-blue-custom" :
                                 "bg-amber-custom/10 border-amber-custom/30 text-amber-custom"
                               }`}>
-                                {sig.action.includes("BUY") ? "🟢" : 
-                                 (sig.action.includes("SELL") || sig.action === "REDUCE") ? "🔴" : 
+                                {sig.action.includes("BUY") ? "🟢" :
+                                 sig.action.includes("SELL") ? "🔴" :
                                  sig.action === "HOLD" ? "🟡" : "⚪"} {sig.action}
                               </span>
                             ) : (
@@ -459,7 +459,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* Right Column: Record Form & Tx Feed */}
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 min-w-0">
           {brokerConnections.some(c => c.status === "CONNECTED") ? (
             brokerConnections.filter(c => c.status === "CONNECTED").map((conn) => {
               const brokerId = conn.broker;

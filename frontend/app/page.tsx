@@ -612,22 +612,18 @@ export default function Home() {
             <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"TODAY'S MARKET SIGNALS"}</div>
             
             <div className="flex flex-col gap-4 justify-between h-full">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-center w-full">
+              <div className="grid grid-cols-3 gap-2.5 items-center w-full">
                 <div className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary?.buy ?? 17}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary ? displaySummary.buy : "—"}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY</span>
                 </div>
                 <div className="bg-red-dim/10 border border-red-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary?.sell ?? 29}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary ? displaySummary.sell : "—"}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">SELL</span>
                 </div>
-                <div className="bg-amber-dim/10 border border-amber-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{displaySummary?.hold ?? 55}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD</span>
-                </div>
                 <div className="bg-blue-dim/10 border border-blue-custom/25 rounded p-2.5 text-center">
-                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary?.wait ?? 33}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT</span>
+                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary ? displaySummary.hold : "—"}</div>
+                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD</span>
                 </div>
               </div>
 
@@ -635,7 +631,9 @@ export default function Home() {
                 <div className="flex flex-col">
                   <span className="font-mono text-[0.7rem] text-text-4 uppercase block tracking-wider">MARKET BIAS</span>
                   <span className="font-mono text-[0.82rem] text-text-custom font-bold uppercase mt-0.5 leading-none">
-                    52/100 — <span className="text-amber-custom font-extrabold">MODERATE RISK</span>
+                    {marketRisk ? (
+                      <>{marketRisk.score}/100 — <span className="text-amber-custom font-extrabold">{marketRisk.classification}</span></>
+                    ) : "—"}
                   </span>
                 </div>
                 <Link

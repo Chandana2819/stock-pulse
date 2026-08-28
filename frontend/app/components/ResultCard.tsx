@@ -40,7 +40,11 @@ type Props = {
 const ACTION_STYLE: Record<string, string> = {
   BUY: "text-green-custom border-green-custom bg-green-dim/10",
   "BUY (risky)": "text-amber-custom border-amber-custom bg-amber-dim/10",
+  WATCH: "text-cyan-custom border-cyan-custom bg-cyan-custom/10",
   SELL: "text-red-custom border-red-custom bg-red-dim/10",
+  REDUCE: "text-amber-custom border-amber-custom bg-amber-dim/10",
+  AVOID: "text-red-custom border-red-custom bg-red-dim/10",
+  WAIT: "text-amber-custom border-amber-custom bg-amber-dim/10",
   HOLD: "text-blue-custom border-blue-custom bg-blue-dim/10",
   "NOT FOUND": "text-text-3 border-border-bright bg-bg-3",
   ERROR: "text-text-3 border-border-bright bg-bg-3",

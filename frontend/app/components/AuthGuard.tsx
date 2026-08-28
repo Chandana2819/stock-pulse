@@ -388,7 +388,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       {/* Main Content Pane */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <TopNav />
-        <div className="flex-grow overflow-y-auto overflow-x-hidden">
+        <div className="flex-grow overflow-y-auto overflow-x-auto">
           {children}
         </div>
       </div>

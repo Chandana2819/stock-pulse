@@ -11,6 +11,7 @@ type Decision = {
   reasons: string[];
   mainRisk: string;
   wouldChange: string[];
+  dataWarnings?: string[];
   validationFailed?: boolean;
   validationReason?: string;
   riskLevel: "LOW" | "MODERATE" | "HIGH" | "VERY HIGH";
@@ -189,6 +190,17 @@ export default function DecisionPanel({ decision }: { decision: Decision }) {
                 <li>Support breakdown levels tested in historical charts</li>
               </ul>
             </div>
+          </div>
+        )}
+
+        {decision.dataWarnings && decision.dataWarnings.length > 0 && (
+          <div className="p-3 border border-amber-custom bg-amber-dim">
+            <div className="font-mono text-[0.55rem] tracking-[0.15em] text-amber-custom uppercase mb-1">⚠ DATA OUTAGE</div>
+            <ul className="text-xs text-text-2 leading-relaxed list-disc pl-4 flex flex-col gap-0.5">
+              {decision.dataWarnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
           </div>
         )}
 
