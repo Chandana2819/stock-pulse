@@ -4,10 +4,38 @@ import { fundProvider } from "../lib/providers";
 import { asyncHandler, ApiError, sourceMeta } from "../lib/http";
 import { parse, v } from "../lib/validate";
 import { requireAuth } from "../middleware/auth";
-import { getFundRecommendations } from "../lib/services/fundRecommendations";
+import { getFundRecommendations, suggestCategoryForGoal } from "../lib/services/fundRecommendations";
 import { FUND_CATEGORY_LABELS, type FundCategory } from "../lib/mfUniverse";
+import { assessGoalFeasibility } from "./goals";
 
 const router = express.Router();
+
+// Goal-first suggestion: instead of a flat "top funds per category" list, ask
+// for the same two inputs the Goals feature already uses (timeline + assumed
+// return) and reuse its real-benchmark feasibility check + category heuristic
+// — so a standalone visitor to the Mutual Funds page gets the same honest,
+// explainable suggestion a linked Goal would produce, without having to
+// create a Goal first.
+router.get(
+  "/suggest-for-goal",
+  asyncHandler(async (req, res) => {
+    const { years, expectedReturnPct } = parse(
+      { years: v.number({ min: 0.1, max: 50 }), expectedReturnPct: v.number({ min: -50, max: 200 }) },
+      req.query as Record<string, unknown>
+    );
+    const feasibility = await assessGoalFeasibility(expectedReturnPct);
+    const suggestion = suggestCategoryForGoal(years, feasibility.classification);
+    const { funds } = await getFundRecommendations(suggestion.category);
+    return res.json({
+      category: suggestion.category,
+      categoryLabel: FUND_CATEGORY_LABELS[suggestion.category],
+      reason: suggestion.reason,
+      feasibility,
+      funds,
+      meta: sourceMeta(fundProvider.id),
+    });
+  })
+);
 
 router.get(
   "/recommendations",

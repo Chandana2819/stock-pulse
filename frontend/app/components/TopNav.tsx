@@ -7,8 +7,9 @@ import { api, getDeviceId, clearSession } from "../lib/api";
 
 const NAV_LINKS = [
   { href: "/", label: "DASHBOARD" },
-  { href: "/screener", label: "SCREENER" },
   { href: "/portfolio", label: "PORTFOLIO" },
+  { href: "/stock-signals", label: "SIGNALS" },
+  { href: "/screener", label: "SCREENER" },
   { href: "/goals", label: "GOALS" },
   { href: "/mutual-funds", label: "FUNDS" },
   { href: "/ipo", label: "IPO" },
