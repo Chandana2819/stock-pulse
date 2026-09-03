@@ -3,8 +3,26 @@ import { prisma } from "../lib/prisma";
 import { fundProvider } from "../lib/providers";
 import { asyncHandler, ApiError, sourceMeta } from "../lib/http";
 import { parse, v } from "../lib/validate";
+import { requireAuth } from "../middleware/auth";
+import { getFundRecommendations } from "../lib/services/fundRecommendations";
+import { FUND_CATEGORY_LABELS, type FundCategory } from "../lib/mfUniverse";
 
 const router = express.Router();
+
+router.get(
+  "/recommendations",
+  asyncHandler(async (req, res) => {
+    const categoryParam = req.query.category ? String(req.query.category).toUpperCase() : undefined;
+    const category = categoryParam && categoryParam in FUND_CATEGORY_LABELS ? (categoryParam as FundCategory) : undefined;
+    const { funds, byCategory } = await getFundRecommendations(category);
+    return res.json({
+      funds,
+      byCategory,
+      categories: FUND_CATEGORY_LABELS,
+      meta: { ...sourceMeta(fundProvider.id), note: "Ranked by real trailing 3-year (annualised) return on a curated set of well-known schemes — past performance, not a guarantee of future returns." },
+    });
+  })
+);
 
 router.get(
   "/search",
@@ -40,6 +58,7 @@ router.get(
 
 router.get(
   "/watchlist/mine",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const items = await prisma.fundWatchItem.findMany({ where: { userId: req.user!.id }, orderBy: { createdAt: "desc" } });
     return res.json(items);
@@ -48,6 +67,7 @@ router.get(
 
 router.post(
   "/watchlist/mine",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const { schemeCode, schemeName, kind } = parse(
       { schemeCode: v.string({ min: 1, max: 20 }), schemeName: v.string({ min: 1, max: 200 }), kind: v.withDefault(v.enumOf(["MUTUAL_FUND", "ETF"] as const), "MUTUAL_FUND") },
@@ -64,6 +84,7 @@ router.post(
 
 router.delete(
   "/watchlist/mine/:schemeCode",
+  requireAuth,
   asyncHandler(async (req, res) => {
     await prisma.fundWatchItem.deleteMany({ where: { userId: req.user!.id, schemeCode: req.params.schemeCode } });
     return res.json({ success: true });

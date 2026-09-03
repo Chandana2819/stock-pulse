@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v, sanitizeText } from "../lib/validate";
+import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
 
@@ -18,6 +19,7 @@ router.get("/faq", (_req, res) => res.json({ faq: FAQ }));
 
 router.get(
   "/tickets",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const tickets = await prisma.supportTicket.findMany({ where: { userId: req.user!.id }, orderBy: { updatedAt: "desc" }, include: { messages: { orderBy: { createdAt: "asc" } } } });
     return res.json(tickets);
@@ -26,6 +28,7 @@ router.get(
 
 router.post(
   "/tickets",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const { subject, category, message } = parse(
       { subject: v.string({ min: 3, max: 150 }), category: v.withDefault(v.enumOf(["GENERAL", "PAYMENT", "BROKER", "DATA", "ACCOUNT", "BUG"] as const), "GENERAL"), message: v.string({ min: 1, max: 3000 }) },
@@ -41,6 +44,7 @@ router.post(
 
 router.post(
   "/tickets/:id/messages",
+  requireAuth,
   asyncHandler(async (req, res) => {
     const ticket = await prisma.supportTicket.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
     if (!ticket) throw ApiError.notFound("Ticket not found");

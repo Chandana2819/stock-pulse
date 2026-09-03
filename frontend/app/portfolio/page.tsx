@@ -3,7 +3,17 @@
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
 import PortfolioDoctor from "../components/PortfolioDoctor";
+import SignalDetailModal, { SignalDetailData } from "../components/SignalDetailModal";
+import { getPositionGuidance } from "../lib/positionGuidance";
 import { API_BASE, apiFetch } from "../lib/api";
+
+function WarningIcon() {
+  return (
+    <svg className="w-3 h-3 inline-block -mt-0.5 text-amber-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+    </svg>
+  );
+}
 
 type Holding = {
   id: string;
@@ -38,6 +48,12 @@ export default function PortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [aiSignals, setAiSignals] = useState<any[]>([]);
+
+  // Signal detail modal states
+  const [selectedModalHolding, setSelectedModalHolding] = useState<Holding | null>(null);
+  const [selectedModalSignal, setSelectedModalSignal] = useState<SignalDetailData | null>(null);
+  const [selectedModalWeight, setSelectedModalWeight] = useState<number>(0);
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Transaction form states
   const [formStock, setFormStock] = useState("");
@@ -87,8 +103,27 @@ export default function PortfolioPage() {
 
       // 4. Fetch AI Signals
       try {
-        const signalsData = await apiFetch<{ items: any[] }>("/api/signals");
-        setAiSignals(signalsData.items || []);
+        const portSignals = await apiFetch<{ holdings?: any[] }>("/api/portfolio/signals").catch(() => null);
+        if (portSignals?.holdings && Array.isArray(portSignals.holdings) && portSignals.holdings.length > 0) {
+          setAiSignals(portSignals.holdings);
+          // Check for critical stop loss breaches
+          portSignals.holdings.forEach((ps: any) => {
+            if (ps.stopLoss && ps.currentPrice && ps.currentPrice <= ps.stopLoss) {
+              addToast({
+                type: "danger",
+                title: `Stop-Loss Alert: ${ps.symbol}`,
+                message: `${ps.symbol} has breached its stop-loss level of ₹${ps.stopLoss.toFixed(2)} (CMP: ₹${ps.currentPrice.toFixed(2)}).`
+              });
+            }
+          });
+        } else {
+          const signalsData = await apiFetch<{ items?: any[]; portfolioSignals?: any[] }>("/api/signals").catch(() => null);
+          const combined = [
+            ...(signalsData?.portfolioSignals || []),
+            ...(signalsData?.items || [])
+          ];
+          setAiSignals(combined);
+        }
       } catch (err) {
         console.error("Failed to load AI signals for portfolio:", err);
       }
@@ -103,6 +138,15 @@ export default function PortfolioPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Real-time live synchronization interval
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const interval = setInterval(() => {
+      fetchData();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [autoRefresh, fetchData]);
 
   // Handle Position Deletion
   const handleDeletePosition = async (stock: string) => {
@@ -329,14 +373,14 @@ export default function PortfolioPage() {
 
   return (
     <div className="grid grid-rows-[auto_1fr_auto] min-h-[calc(100vh-32px)] pt-4">
-      <main className="grid grid-cols-1 lg:grid-cols-[1fr_360px] max-w-[1100px] mx-auto w-full p-4 sm:p-8 gap-4 sm:gap-8">
+      <main className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] max-w-[1600px] mx-auto w-full p-4 sm:p-6 lg:p-8 gap-6 lg:gap-8">
 
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-2 min-w-0">
           <PortfolioDoctor />
         </div>
 
         {/* Left Column: Active Positions */}
-        <div>
+        <div className="min-w-0 flex flex-col gap-5">
           <section className="flex flex-col gap-5 mt-0">
             <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"PORTFOLIO SUMMARY"}</div>
             
@@ -386,75 +430,193 @@ export default function PortfolioPage() {
             </div>
 
             {/* Holdings Table */}
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-8">{"ACTIVE PORTFOLIO POSITIONS"}</div>
-            {loading ? (
-              <div className="font-mono text-xs text-text-3 py-8 text-center">FETCHING CURRENT HOLDINGS...</div>
-            ) : holdings.length === 0 ? (
-              <div className="bg-bg-1 border border-border-custom p-12 rounded text-center my-4">
-                <div className="font-display text-[1.5rem] tracking-[0.1em] text-text-3">PORTFOLIO EMPTY</div>
-                <div className="font-mono text-xs text-text-3 mt-2">LINK A DEMAT ACCOUNT OR RECORD A TRANSACTION TO SYNC STOCKS</div>
-              </div>
-            ) : (
-              <div className="w-full overflow-x-auto border border-border-custom bg-bg-1 rounded my-4">
-                <table className="w-full border-collapse text-left text-[0.8rem]">
-                  <thead>
-                    <tr className="border-b border-border-custom text-text-2 font-mono uppercase text-[0.65rem] tracking-wider bg-bg-2">
-                      <th className="p-4">STOCK</th>
-                      <th className="p-4">EXCHANGE</th>
-                      <th className="p-4 text-right">QTY</th>
-                      <th className="p-4 text-right">AVG PRICE</th>
-                      <th className="p-4 text-right">LIVE PRICE</th>
-                      <th className="p-4 text-right">TOTAL VALUE</th>
-                      <th className="p-4 text-right">UNREALIZED P&amp;L</th>
-                      <th className="p-4 text-center">AI SIGNAL</th>
-                      <th className="p-4 text-center">ACTIONS</th>
-                    </tr>
-                  </thead>
-                  <tbody className="font-mono">
-                    {holdings.map((h) => {
-                      const sig = aiSignals.find(s => s.symbol.toUpperCase().trim() === h.stock.toUpperCase().trim());
-                      return (
-                        <tr key={h.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors duration-150">
-                          <td className="p-4 font-bold text-text-custom">{h.displaySym}</td>
-                          <td className="p-4 text-text-3 text-[0.7rem]">{h.exchange}</td>
-                          <td className="p-4 text-right text-text-custom">{h.quantity.toLocaleString()}</td>
-                          <td className="p-4 text-right text-text-custom">{fmt(h.avgPrice, h.currency)}</td>
-                          <td className="p-4 text-right text-cyan-custom">{fmt(h.currentPrice, h.currency)}</td>
-                          <td className="p-4 text-right text-text-custom">{fmt(h.value, h.currency)}</td>
-                          <td className={`p-4 text-right font-bold ${h.pl != null ? (h.pl >= 0 ? "text-green-custom" : "text-red-custom") : "text-text-4"}`}>
-                            {h.pl != null ? `${h.pl >= 0 ? "+" : ""}${h.pl.toFixed(2)} (${h.plPct >= 0 ? "+" : ""}${h.plPct.toFixed(2)}%)` : "—"}
-                          </td>
-                          <td className="p-4 text-center">
-                            {sig ? (
-                              <span className={`inline-block font-mono text-[0.65rem] font-bold px-2 py-0.5 border rounded uppercase ${
-                                sig.action.includes("BUY") ? "bg-green-dim/15 border-green-custom/30 text-green-custom" :
-                                (sig.action.includes("SELL") || sig.action === "REDUCE") ? "bg-red-dim/15 border-red-custom/30 text-red-custom" :
-                                sig.action === "HOLD" ? "bg-blue-custom/10 border-blue-custom/30 text-blue-custom" :
-                                "bg-amber-custom/10 border-amber-custom/30 text-amber-custom"
-                              }`}>
-                                {sig.action.includes("BUY") ? "🟢" : 
-                                 (sig.action.includes("SELL") || sig.action === "REDUCE") ? "🔴" : 
-                                 sig.action === "HOLD" ? "🟡" : "⚪"} {sig.action}
-                              </span>
-                            ) : (
-                              <span className="font-mono text-[0.65rem] text-text-4 uppercase">No Signal</span>
-                            )}
-                          </td>
-                          <td className="p-4 text-center">
-                             <button
-                              onClick={() => handleDeletePosition(h.stock)}
-                              className="font-mono text-[0.65rem] bg-transparent border border-red-custom text-red-custom py-1 px-2 rounded cursor-pointer transition-colors duration-150 hover:bg-red-dim hover:text-red-custom"
-                            >
-                              RESET
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {(() => {
+              const inrTotalValue = holdings.filter(h => h.currency === "INR").reduce((sum, h) => sum + (h.value || 0), 0);
+              const usdTotalValue = holdings.filter(h => h.currency === "USD").reduce((sum, h) => sum + (h.value || 0), 0);
+
+              return (
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-3 mt-8 mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="font-mono text-[0.65rem] tracking-[0.15em] text-text-3 uppercase font-bold">
+                        ACTIVE PORTFOLIO POSITIONS
+                      </div>
+                      <span className="font-mono text-[0.6rem] bg-bg-2 border border-border-custom px-2 py-0.5 rounded text-text-3">
+                        {holdings.length} POSITIONS
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setAutoRefresh(prev => !prev)}
+                        className={`flex items-center gap-1.5 font-mono text-[0.62rem] px-2.5 py-1 rounded border transition-colors cursor-pointer ${
+                          autoRefresh 
+                            ? "bg-green-dim/15 border-green-custom/30 text-green-custom" 
+                            : "bg-bg-2 border-border-custom text-text-3"
+                        }`}
+                        title="Toggle real-time auto sync every 30 seconds"
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${autoRefresh ? "bg-green-custom animate-pulse" : "bg-text-4"}`} />
+                        <span>{autoRefresh ? "LIVE SYNC (30s)" : "SYNC PAUSED"}</span>
+                      </button>
+                      <button
+                        onClick={() => fetchData()}
+                        disabled={loading}
+                        className="font-mono text-[0.62rem] bg-bg-2 hover:bg-bg-3 border border-border-custom text-text-2 px-2.5 py-1 rounded transition-colors cursor-pointer"
+                        title="Force Refresh Data"
+                      >
+                        ↻ REFRESH
+                      </button>
+                    </div>
+                  </div>
+
+                  {loading ? (
+                    <div className="font-mono text-xs text-text-3 py-8 text-center bg-bg-1 border border-border-custom rounded my-2">
+                      FETCHING CURRENT HOLDINGS &amp; SIGNALS...
+                    </div>
+                  ) : holdings.length === 0 ? (
+                    <div className="bg-bg-1 border border-border-custom p-12 rounded text-center my-4">
+                      <div className="font-display text-[1.5rem] tracking-[0.1em] text-text-3">PORTFOLIO EMPTY</div>
+                      <div className="font-mono text-xs text-text-3 mt-2">LINK A DEMAT ACCOUNT OR RECORD A TRANSACTION TO SYNC STOCKS</div>
+                    </div>
+                  ) : (
+                    <div className="w-full overflow-x-auto border border-border-custom bg-bg-1 rounded my-2">
+                      <table className="w-full border-collapse text-left text-[0.8rem]">
+                        <thead>
+                          <tr className="border-b border-border-custom text-text-2 font-mono uppercase text-[0.62rem] tracking-wider bg-bg-2 whitespace-nowrap">
+                            <th className="p-3">STOCK</th>
+                            <th className="p-3">EXCHANGE</th>
+                            <th className="p-3 text-right">WEIGHT</th>
+                            <th className="p-3 text-right">QTY</th>
+                            <th className="p-3 text-right">AVG PRICE</th>
+                            <th className="p-3 text-right">LIVE PRICE</th>
+                            <th className="p-3 text-right">TOTAL VALUE</th>
+                            <th className="p-3 text-right">UNREALIZED P&amp;L</th>
+                            <th className="p-3 text-right">STOP-LOSS</th>
+                            <th className="p-3 text-center">TARGET RANGE</th>
+                            <th className="p-3 text-center">AI SIGNAL</th>
+                            <th className="p-3 text-center">ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono">
+                          {holdings.map((h) => {
+                            const normalize = (sym?: string) => (sym || "").toUpperCase().replace(/\.(NS|BO)$/, "").trim();
+                            const holdingSym = normalize(h.displaySym || h.stock);
+                            const sig = aiSignals.find(s => 
+                              normalize(s.symbol) === holdingSym || 
+                              normalize(s.displaySymbol) === holdingSym ||
+                              normalize(s.providerSymbol) === holdingSym
+                            );
+                            const action = sig ? (sig.action || sig.signal || "HOLD").toUpperCase() : null;
+                            const sigScore = sig?.finalScore ?? sig?.score ?? 50;
+                            const totalBase = h.currency === "USD" ? usdTotalValue : inrTotalValue;
+                            const weightPct = totalBase > 0 ? ((h.value || 0) / totalBase) * 100 : 0;
+                            const isOverConcentrated = weightPct > 25;
+                            const currSym = h.currency === "USD" ? "$" : "₹";
+                            const isStopLossBreached = sig?.stopLoss && h.currentPrice && h.currentPrice <= sig.stopLoss;
+                            const guidance = action ? getPositionGuidance(action, sigScore, weightPct) : null;
+
+                            return (
+                              <tr key={h.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors duration-150 whitespace-nowrap">
+                                <td className="p-3 font-bold text-text-custom">
+                                  <span 
+                                    className="cursor-pointer hover:text-cyan-custom transition-colors"
+                                    onClick={() => {
+                                      setSelectedModalHolding(h);
+                                      setSelectedModalSignal(sig || null);
+                                      setSelectedModalWeight(weightPct);
+                                    }}
+                                  >
+                                    {h.displaySym}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-text-3 text-[0.7rem]">{h.exchange}</td>
+                                <td className="p-3 text-right">
+                                  <span className={`text-[0.72rem] ${isOverConcentrated ? "text-amber-custom font-bold" : "text-text-2"}`}>
+                                    {weightPct.toFixed(1)}% {isOverConcentrated && <WarningIcon />}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right text-text-custom">{h.quantity.toLocaleString()}</td>
+                                <td className="p-3 text-right text-text-custom">{fmt(h.avgPrice, h.currency)}</td>
+                                <td className="p-3 text-right text-cyan-custom font-bold">{fmt(h.currentPrice, h.currency)}</td>
+                                <td className="p-3 text-right text-text-custom">{fmt(h.value, h.currency)}</td>
+                                <td className={`p-3 text-right font-bold ${h.pl != null ? (h.pl >= 0 ? "text-green-custom" : "text-red-custom") : "text-text-4"}`}>
+                                  {h.pl != null ? `${h.pl >= 0 ? "+" : ""}${h.pl.toFixed(2)} (${h.plPct >= 0 ? "+" : ""}${h.plPct.toFixed(2)}%)` : "—"}
+                                </td>
+                                <td className="p-3 text-right font-mono text-[0.75rem]">
+                                  {sig?.stopLoss ? (
+                                    <span className={isStopLossBreached ? "text-red-custom font-bold animate-pulse" : "text-red-custom/80"}>
+                                      {currSym}{sig.stopLoss.toFixed(2)} {isStopLossBreached && <WarningIcon />}
+                                    </span>
+                                  ) : (
+                                    <span className="text-text-4">—</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center font-mono text-[0.75rem]">
+                                  {sig?.targetRange ? (
+                                    <span className="text-green-custom font-bold">
+                                      {currSym}{sig.targetRange.min} - {currSym}{sig.targetRange.max}
+                                    </span>
+                                  ) : (
+                                    <span className="text-text-4">—</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  {action ? (
+                                    <div className="flex flex-col items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedModalHolding(h);
+                                          setSelectedModalSignal(sig || null);
+                                          setSelectedModalWeight(weightPct);
+                                        }}
+                                        className={`inline-flex items-center gap-1 font-mono text-[0.65rem] font-bold px-2 py-0.5 border rounded uppercase cursor-pointer transition-transform hover:scale-105 ${
+                                          action.includes("BUY") ? "bg-green-dim/20 border-green-custom/40 text-green-custom hover:border-green-custom" :
+                                          (action.includes("SELL") || action === "REDUCE") ? "bg-red-dim/20 border-red-custom/40 text-red-custom hover:border-red-custom" :
+                                          action === "HOLD" ? "bg-blue-custom/15 border-blue-custom/40 text-blue-custom hover:border-blue-custom" :
+                                          "bg-amber-custom/15 border-amber-custom/40 text-amber-custom hover:border-amber-custom"
+                                        }`}
+                                        title="Click to view 7-pillar breakdown & analysis"
+                                      >
+                                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                                          action.includes("BUY") ? "bg-green-custom" :
+                                          (action.includes("SELL") || action === "REDUCE") ? "bg-red-custom" :
+                                          action === "HOLD" ? "bg-blue-custom" : "bg-amber-custom"
+                                        }`} />
+                                        <span>{action}</span>
+                                        <svg className="w-2.5 h-2.5 text-text-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.2-5.2m1.7-5.3a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                        </svg>
+                                      </button>
+                                      {guidance && (
+                                        <span className="font-mono text-[0.6rem] text-red-custom font-bold">
+                                          {guidance.label === "Exit Position" ? "Exit 100%" : `Trim ${guidance.pct}%`}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="font-mono text-[0.65rem] text-text-4 uppercase">No Signal</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-center">
+                                  <button
+                                    onClick={() => handleDeletePosition(h.stock)}
+                                    className="font-mono text-[0.65rem] bg-transparent border border-red-custom text-red-custom py-1 px-2 rounded cursor-pointer transition-colors duration-150 hover:bg-red-dim hover:text-red-custom"
+                                  >
+                                    RESET
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </section>
         </div>
 
@@ -772,6 +934,18 @@ export default function PortfolioPage() {
           <span>© 2026</span>
         </div>
       </footer>
+
+      {/* Signal Detail Modal */}
+      <SignalDetailModal
+        isOpen={Boolean(selectedModalHolding)}
+        onClose={() => {
+          setSelectedModalHolding(null);
+          setSelectedModalSignal(null);
+        }}
+        holding={selectedModalHolding}
+        signal={selectedModalSignal}
+        portfolioWeightPct={selectedModalWeight}
+      />
 
       {/* Toasts */}
       <NotificationSystem toasts={toasts} onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))} />

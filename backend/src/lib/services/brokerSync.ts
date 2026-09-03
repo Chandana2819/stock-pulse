@@ -74,27 +74,11 @@ export async function syncUserBroker(userId: string, brokerId: string) {
         }
       });
 
-      // Seed exact close price in StockPrice table to align portfolio P&L
-      let currentPrice = h.avgPrice;
-      if (symbol === "TCS.NS") currentPrice = 3310.00;
-      else if (symbol === "INFY.NS") currentPrice = 1400.00;
-      else if (symbol === "RELIANCE.NS") currentPrice = 2339.805;
-
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-      await prisma.stockPrice.upsert({
-        where: { symbol_date: { symbol, date: today } },
-        update: { close: currentPrice },
-        create: {
-          symbol,
-          date: today,
-          open: currentPrice,
-          high: currentPrice,
-          low: currentPrice,
-          close: currentPrice,
-          volume: 1000
-        }
-      });
+      // Current price for P&L comes from a live quote (getEnrichedHoldings ->
+      // marketDataProvider.getQuotes), never from this sync step — writing a
+      // guessed/hardcoded "close" into StockPrice here would risk planting a
+      // fabricated candle in the real historical series that the decision
+      // engine's indicators (SMA/RSI/trend) read for this symbol.
     }
 
     await prisma.brokerConnection.update({

@@ -69,7 +69,7 @@ export default function MarketStatusPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-mono text-xs">
             {/* Exchange statuses */}
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Exchange Feeds Status</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Exchange Feeds Status</h3>
               <div className="flex flex-col gap-3">
                 <div className="flex justify-between items-center bg-bg-2/30 p-2.5 border border-border-custom rounded">
                   <span>NSE (India):</span>
@@ -92,7 +92,7 @@ export default function MarketStatusPage() {
 
             {/* Provider specs */}
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Provider Config Specs</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Provider Config Specs</h3>
               <div className="flex flex-col gap-3">
                 <div className="flex justify-between items-center bg-bg-2/30 p-2.5 border border-border-custom rounded">
                   <span>Market Provider:</span>

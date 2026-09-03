@@ -4,8 +4,10 @@ import { marketDataProvider } from "../lib/providers";
 import { pctChange } from "../lib/indicators";
 import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v, SYMBOL_RE } from "../lib/validate";
+import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
+router.use(requireAuth);
 
 router.get(
   "/",

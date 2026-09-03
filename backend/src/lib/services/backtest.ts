@@ -20,9 +20,22 @@ export type BacktestResult = {
   averageReturn: number; // %
   maxDrawdown: number; // %
   averageHoldingPeriod: number; // days
-  benchmarkReturn: number; // % NIFTY 50 comparison proxy
+  benchmarkReturn: number | null; // % real NIFTY 50 return over the same window, null if no index data covers it
   trades: Trade[];
 };
+
+async function getRealNiftyReturn(startDate: Date, endDate: Date): Promise<number | null> {
+  const niftyPrices = await prisma.stockPrice.findMany({
+    where: { symbol: "^NSEI", date: { gte: startDate, lte: endDate } },
+    orderBy: { date: "asc" },
+    select: { close: true },
+  });
+  if (niftyPrices.length < 2) return null;
+  const first = niftyPrices[0].close;
+  const last = niftyPrices[niftyPrices.length - 1].close;
+  if (!first) return null;
+  return Number((((last - first) / first) * 100).toFixed(2));
+}
 
 export async function runBacktest(options: {
   symbols: string[];
@@ -151,22 +164,34 @@ export async function runBacktest(options: {
   const sumHoldDays = trades.reduce((sum, t) => sum + (t.durationDays ?? 0), 0);
   const averageHoldingPeriod = totalTrades > 0 ? Math.round(sumHoldDays / totalTrades) : 0;
 
-  // Calculate Max Drawdown from trade sequence
-  let peakEquity = 100000; // start equity 1L
-  let currentEquity = 100000;
+  // Calculate Max Drawdown across a chronological, equal-weighted equity curve.
+  // `trades` is grouped per-symbol (all of symbol A's trades, then symbol B's...),
+  // not in time order, so walking it as-is and compounding full equity into each
+  // trade would treat unrelated symbols' trade sequences as if they happened one
+  // after another with 100% of capital re-staked every time — a single bad run
+  // on one symbol could then crater "equity" for every symbol simulated after it.
+  // Sorting chronologically and sizing each trade as a fixed slice of capital
+  // (as if capital were split across several concurrent positions) models a
+  // real multi-symbol strategy instead of one all-in serial bet.
+  const CONCURRENT_POSITION_SLOTS = 20;
+  const positionSize = 100000 / CONCURRENT_POSITION_SLOTS;
+  const chronologicalTrades = [...trades].sort(
+    (a, b) => (a.exitDate?.getTime() ?? 0) - (b.exitDate?.getTime() ?? 0)
+  );
+
+  let equity = 100000;
+  let peakEquity = 100000;
   let maxDrawdown = 0;
 
-  for (const t of trades) {
-    const gain = currentEquity * ((t.returnPct ?? 0) / 100);
-    currentEquity += gain;
-    if (currentEquity > peakEquity) peakEquity = currentEquity;
-    const dd = peakEquity > 0 ? ((peakEquity - currentEquity) / peakEquity) * 100 : 0;
+  for (const t of chronologicalTrades) {
+    equity += positionSize * ((t.returnPct ?? 0) / 100);
+    if (equity > peakEquity) peakEquity = equity;
+    const dd = peakEquity > 0 ? ((peakEquity - equity) / peakEquity) * 100 : 0;
     if (dd > maxDrawdown) maxDrawdown = dd;
   }
 
-  // Estimate NIFTY 50 index benchmark return (assumes a general 11.5% annual return prorated)
-  const totalDays = Math.round((options.endDate.getTime() - options.startDate.getTime()) / (24 * 3600 * 1000));
-  const benchmarkReturn = Number(((totalDays / 365) * 11.5).toFixed(2));
+  // Real NIFTY 50 buy & hold return over the same window (null if index history doesn't cover it)
+  const benchmarkReturn = await getRealNiftyReturn(options.startDate, options.endDate);
 
   return {
     totalTrades,

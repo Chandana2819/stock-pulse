@@ -1,7 +1,7 @@
 import express from "express";
 import { prisma } from "../lib/prisma";
 import { classifyIntent, explainConcept, isLlmConfigured, smoothWithLlm } from "../lib/engine/assistant";
-import { buildStockAnalysis } from "../lib/services/stockAnalysis";
+import { buildStockAnalysis, getRecentSignalTrend } from "../lib/services/stockAnalysis";
 import { diagnosePortfolio, type HoldingLite } from "../lib/engine/portfolioDoctor";
 import { getEnrichedHoldings, ensureProfile } from "../lib/services/portfolio";
 import { lookupUniverse } from "../lib/universe";
@@ -66,12 +66,28 @@ router.post(
   })
 );
 
+// A follow-up question ("what about the risk", "and the stop-loss?") won't
+// name a symbol again — if intent classification comes up empty but the
+// caller told us which symbol the conversation was already about, and the
+// question reads like it's still about a stock, carry that symbol forward
+// instead of falling back to the generic menu.
+function looksLikeStockFollowUp(q: string): boolean {
+  return /(risk|target|stop.?loss|entry|chart|trend|timeline|outlook|score|confidence|why|it|this|that|hold|buy|sell)/i.test(q);
+}
+
 router.post(
   "/chat",
   asyncHandler(async (req, res) => {
-    const { question } = parse({ question: v.string({ min: 1, max: 500 }) }, req.body);
+    const { question, contextSymbol } = parse(
+      { question: v.string({ min: 1, max: 500 }), contextSymbol: v.optional(v.string({ max: 24 })) },
+      req.body
+    );
     const cleanQuestion = sanitizeText(question, 500);
-    const intent = classifyIntent(cleanQuestion);
+    let intent = classifyIntent(cleanQuestion);
+
+    if (intent.type === "UNKNOWN" && contextSymbol && looksLikeStockFollowUp(cleanQuestion.toLowerCase())) {
+      intent = { type: "STOCK_DECISION", symbol: contextSymbol };
+    }
 
     let answer = "";
     let confidence = 60;
@@ -92,9 +108,21 @@ router.post(
           confidence = 30;
         } else {
           const pct = analysis.priceChangePct;
-          answer = `${analysis.resolved.displaySymbol} is ${pct != null && pct >= 0 ? "up" : "down"} ${pct != null ? Math.abs(pct).toFixed(2) : "0"}% today. ${analysis.attribution.mainReasons.join(" ")} ${analysis.attribution.disclaimer}`;
+          const sym = analysis.resolved.displaySymbol;
+          const trend = await getRecentSignalTrend(analysis.symbol, analysis.decision.score);
+          const parts = [
+            `${sym} is ${pct != null && pct >= 0 ? "up" : "down"} ${pct != null ? Math.abs(pct).toFixed(2) : "0"}% today.`,
+            analysis.attribution.mainReasons.join(" "),
+            `Current AI call: ${analysis.decision.decision} (${analysis.decision.score}/100).`,
+          ];
+          if (trend) {
+            parts.push(`Over its last ${trend.sampleSize} scans it has ${trend.flipSummary}.`);
+          }
+          parts.push(analysis.attribution.disclaimer);
+          parts.push(`Full chart: /stock/${encodeURIComponent(sym)}`);
+          answer = parts.join(" ");
           confidence = analysis.attribution.confidence === "HIGH" ? 80 : analysis.attribution.confidence === "MEDIUM" ? 60 : 40;
-          evidence = analysis.attribution.breakdown;
+          evidence = { breakdown: analysis.attribution.breakdown, trend };
         }
         subject = intent.symbol;
         break;
@@ -106,9 +134,44 @@ router.post(
           confidence = 30;
         } else {
           const d = analysis.decision;
-          answer = `${d.decision} (confidence ${d.confidence}%). ${d.reasons.join(" ")} Main risk: ${d.mainRisk}. This would change with: ${d.wouldChange.join(", ")}.`;
+          const sym = analysis.resolved.displaySymbol;
+          const currency = analysis.resolved.exchange === "GLOBAL" ? "$" : "₹";
+          const trend = await getRecentSignalTrend(analysis.symbol, d.score);
+
+          const parts: string[] = [];
+          parts.push(`${sym}: ${d.decision} — score ${d.score}/100, ${d.confidence}% confidence.`);
+          if (d.reasons?.length) parts.push(d.reasons.slice(0, 2).join(" "));
+
+          if (d.decision?.includes("BUY") && d.entryZone && d.stopLoss && d.targetRange) {
+            parts.push(
+              `Suggested entry ${currency}${d.entryZone.min}–${currency}${d.entryZone.max}, stop-loss ${currency}${d.stopLoss}, target ${currency}${d.targetRange.min}–${currency}${d.targetRange.max}.`
+            );
+          }
+
+          if (d.horizon) {
+            parts.push(`${d.horizon.label}: ${d.horizon.reasoning}`);
+          }
+          if (d.activeSince) {
+            parts.push(
+              d.activeSince.activeDays === 0
+                ? "This call was just formed in the most recent scan."
+                : `This call has held for ${d.activeSince.activeDays} day${d.activeSince.activeDays === 1 ? "" : "s"} so far.`
+            );
+          }
+          if (trend) {
+            parts.push(
+              `Over the last ${trend.sampleSize} scans it has ${trend.flipSummary}${
+                trend.scoreDelta != null ? `, score ${trend.scoreDelta >= 0 ? "up" : "down"} ${Math.abs(trend.scoreDelta)} pts from a week ago` : ""
+              }.`
+            );
+          }
+
+          parts.push(`Main risk: ${d.mainRisk}`);
+          parts.push(`Full chart & 7-pillar breakdown: /stock/${encodeURIComponent(sym)}`);
+
+          answer = parts.join(" ");
           confidence = d.confidence;
-          evidence = d.pillars;
+          evidence = { pillars: d.pillars, horizon: d.horizon, activeSince: d.activeSince, trend };
         }
         subject = intent.symbol;
         break;
@@ -116,11 +179,15 @@ router.post(
       case "COMPARE_STOCKS": {
         const analyses = await Promise.all(intent.symbols.map((s) => buildStockAnalysis(s)));
         const lines = analyses.map((a, i) =>
-          a.found ? `${a.resolved.displaySymbol}: ${a.decision.decision} (PE ${a.fundamentals?.peRatio?.toFixed(1) ?? "n/a"}, ROE ${a.fundamentals?.roe?.toFixed(1) ?? "n/a"}%, ${a.decision.confidence}% confidence)` : `${intent.symbols[i]}: not found`
+          a.found
+            ? `${a.resolved.displaySymbol}: ${a.decision.decision} (score ${a.decision.score}/100, PE ${a.fundamentals?.peRatio?.toFixed(1) ?? "n/a"}, ROE ${a.fundamentals?.roe?.toFixed(1) ?? "n/a"}%, ${a.decision.confidence}% confidence${a.decision.horizon ? `, ${a.decision.horizon.label.toLowerCase()}` : ""})`
+            : `${intent.symbols[i]}: not found`
         );
-        answer = lines.join(" · ");
+        const found = analyses.filter((a) => a.found);
+        const best = [...found].sort((a, b) => (b.decision.score ?? 0) - (a.decision.score ?? 0))[0];
+        answer = lines.join(" · ") + (best ? ` Highest composite score: ${best.resolved.displaySymbol} at ${best.decision.score}/100.` : "");
         confidence = 65;
-        evidence = analyses.filter((a) => a.found).map((a) => (a.found ? { symbol: a.symbol, decision: a.decision } : null));
+        evidence = found.map((a) => ({ symbol: a.symbol, decision: a.decision }));
         subject = intent.symbols.join(",");
         break;
       }
@@ -182,7 +249,10 @@ router.post(
 
     await saveInsight(req.user?.id ?? null, "CHAT", subject, cleanQuestion, { conclusion: answer, why: intent.type, evidence, confidence });
 
-    return res.json({ answer, intent: intent.type, confidence, evidence });
+    const symbol =
+      intent.type === "STOCK_DECISION" || intent.type === "EXPLAIN_STOCK_MOVE" ? intent.symbol : null;
+
+    return res.json({ answer, intent: intent.type, confidence, evidence, symbol });
   })
 );
 

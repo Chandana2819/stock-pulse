@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
-import { API_BASE } from "../lib/api";
+import { api, ApiRequestError } from "../lib/api";
 
 type JournalEntry = {
   id: string;
@@ -37,19 +37,12 @@ export default function JournalPage() {
   }, []);
 
   const fetchEntries = useCallback(async () => {
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/journal`, {
-        headers: { "x-device-id": deviceId },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setEntries(data || []);
-      }
-    } catch {
-      addToast({ type: "danger", title: "Error", message: "Failed to fetch journal entries." });
+      const data = await api.get<JournalEntry[]>("/api/journal");
+      setEntries(data || []);
+    } catch (e) {
+      addToast({ type: "danger", title: "Error", message: e instanceof ApiRequestError ? e.message : "Failed to fetch journal entries." });
     } finally {
       setLoading(false);
     }
@@ -64,34 +57,18 @@ export default function JournalPage() {
     e.preventDefault();
     if (!formStock.trim() || !formThesis.trim()) return;
 
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
-
     setSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/journal`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-device-id": deviceId,
-        },
-        body: JSON.stringify({
-          stock: formStock.toUpperCase().trim(),
-          thesis: formThesis,
-        }),
+      await api.post("/api/journal", {
+        stock: formStock.toUpperCase().trim(),
+        thesis: formThesis,
       });
-
-      if (res.ok) {
-        addToast({ type: "success", title: "Thesis Logged", message: `Recorded investment thesis for ${formStock.toUpperCase()}.` });
-        setFormStock("");
-        setFormThesis("");
-        fetchEntries();
-      } else {
-        const err = await res.json();
-        addToast({ type: "danger", title: "Submission Failed", message: err.error || "Could not log entry." });
-      }
-    } catch {
-      addToast({ type: "danger", title: "Error", message: "Network error submitting thesis." });
+      addToast({ type: "success", title: "Thesis Logged", message: `Recorded investment thesis for ${formStock.toUpperCase()}.` });
+      setFormStock("");
+      setFormThesis("");
+      fetchEntries();
+    } catch (e) {
+      addToast({ type: "danger", title: "Submission Failed", message: e instanceof ApiRequestError ? e.message : "Network error submitting thesis." });
     } finally {
       setSubmitting(false);
     }
@@ -102,35 +79,19 @@ export default function JournalPage() {
     e.preventDefault();
     if (!closingId || !closeNotes.trim()) return;
 
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
-
     setClosingSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE}/api/journal`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "x-device-id": deviceId,
-        },
-        body: JSON.stringify({
-          id: closingId,
-          status: "CLOSED",
-          notes: closeNotes,
-        }),
+      await api.put("/api/journal", {
+        id: closingId,
+        status: "CLOSED",
+        notes: closeNotes,
       });
-
-      if (res.ok) {
-        addToast({ type: "info", title: "Thesis Archived", message: "Thesis successfully closed out." });
-        setClosingId(null);
-        setCloseNotes("");
-        fetchEntries();
-      } else {
-        const err = await res.json();
-        addToast({ type: "danger", title: "Close failed", message: err.error || "Wipe failed." });
-      }
-    } catch {
-      addToast({ type: "danger", title: "Error", message: "Network error closing thesis." });
+      addToast({ type: "info", title: "Thesis Archived", message: "Thesis successfully closed out." });
+      setClosingId(null);
+      setCloseNotes("");
+      fetchEntries();
+    } catch (e) {
+      addToast({ type: "danger", title: "Close failed", message: e instanceof ApiRequestError ? e.message : "Network error closing thesis." });
     } finally {
       setClosingSubmitting(false);
     }
@@ -146,7 +107,7 @@ export default function JournalPage() {
         {/* Left Column: Logged Theses */}
         <div>
           <section className="flex flex-col gap-5 mt-0">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// ACTIVE INVESTMENT THESES (OPEN)"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"ACTIVE INVESTMENT THESES (OPEN)"}</div>
             
             {loading ? (
               <div className="font-mono text-xs text-text-3 py-8 text-center">LOADING JOURNAL ENTRIES...</div>
@@ -223,7 +184,7 @@ export default function JournalPage() {
             )}
 
             {/* Archived Theses */}
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-12">{"// ARCHIVED RESOLUTIONS (CLOSED)"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase mt-12">{"ARCHIVED RESOLUTIONS (CLOSED)"}</div>
             {closedEntries.length === 0 ? (
               <div className="font-mono text-xs text-text-3 py-4">NO ARCHIVED ENTRIES</div>
             ) : (
@@ -266,7 +227,7 @@ export default function JournalPage() {
         {/* Right Column: Record Form */}
         <div>
           <section className="bg-bg-1 border border-border-custom p-6 rounded flex flex-col gap-5">
-            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// LOG NEW THESIS"}</div>
+            <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"LOG NEW THESIS"}</div>
             <form onSubmit={handleCreateEntry} className="mt-4">
               <div className="mb-4">
                 <label className="block font-mono text-[0.65rem] text-text-3 mb-1">STOCK SYMBOL (e.g. TCS or NVDA)</label>

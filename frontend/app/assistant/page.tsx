@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { api, ApiRequestError } from "../lib/api";
 
-type Msg = { role: "user" | "assistant"; text: string; confidence?: number };
+type Msg = { role: "user" | "assistant"; text: string; confidence?: number; symbol?: string | null };
 
 const SUGGESTIONS = [
   "Why is TCS falling?",
@@ -22,6 +23,7 @@ export default function AssistantPage() {
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lastSymbol, setLastSymbol] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,8 +36,12 @@ export default function AssistantPage() {
     setInput("");
     setLoading(true);
     try {
-      const res = await api.post<{ answer: string; confidence: number }>("/api/ai/chat", { question: text });
-      setMessages((prev) => [...prev, { role: "assistant", text: res.answer, confidence: res.confidence }]);
+      const res = await api.post<{ answer: string; confidence: number; symbol?: string | null }>("/api/ai/chat", {
+        question: text,
+        contextSymbol: lastSymbol ?? undefined,
+      });
+      setMessages((prev) => [...prev, { role: "assistant", text: res.answer, confidence: res.confidence, symbol: res.symbol ?? null }]);
+      if (res.symbol) setLastSymbol(res.symbol);
     } catch (e) {
       setMessages((prev) => [...prev, { role: "assistant", text: e instanceof ApiRequestError ? e.message : "Something went wrong answering that." }]);
     } finally {
@@ -55,10 +61,27 @@ export default function AssistantPage() {
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] p-3 text-sm leading-relaxed ${m.role === "user" ? "bg-green-dim border border-green-custom/30 text-text-custom" : "bg-bg-2 border border-border-custom text-text-2"}`}>
               {m.text}
-              {m.confidence != null && <div className="font-mono text-[0.55rem] text-text-3 mt-2 uppercase">Confidence: {m.confidence}%</div>}
+              {(m.confidence != null || m.symbol) && (
+                <div className="flex items-center justify-between gap-3 mt-2">
+                  {m.confidence != null && <div className="font-mono text-[0.55rem] text-text-3 uppercase">Confidence: {m.confidence}%</div>}
+                  {m.symbol && (
+                    <Link
+                      href={`/stock/${encodeURIComponent(m.symbol)}`}
+                      className="font-mono text-[0.55rem] text-cyan-custom hover:underline uppercase whitespace-nowrap"
+                    >
+                      View chart & full analysis →
+                    </Link>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}
+        {lastSymbol && (
+          <div className="font-mono text-[0.55rem] text-text-4 uppercase self-start">
+            Still talking about {lastSymbol} — mention another stock to switch.
+          </div>
+        )}
         {loading && <div className="font-mono text-[0.65rem] text-text-3 animate-pulse">Thinking…</div>}
         <div ref={endRef} />
       </div>

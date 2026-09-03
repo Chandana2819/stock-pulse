@@ -90,17 +90,24 @@ router.get(
     
     const userId = req.user!.id;
 
-    // State validation (Upstox)
-    if (provider.id === "UPSTOX") {
+    // State validation — CSRF protection for the OAuth callback. Applies to
+    // every broker, not just the one that happened to get it originally:
+    // the state embedded at /:broker/connect (line 54, `${userId}:${state}`)
+    // is worthless as a CSRF defense if the callback never checks it came
+    // back unmodified for the same user. Skipped only for the unconfigured-
+    // provider demo redirect, which never issues a real state to check.
+    if (provider.configured) {
       const state = query.state;
       if (typeof state !== "string" || !state) {
         throw ApiError.badRequest("Missing state parameter");
       }
       const stateParts = state.split(":");
       if (stateParts[0] !== userId) {
-        console.error(`[UPSTOX] State validation failed. Expected user: ${userId}, Got: ${state}`);
+        console.error(`[${provider.id}] State validation failed. Expected user: ${userId}, got state prefix: ${stateParts[0]}`);
         throw ApiError.badRequest("State validation failed: user ID mismatch");
       }
+    }
+    if (provider.id === "UPSTOX") {
       console.log("[UPSTOX] State validation: success");
       console.log(`[UPSTOX] API key configured: ${Boolean(env.upstoxApiKey) ? "true" : "false"}`);
       console.log(`[UPSTOX] API secret configured: ${Boolean(env.upstoxApiSecret) ? "true" : "false"}`);

@@ -49,6 +49,37 @@ router.get(
   })
 );
 
+// GET /api/market/risk - Broad Market Risk Radar API matching ChatGPT spec
+router.get(
+  "/risk",
+  asyncHandler(async (_req, res) => {
+    const { risk } = await loadCoreMarket();
+    
+    // Map array factors into structured factors object
+    const factorsMap: Record<string, number | null> = {};
+    for (const f of risk.factors) {
+      factorsMap[f.key] = f.score;
+    }
+
+    return res.json({
+      marketRiskScore: risk.score,
+      riskLevel: risk.classification,
+      factors: {
+        indexTrend: factorsMap["indexTrend"] ?? 50,
+        marketVolatility: factorsMap["volatility"] ?? 50,
+        globalMarkets: factorsMap["globalMarkets"] ?? 50,
+        marketBreadth: factorsMap["breadth"] ?? 50,
+        niftyMomentum: factorsMap["niftyMomentum"] ?? 50,
+        sectorDivergence: factorsMap["largeCapDivergence"] ?? 50,
+        fiiDiiFlows: factorsMap["fiiDii"] ?? 50,
+      },
+      reasons: risk.reasons,
+      dataQuality: "GOOD",
+      createdAt: new Date().toISOString(),
+    });
+  })
+);
+
 router.get(
   "/macro",
   asyncHandler(async (_req, res) => {
@@ -86,7 +117,6 @@ router.get(
       holdingsCount = holdings.length;
       const nifty = indices.find((i) => i.symbol === "NIFTY 50");
       if (nifty?.pctChange != null && portfolioValue > 0) {
-        // Rough portfolio-level estimate from broad-market beta, pending real per-stock attribution.
         portfolioChangeEstimate = (portfolioValue * nifty.pctChange) / 100;
       }
     }

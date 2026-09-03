@@ -99,7 +99,7 @@ export default function CandleChart({ candles, stock }: Props) {
   return (
     <div className="border-b border-border-custom">
       <div className="flex items-center justify-between py-[0.6rem] px-6 border-b border-border-custom bg-bg-2">
-        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">3M OHLC · {stock}</span>
+        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">5Y OHLC · {stock}</span>
         <span className="py-[0.15rem] px-[0.45rem] bg-bg-3 border border-border-custom font-mono text-[0.58rem] tracking-[0.1em] text-text-3 uppercase">Candlestick</span>
       </div>
       <div ref={chartRef} className="w-full" />

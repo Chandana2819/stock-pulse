@@ -22,18 +22,35 @@ export default function LessonPage() {
   const router = useRouter();
   const id = String(params.id);
   const [lesson, setLesson] = useState<Lesson | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [answers, setAnswers] = useState<number[]>([]);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setNotFound(false);
     api.get<Lesson>(`/api/learning/${id}`).then((l) => {
       setLesson(l);
       setAnswers(new Array(l.quiz.length).fill(-1));
       setSubmitted(false);
-    }).catch(() => setLesson(null));
+    }).catch(() => {
+      setLesson(null);
+      setNotFound(true);
+    }).finally(() => setLoading(false));
   }, [id]);
 
-  if (!lesson) return <div className="p-8 font-mono text-xs text-text-3">Loading...</div>;
+  if (loading) return <div className="p-8 font-mono text-xs text-text-3">Loading...</div>;
+
+  if (notFound || !lesson) {
+    return (
+      <div className="max-w-[760px] mx-auto w-full p-4 sm:p-8 flex flex-col items-center gap-4 text-center">
+        <div className="font-mono text-sm text-text-custom font-bold">Lesson not found</div>
+        <p className="font-mono text-xs text-text-3 max-w-sm">This lesson doesn't exist or couldn't be loaded. It may have been removed or renamed.</p>
+        <Link href="/learn" className="font-mono text-xs text-green-custom hover:underline">← Back to Lessons</Link>
+      </div>
+    );
+  }
 
   const score = lesson.quiz.length ? Math.round((answers.filter((a, i) => a === lesson.quiz[i].correctIndex).length / lesson.quiz.length) * 100) : 0;
 

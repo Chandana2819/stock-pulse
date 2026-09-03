@@ -130,6 +130,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
   const [marketOpen, setMarketOpen] = useState(false);
   const [currentHash, setCurrentHash] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     const updateHash = () => {
@@ -270,7 +271,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg text-text-custom">
       {/* Desktop Sidebar Navigation */}
-      <aside className="hidden md:flex flex-col w-64 border-r border-border-custom bg-bg-1 shrink-0 h-full overflow-hidden">
+      <aside
+        className={`hidden md:flex flex-col border-r border-border-custom bg-bg-1 shrink-0 h-full overflow-hidden transition-[width] duration-200 ${
+          sidebarOpen ? "w-64" : "w-0 border-r-0"
+        }`}
+      >
+        <div className="w-64 flex flex-col h-full">
         {/* Logo Section */}
         <div className="flex items-center gap-3 py-5 px-6 border-b border-border-custom justify-between shrink-0">
           <Link href="/" className="flex items-center gap-3 no-underline">
@@ -284,11 +290,16 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
               STOCK<span className="text-green-custom">PULSE</span>
             </h1>
           </Link>
-          <div className="w-5 h-5 flex flex-col justify-center gap-1 cursor-pointer opacity-70 hover:opacity-100">
+          <button
+            type="button"
+            aria-label="Collapse sidebar"
+            onClick={() => setSidebarOpen(false)}
+            className="w-5 h-5 flex flex-col justify-center gap-1 cursor-pointer opacity-70 hover:opacity-100 bg-transparent border-none p-0"
+          >
             <span className="h-[1.5px] w-4 bg-text-2 rounded-full" />
             <span className="h-[1.5px] w-3 bg-text-2 rounded-full" />
             <span className="h-[1.5px] w-4 bg-text-2 rounded-full" />
-          </div>
+          </button>
         </div>
 
         {/* Sidebar Scrollable Links */}
@@ -383,11 +394,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           </div>
           <span className="font-mono text-[0.7rem] text-text-3">09:30 AM - 03:30 PM (IST)</span>
         </div>
+        </div>
       </aside>
 
       {/* Main Content Pane */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <TopNav />
+        <TopNav sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((v) => !v)} />
         <div className="flex-grow overflow-y-auto overflow-x-hidden">
           {children}
         </div>

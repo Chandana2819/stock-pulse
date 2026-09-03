@@ -47,6 +47,50 @@ const CONCEPTS: Record<string, string> = {
   "volatility": "Volatility measures how much a price swings over time, usually shown as an annualised percentage. Higher volatility means bigger potential swings in both directions — more risk, and more potential reward.",
 };
 
+// Pulls every stock this question is plausibly talking about, in priority
+// order: exact ticker/display matches first, then fuzzy company-name matches
+// on 2-word windows (catches "Tata Motors", "HDFC Bank") then single words.
+// Fuzzy matching is done PER CANDIDATE WORD, never on the raw sentence —
+// searchUniverse expects a name-shaped query, and no company's name equals
+// a whole question, so passing the full text there always missed real
+// company names like "Infosys".
+// Common short filler words. searchUniverse matches by substring, so a bare
+// 2-3 letter word like "on"/"one"/"that" can accidentally hit inside a real
+// company name (e.g. "on" inside "MOTHERSON") — excluding them, and requiring
+// standalone single-word candidates to be at least 4 letters, keeps fuzzy
+// matching to words that could plausibly BE a company name.
+const STOP_WORDS = new Set([
+  "SHOULD", "WOULD", "COULD", "WHAT", "WHY", "HOW", "MORE", "ADD", "BUY", "SELL", "HOLD", "COMPARE", "VERSUS",
+  "ON", "AT", "IN", "TO", "IS", "IT", "OR", "AS", "BE", "OF", "MY", "NO", "DO", "IF", "SO", "UP", "GO", "ME", "WE", "AN",
+  "THAT", "THIS", "WITH", "FROM", "ABOUT", "YOUR", "HAVE", "HAS", "HAD", "ARE", "WAS", "FOR", "AND", "NOT", "CAN",
+  "ALL", "ONE", "OUT", "GET", "JUST", "LIKE", "THINK", "KNOW", "WANT", "NEED", "THE", "THEM", "THEY", "WHEN", "WILL",
+]);
+
+function extractSymbols(text: string, max = 3): string[] {
+  const words = text.toUpperCase().match(/[A-Z][A-Z0-9&.\-]{1,15}/g) ?? [];
+  const found: string[] = [];
+
+  for (const w of words) {
+    const hit = lookupUniverse(w);
+    if (hit && !found.includes(hit.display)) found.push(hit.display);
+  }
+  if (found.length >= max) return found.slice(0, max);
+
+  const meaningful = words.filter((w) => !STOP_WORDS.has(w));
+  const candidates: string[] = [];
+  for (let i = 0; i < meaningful.length - 1; i++) candidates.push(`${meaningful[i]} ${meaningful[i + 1]}`);
+  candidates.push(...meaningful.filter((w) => w.length >= 4));
+
+  for (const c of candidates) {
+    const hit = searchUniverse(c, 1)[0];
+    if (hit && !found.includes(hit.display)) {
+      found.push(hit.display);
+      if (found.length >= max) break;
+    }
+  }
+  return found;
+}
+
 export function classifyIntent(question: string): AssistantIntent {
   const q = question.trim().toLowerCase();
   if (!q) return { type: "UNKNOWN" };
@@ -57,14 +101,7 @@ export function classifyIntent(question: string): AssistantIntent {
     }
   }
 
-  const symbolFromText = (text: string): string | undefined => {
-    const words = text.toUpperCase().match(/[A-Z][A-Z0-9&.\-]{1,15}/g) ?? [];
-    for (const w of words) {
-      if (lookupUniverse(w)) return lookupUniverse(w)!.display;
-    }
-    const hits = searchUniverse(text, 1);
-    return hits[0]?.display;
-  };
+  const symbolFromText = (text: string): string | undefined => extractSymbols(text, 1)[0];
 
   if (/why (is|did|has)/.test(q) && /(fall|falling|fell|drop|down|rise|rising|up|surge|move|moving)/.test(q)) {
     if (q.includes("my portfolio") || q.includes("portfolio")) return { type: "PORTFOLIO_MOVE_TODAY" };
@@ -73,12 +110,11 @@ export function classifyIntent(question: string): AssistantIntent {
   }
 
   if (/(compare|vs\.?|versus)/.test(q)) {
-    const words = question.toUpperCase().match(/[A-Z][A-Z0-9&.\-]{1,15}/g) ?? [];
-    const symbols = [...new Set(words.map((w) => lookupUniverse(w)?.display).filter(Boolean))] as string[];
-    if (symbols.length >= 2) return { type: "COMPARE_STOCKS", symbols: symbols.slice(0, 3) };
+    const symbols = extractSymbols(question, 3);
+    if (symbols.length >= 2) return { type: "COMPARE_STOCKS", symbols };
   }
 
-  if (/(should i (add|buy|sell)|buy more|add more)/.test(q)) {
+  if (/(should i (add|buy|sell)|can i (buy|sell|add)|(is it|good) time to (buy|sell)|worth buying|good buy|buy more|add more)/.test(q)) {
     const sym = symbolFromText(question);
     if (sym) return { type: "STOCK_DECISION", symbol: sym };
   }
@@ -100,6 +136,12 @@ export function classifyIntent(question: string): AssistantIntent {
   const sym = symbolFromText(question);
   if (sym && /(decision|verdict|outlook|thoughts on|analy[sz]e)/.test(q)) return { type: "STOCK_DECISION", symbol: sym };
   if (sym) return { type: "EXPLAIN_STOCK_MOVE", symbol: sym };
+
+  // Generic "about my portfolio" / "my portfolio" with no more specific verb
+  // (risk/exposure/why-moving all already matched above if present) — still
+  // a clear portfolio question, not nothing. Give the summary rather than
+  // falling through to the generic menu.
+  if (/(my portfolio|about.*portfolio)/.test(q)) return { type: "PORTFOLIO_MOVE_TODAY" };
 
   return { type: "UNKNOWN" };
 }

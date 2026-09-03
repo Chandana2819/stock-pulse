@@ -8,10 +8,84 @@ import { marketDataProvider, newsProvider, resolveStockQuote } from "../provider
 import { computeIndicators, pctChange } from "../indicators";
 import { analyzeHeadline } from "../engine/sentiment";
 import { explainMove } from "../engine/whyMoving";
-import { computeDecision, type DecisionInput } from "../engine/decision";
+import { computeDecision, type DecisionInput, type SignalAction } from "../engine/decision";
 import { getSectorChangeForKey } from "./market";
 import { lookupUniverse } from "../universe";
 import { sourceMeta } from "../http";
+import { prisma } from "../prisma";
+
+// Groups signals that mean "the same call" for continuity purposes — e.g. a
+// symbol flipping from BUY to STRONG BUY isn't a new call, just a stronger
+// read of the same one.
+function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
+  if (action.includes("BUY")) return "BUY";
+  if (action.includes("SELL") || action === "REDUCE") return "SELL";
+  if (action === "HOLD") return "HOLD";
+  return "WAIT";
+}
+
+// Real, computed "how long has this call been active" — walks the actual
+// scan history (logged every 4h by the market scanner) backward from now,
+// counting consecutive rows in the same direction bucket as the current
+// signal. Not a forecast — a historical fact about this exact symbol.
+export async function getSignalActiveSince(symbol: string, currentSignal: SignalAction): Promise<{ activeSinceDate: string; activeDays: number } | null> {
+  const rows = await prisma.recommendationHistory.findMany({
+    where: { symbol },
+    orderBy: { generatedAt: "desc" },
+    take: 60,
+  }).catch(() => []);
+
+  if (rows.length === 0) return null;
+
+  const targetBucket = directionBucket(currentSignal);
+  let streakStart = rows[0].generatedAt;
+  for (const row of rows) {
+    if (directionBucket(row.action) !== targetBucket) break;
+    streakStart = row.generatedAt;
+  }
+
+  const activeDays = Math.max(0, Math.floor((Date.now() - streakStart.getTime()) / (24 * 3600 * 1000)));
+  return { activeSinceDate: streakStart.toISOString().slice(0, 10), activeDays };
+}
+
+export type SignalTrend = {
+  sampleSize: number;
+  scoreDaysAgo: number | null;
+  scoreDelta: number | null;
+  flips: number;
+  flipSummary: string;
+};
+
+// Real historical read on a symbol's own signal, from the actual scan log —
+// how many times has the call flipped recently, and where was the score a
+// week ago. This is the "previous data" the assistant grounds itself in;
+// nothing here is a forecast, only a record of what already happened.
+export async function getRecentSignalTrend(symbol: string, currentScore: number): Promise<SignalTrend | null> {
+  const rows = await prisma.recommendationHistory.findMany({
+    where: { symbol },
+    orderBy: { generatedAt: "desc" },
+    take: 60,
+  }).catch(() => []);
+
+  if (rows.length < 2) return null;
+
+  const weekAgoMs = Date.now() - 7 * 24 * 3600 * 1000;
+  const weekAgoRow = rows.find((r) => r.generatedAt.getTime() <= weekAgoMs) ?? rows[rows.length - 1];
+  const scoreDaysAgo = weekAgoRow.score;
+  const scoreDelta = currentScore - scoreDaysAgo;
+
+  let flips = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (directionBucket(rows[i - 1].action) !== directionBucket(rows[i].action)) flips++;
+  }
+
+  const flipSummary =
+    flips === 0
+      ? "held a consistent call"
+      : `changed direction ${flips} time${flips === 1 ? "" : "s"}`;
+
+  return { sampleSize: rows.length, scoreDaysAgo, scoreDelta, flips, flipSummary };
+}
 
 export type StockAnalysisOptions = {
   ownedQuantity?: number;
@@ -33,7 +107,10 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
   const sectorKey = entry?.sectorKey ?? null;
 
   const [candles, fundamentals, newsRaw, sectorChangePct] = await Promise.all([
-    marketDataProvider.getCandles(symbol, "6M"),
+    // 5 years of daily candles — not just for the chart's short-range views,
+    // but so long-lookback indicators like SMA200 (see indicators.ts) can
+    // actually compute instead of always returning null on a 6-month window.
+    marketDataProvider.getCandles(symbol, "5Y"),
     marketDataProvider.getFundamentals(symbol).catch(() => null),
     newsProvider.getNews(`${resolved.displaySymbol} stock`, opts.newsLimit ?? 10).catch(() => []),
     getSectorChangeForKey(sectorKey).catch(() => null),
@@ -75,9 +152,12 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
   const relevantNews = news.filter(
     (n) => n.analysis.symbols.includes(symbol) || (sectorKey && n.analysis.sectors.includes(sectorKey))
   );
-  const newsSentimentScore = relevantNews.length
-    ? relevantNews.reduce((a, n) => a + n.analysis.sentimentScore, 0) / relevantNews.length
-    : null;
+
+  const newsArticlesForPillar = relevantNews.map(n => ({
+    title: n.title,
+    sentiment: n.analysis.sentiment as "POSITIVE" | "NEUTRAL" | "NEGATIVE",
+    sentimentScore: n.analysis.sentimentScore
+  }));
 
   const attribution =
     priceChangePct != null
@@ -94,45 +174,51 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
       : null;
 
   const decisionInput: DecisionInput = {
+    symbol,
+    price: quote.price,
     fundamentals,
     indicators,
     priceChangePct,
     marketRiskScore: opts.marketRiskScore ?? null,
     sectorChangePct,
-    newsSentimentScore,
+    newsArticles: newsArticlesForPillar,
     volatility30d: indicators?.volatility30d ?? null,
     avgVolume: quote.avgVolume,
     volume: quote.volume,
     ownedQuantity: opts.ownedQuantity ?? 0,
-    portfolioWeightPct: opts.portfolioWeightPct ?? null,
-    riskTolerance: opts.riskTolerance ?? "MODERATE",
-    horizonYears: opts.horizonYears ?? 5,
+    candlesCount: candles.length,
   };
 
   let decision: any;
 
   if (validationFailed) {
     decision = {
-      decision: "WAIT" as const,
+      symbol,
+      signal: "WAIT" as const,
       confidence: 0,
-      totalScore: 0,
+      scores: { trend: 0, momentum: 0, volume: 0, fundamentals: 0, sentiment: 0, risk: 0, marketSector: 0, final: 0 },
       pillars: [],
-      reasons: [],
+      reasons: [validationReason],
+      warnings: [validationReason],
       mainRisk: validationReason,
       wouldChange: [],
       validationFailed: true,
       validationReason,
       riskLevel: "MODERATE" as const,
+      dataQuality: "INSUFFICIENT" as const,
+      dataQualityScore: 0,
       dataFreshness: "STALE" as const,
       dataTimestamp: quote.quoteTime ? new Date(quote.quoteTime * 1000).toISOString() : new Date().toISOString(),
       dataSource: marketDataProvider.id,
       marketStatus: "CLOSED" as const,
       entryZone: { min: 0, max: 0 },
       stopLoss: 0,
-      targetRange: { min: 0, max: 0 }
+      targetRange: { min: 0, max: 0 },
+      activeSince: null,
     };
   } else {
     const calculatedDecision = computeDecision(decisionInput);
+    const activeSince = await getSignalActiveSince(symbol, calculatedDecision.signal);
 
     // Calculate Entry Zone, Stop-Loss, and Target Range
     const price = quote.price;
@@ -144,16 +230,11 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     const targetMax = Number((price + 0.15 * price).toFixed(2));
 
     // Calculate Risk Level (LOW, MODERATE, HIGH, VERY HIGH)
-    const vol = indicators?.volatility30d ?? 30;
-    const beta = fundamentals?.beta ?? 1.0;
-    const marketRisk = opts.marketRiskScore ?? 50;
-    let riskScore = vol * 0.4 + beta * 20 + marketRisk * 0.2;
-    
     let riskLevel: "LOW" | "MODERATE" | "HIGH" | "VERY HIGH" = "MODERATE";
-    if (riskScore > 65) riskLevel = "VERY HIGH";
-    else if (riskScore > 45) riskLevel = "HIGH";
-    else if (riskScore > 25) riskLevel = "MODERATE";
-    else riskLevel = "LOW";
+    if (calculatedDecision.scores.risk >= 70) riskLevel = "LOW";
+    else if (calculatedDecision.scores.risk >= 50) riskLevel = "MODERATE";
+    else if (calculatedDecision.scores.risk >= 30) riskLevel = "HIGH";
+    else riskLevel = "VERY HIGH";
 
     // Determine Market Status
     const marketState = quote.marketState ?? "CLOSED";
@@ -174,6 +255,11 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
 
     decision = {
       ...calculatedDecision,
+      decision: calculatedDecision.signal,
+      action: calculatedDecision.signal,
+      score: calculatedDecision.scores.final,
+      finalScore: calculatedDecision.scores.final,
+      totalScore: calculatedDecision.scores.final,
       validationFailed: false,
       validationReason: "",
       riskLevel,
@@ -183,7 +269,8 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
       marketStatus,
       entryZone: { min: entryMin, max: entryMax },
       stopLoss,
-      targetRange: { min: targetMin, max: targetMax }
+      targetRange: { min: targetMin, max: targetMax },
+      activeSince,
     };
   }
 

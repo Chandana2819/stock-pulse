@@ -53,7 +53,7 @@ export default function HoldingsPortfolio({ holdings, wallet, onSellClick, onSym
 
   return (
     <section className="mt-4 flex flex-col gap-5">
-      <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"// PORTFOLIO & WALLET SUMMARY"}</div>
+      <div className="font-mono text-[0.62rem] tracking-[0.15em] text-text-3 uppercase">{"PORTFOLIO & WALLET SUMMARY"}</div>
 
       {/* ── Wallet Cards ── */}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">

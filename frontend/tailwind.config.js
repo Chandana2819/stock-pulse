@@ -30,11 +30,6 @@ module.exports = {
         "cyan-custom": "#00d4f5",
         "purple-custom": "#9b6dff",
       },
-      fontFamily: {
-        mono: ["JetBrains Mono", "monospace"],
-        display: ["Outfit", "sans-serif"],
-        body: ["Plus Jakarta Sans", "sans-serif"],
-      },
       borderRadius: {
         custom: "2px",
         "radius-lg-custom": "4px",

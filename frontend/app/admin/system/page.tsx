@@ -69,7 +69,7 @@ export default function SystemHealthPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 font-mono text-xs">
             {/* Database Health Card */}
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// DB Connectivity Check</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">DB Connectivity Check</h3>
               <div className="flex justify-between items-center bg-bg-2/30 p-3 border border-border-custom rounded">
                 <span>Postgres Neon Connection:</span>
                 <span className={`px-2 py-0.5 rounded font-extrabold text-[0.62rem] ${
@@ -82,7 +82,7 @@ export default function SystemHealthPage() {
 
             {/* Providers Specs Health Card */}
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// API Connector Feeds</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">API Connector Feeds</h3>
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center bg-bg-2/30 p-2.5 border border-border-custom rounded">
                   <span className="text-text-3">Market Quote Feed:</span>

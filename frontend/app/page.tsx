@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import ResultCard from "./components/ResultCard";
 import MarketOverview from "./components/MarketOverview";
@@ -12,7 +12,64 @@ import NotificationSystem, {
 } from "./components/NotificationSystem";
 import HoldingsPortfolio, { Holding } from "./components/HoldingsPortfolio";
 import TradeModal from "./components/TradeModal";
+import KpiDetailModal, { KpiDetailData } from "./components/KpiDetailModal";
+import SectorExplorerModal, { SectorPerf } from "./components/SectorExplorerModal";
 import { API_BASE } from "./lib/api";
+
+const DEFAULT_PINNED_SECTORS = ["IT", "BANK", "AUTO", "PHARMA", "FMCG", "ENERGY", "REALTY", "FIN"];
+
+const SECTOR_ICONS: Record<string, ReactNode> = {
+  IT: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  ),
+  BANK: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+  ),
+  AUTO: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+    </svg>
+  ),
+  PHARMA: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+    </svg>
+  ),
+  FMCG: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+    </svg>
+  ),
+  ENERGY: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  ),
+  REALTY: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+    </svg>
+  ),
+  FIN: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
+  METAL: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V8a2 2 0 00-2-2h-2V4a2 2 0 00-2-2h-2a2 2 0 00-2 2v2H7a2 2 0 00-2 2v13h14z" />
+    </svg>
+  ),
+  PSUBANK: (
+    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M4 21V9l8-6 8 6v12M9 21v-6h6v6" />
+    </svg>
+  ),
+};
 
 const POPULAR = [
   "NIFTY", "SENSEX", "TCS", "RELIANCE", "INFY", "AAPL", "TSLA", "HINDUNILVR", "ICICIBANK"
@@ -69,6 +126,17 @@ const generateSparklineData = (symbol: string, pctChange: number | null) => {
   return points;
 };
 
+type TrackRecordSummary = {
+  backtested: { winRate: number; averageReturn: number; benchmarkReturn: number | null };
+  live: {
+    scoredSignals: number;
+    awaitingWindow: number;
+    directionalAccuracyPct: number | null;
+    buy: { sampleSize: number; accuracyPct: number | null };
+    sell: { sampleSize: number; accuracyPct: number | null };
+  };
+};
+
 export default function Home() {
   const [stock, setStock] = useState("");
   const [data, setData] = useState<any>(null);
@@ -88,6 +156,11 @@ export default function Home() {
   const [indices, setIndices] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [sectorPerf, setSectorPerf] = useState<SectorPerf[]>([]);
+  const [pinnedSectors, setPinnedSectors] = useState<string[]>(DEFAULT_PINNED_SECTORS);
+  const [sectorModalOpen, setSectorModalOpen] = useState(false);
+  const [sectorModalInitialKey, setSectorModalInitialKey] = useState<string | null>(null);
+  const [trackRecord, setTrackRecord] = useState<TrackRecordSummary | null>(null);
 
   useEffect(() => {
     if (!stock.trim()) {
@@ -156,17 +229,73 @@ export default function Home() {
     }
   }, []);
 
+  const fetchSectorPerf = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/market/sectors`);
+      if (res.ok) {
+        const json = await res.json();
+        setSectorPerf(json.sectors || []);
+      }
+    } catch (e) {
+      console.error("Error fetching sector performance:", e);
+    }
+  }, []);
+
+  const fetchTrackRecord = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/signals/track-record`);
+      if (res.ok) {
+        const json = await res.json();
+        setTrackRecord(json);
+      }
+    } catch (e) {
+      console.error("Error fetching track record:", e);
+    }
+  }, []);
+
+  const togglePinnedSector = useCallback((key: string) => {
+    setPinnedSectors((prev) => {
+      if (prev.includes(key)) {
+        const next = prev.filter((k) => k !== key);
+        localStorage.setItem("sp_pinned_sectors", JSON.stringify(next));
+        return next;
+      }
+      if (prev.length >= 8) return prev;
+      const next = [...prev, key];
+      localStorage.setItem("sp_pinned_sectors", JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   // Simulated Trading State
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 1000000, usd: 10000 });
   const [holdings, setHoldings] = useState<Holding[]>([]);
 
-  // Compute portfolio-based summary counts matching stock signals page
+  // Dashboard always reflects market-wide signals (all scanned stocks), never just
+  // the user's portfolio — /api/signals' `summary` field is portfolio-scoped once a
+  // broker is connected, so counts are derived directly from the market-wide `items`.
   const displaySummary = useMemo(() => {
-    return signalsSummary;
-  }, [signalsSummary]);
+    const counts = { buy: 0, sell: 0, hold: 0, wait: 0 };
+    for (const item of recommendations) {
+      const action = String(item.action || "").toUpperCase();
+      if (action.includes("BUY")) counts.buy++;
+      else if (action.includes("SELL") || action === "REDUCE") counts.sell++;
+      else if (action === "HOLD") counts.hold++;
+      else counts.wait++;
+    }
+    return counts;
+  }, [recommendations]);
+
+  const topMarketPicks = useMemo(() => {
+    return [...recommendations]
+      .filter((item) => String(item.action || "").toUpperCase().includes("BUY"))
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, 5);
+  }, [recommendations]);
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
+  const [kpiModal, setKpiModal] = useState<KpiDetailData | null>(null);
 
   const addToast = useCallback((toast: Omit<Toast, "id" | "timestamp">) => {
     const id = Math.random().toString(36).slice(2);
@@ -226,12 +355,22 @@ export default function Home() {
       localStorage.setItem("sp_device_id", deviceId);
     }
 
+    const savedPins = localStorage.getItem("sp_pinned_sectors");
+    if (savedPins) {
+      try {
+        const parsed = JSON.parse(savedPins);
+        if (Array.isArray(parsed) && parsed.length > 0) setPinnedSectors(parsed);
+      } catch {}
+    }
+
     fetchWatchlist();
     fetchWalletAndHoldings();
     fetchSignalsOverview();
     fetchMarketData();
+    fetchSectorPerf();
+    fetchTrackRecord();
     requestPermission();
-  }, [fetchWatchlist, fetchWalletAndHoldings, fetchSignalsOverview, fetchMarketData, requestPermission]);
+  }, [fetchWatchlist, fetchWalletAndHoldings, fetchSignalsOverview, fetchMarketData, fetchSectorPerf, fetchTrackRecord, requestPermission]);
 
   const handleOpenTradeModal = (type: "BUY" | "SELL") => {
     setTradeType(type);
@@ -432,8 +571,32 @@ export default function Home() {
 
             <div className="grid grid-cols-2 gap-4 border-t border-border-custom pt-4">
               {/* Market Risk Indicator */}
-              <div className="flex flex-col gap-1 justify-center">
-                <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider block">Market Risk</span>
+              <div
+                className="flex flex-col gap-1 justify-center cursor-pointer group"
+                onClick={() => {
+                  const score = marketRisk?.score ?? 45;
+                  const classification = marketRisk?.classification ?? "MODERATE";
+                  const vix = indices.find((i: any) => i.symbol === "INDIA VIX");
+                  const factors = marketRisk?.factors ?? [];
+                  const trendFactor = factors.find((f: any) => f.key === "indexTrend");
+                  const fiiDiiFactor = factors.find((f: any) => f.key === "fiiDii");
+                  const availableCount = factors.filter((f: any) => f.available).length;
+                  setKpiModal({
+                    title: "Market Risk",
+                    value: `${score}/100 — ${classification}`,
+                    valueColor: score >= 70 ? "text-red-custom" : score >= 45 ? "text-amber-custom" : "text-green-custom",
+                    description: "A composite read of broad-market conditions across volatility, trend, breadth, FII/DII flows, global cues, sector rotation, and options skew. Higher scores mean elevated risk of a drawdown; lower scores mean calmer, more supportive conditions for new positions.",
+                    rows: [
+                      { label: "Volatility (India VIX)", value: vix?.price != null ? vix.price.toFixed(2) : "—", color: (vix?.pctChange ?? 0) >= 0 ? "text-red-custom" : "text-green-custom" },
+                      ...(trendFactor?.detail ? [{ label: "Broad Market Trend", value: trendFactor.detail }] : []),
+                      ...(fiiDiiFactor?.detail ? [{ label: "FII/DII Flows", value: fiiDiiFactor.detail }] : []),
+                      { label: "Risk Factors Tracked", value: factors.length ? `${availableCount} / ${factors.length}` : "7 / 7" },
+                    ],
+                    footerAction: { label: "View Full Signals", href: "/stock-signals" },
+                  });
+                }}
+              >
+                <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider block group-hover:text-text-custom transition-colors">Market Risk ⓘ</span>
                 <span className={`font-mono text-[0.92rem] font-bold leading-none ${
                   marketRisk?.score >= 70 ? "text-red-custom" :
                   marketRisk?.score >= 45 ? "text-amber-custom" : "text-green-custom"
@@ -442,19 +605,38 @@ export default function Home() {
                 </span>
                 {/* Progress Bar */}
                 <div className="w-full bg-bg-3 h-1.5 rounded overflow-hidden mt-1.5">
-                  <div 
+                  <div
                     className={`h-full rounded transition-all duration-500 ${
                       marketRisk?.score >= 70 ? "bg-red-custom" :
                       marketRisk?.score >= 45 ? "bg-amber-custom" : "bg-green-custom"
-                    }`} 
-                    style={{ width: `${marketRisk?.score || 45}%` }} 
+                    }`}
+                    style={{ width: `${marketRisk?.score || 45}%` }}
                   />
                 </div>
               </div>
 
               {/* Portfolio Value */}
-              <div className="flex flex-col gap-0.5 pl-5 border-l border-border-custom justify-center">
-                <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider block">VIX INDICATION</span>
+              <div
+                className="flex flex-col gap-0.5 pl-5 border-l border-border-custom justify-center cursor-pointer group"
+                onClick={() => {
+                  const invested = holdings.reduce((sum, h) => sum + h.quantity * (h.avgPrice || 0), 0);
+                  const current = holdings.reduce((sum, h) => sum + h.quantity * (h.currentPrice || h.avgPrice || 0), 0);
+                  const pl = current - invested;
+                  const plPct = invested > 0 ? (pl / invested) * 100 : 0;
+                  setKpiModal({
+                    title: "Portfolio Value",
+                    value: `₹${current.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`,
+                    description: "Current mark-to-market value of every holding in your simulated portfolio, based on live prices where available.",
+                    rows: [
+                      { label: "Holdings", value: `${holdings.length}` },
+                      { label: "Invested Value", value: `₹${invested.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` },
+                      { label: "Unrealized P&L", value: `${pl >= 0 ? "+" : ""}₹${pl.toLocaleString("en-IN", { maximumFractionDigits: 0 })} (${plPct >= 0 ? "+" : ""}${plPct.toFixed(2)}%)`, color: pl >= 0 ? "text-green-custom" : "text-red-custom" },
+                    ],
+                    footerAction: { label: "View Portfolio", href: "/portfolio" },
+                  });
+                }}
+              >
+                <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider block group-hover:text-text-custom transition-colors">PORTFOLIO VALUE ⓘ</span>
                 <span className="font-mono text-[1.1rem] text-text-custom font-bold leading-none">
                   ₹{holdings.reduce((sum, h) => sum + (h.quantity * (h.currentPrice || h.avgPrice || 0)), 0).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
                 </span>
@@ -462,19 +644,109 @@ export default function Home() {
             </div>
 
             {/* Metrics Grid */}
-            <div className="grid grid-cols-3 gap-2 border-t border-border-custom pt-4">
-              <div>
-                <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider">INDIA VIX</span>
-                <span className="font-mono text-[0.75rem] text-text-custom font-bold">12.88 <span className="text-red-custom text-[0.62rem]">(-1.25%)</span></span>
+            <div className="grid grid-cols-4 gap-2 border-t border-border-custom pt-4">
+              {(() => {
+                const vix = indices.find((i: any) => i.symbol === "INDIA VIX");
+                const vixUp = (vix?.pctChange ?? 0) >= 0;
+                return (
+                  <div
+                    className="cursor-pointer group"
+                    onClick={() => setKpiModal({
+                      title: "India VIX",
+                      value: vix?.price != null ? vix.price.toFixed(2) : "—",
+                      valueColor: vix ? (vixUp ? "text-red-custom" : "text-green-custom") : "text-text-4",
+                      subtitle: vix?.pctChange != null ? `${vixUp ? "+" : ""}${vix.pctChange.toFixed(2)}% today` : undefined,
+                      description: "India VIX measures the market's expectation of near-term volatility, derived from NIFTY option prices. A rising VIX generally signals rising fear; a falling VIX, calmer sentiment — a spike often precedes sharp index moves in either direction.",
+                      rows: vix ? [
+                        { label: "Today's Change", value: `${vixUp ? "+" : ""}${(vix.pctChange ?? 0).toFixed(2)}%`, color: vixUp ? "text-red-custom" : "text-green-custom" },
+                      ] : [{ label: "Status", value: "Feed unavailable" }],
+                    })}
+                  >
+                    <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider group-hover:text-text-custom transition-colors">INDIA VIX ⓘ</span>
+                    <span className="font-mono text-[0.75rem] text-text-custom font-bold">
+                      {vix?.price != null ? vix.price.toFixed(2) : "—"}
+                      {vix?.pctChange != null && (
+                        <span className={`${vixUp ? "text-red-custom" : "text-green-custom"} text-[0.62rem]`}> ({vixUp ? "+" : ""}{vix.pctChange.toFixed(2)}%)</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
+              <div
+                className="cursor-pointer group"
+                onClick={() => setKpiModal({
+                  title: "Nifty Implied Volatility",
+                  value: "—",
+                  valueColor: "text-text-4",
+                  description: "Implied Volatility (IV) reflects the market's forward-looking estimate of price movement, priced into NIFTY options. This environment doesn't have a licensed options-chain data feed connected, so no live number is shown here rather than a fabricated one — India VIX (a similar volatility read derived from the same options market) is live above.",
+                })}
+              >
+                <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider group-hover:text-text-custom transition-colors">NIFTY IV ⓘ</span>
+                <span className="font-mono text-[0.75rem] text-text-4 font-bold">—</span>
               </div>
-              <div>
-                <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider">NIFTY 1V</span>
-                <span className="font-mono text-[0.75rem] text-text-custom font-bold">10.88 <span className="text-green-custom text-[0.62rem]">(1.18%)</span></span>
+              <div
+                className="cursor-pointer group"
+                onClick={() => setKpiModal({
+                  title: "Nifty Smile Gap",
+                  value: "—",
+                  valueColor: "text-text-4",
+                  description: "The volatility smile gap compares implied volatility across out-of-the-money puts and calls. This environment doesn't have a licensed options-chain data feed connected, so no live number is shown here rather than a fabricated one.",
+                })}
+              >
+                <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider group-hover:text-text-custom transition-colors">NIFTY SMILE GAP ⓘ</span>
+                <span className="font-mono text-[0.75rem] text-text-4 font-bold">—</span>
               </div>
-              <div>
-                <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider">NIFTY SMILR GAP</span>
-                <span className="font-mono text-[0.75rem] text-green-custom font-bold">+0.81%</span>
-              </div>
+              {(() => {
+                const live = trackRecord?.live;
+                const bt = trackRecord?.backtested;
+                const pct = live?.directionalAccuracyPct ?? null;
+                const color = pct == null ? "text-text-4" : pct >= 60 ? "text-green-custom" : pct >= 40 ? "text-amber-custom" : "text-red-custom";
+                return (
+                  <div
+                    className="cursor-pointer group"
+                    onClick={() =>
+                      setKpiModal({
+                        title: "AI Track Record",
+                        value: pct != null ? `${pct}%` : "—",
+                        valueColor: color,
+                        subtitle: live ? `${live.scoredSignals} real signals scored` : undefined,
+                        description:
+                          "How this engine's calls have actually done. \"Live\" checks real signals the scanner issued against what the stock's price actually did afterward. \"Backtested\" replays today's engine logic over 2 real years of history across the full NSE universe. Neither is a forecast.",
+                        rows: [
+                          ...(live
+                            ? [
+                                {
+                                  label: "Live: BUY accuracy",
+                                  value: live.buy.sampleSize > 0 ? `${live.buy.accuracyPct}% correct (${live.buy.sampleSize} scored)` : "No sample yet",
+                                  color: "text-green-custom",
+                                },
+                                {
+                                  label: "Live: SELL / REDUCE accuracy",
+                                  value: live.sell.sampleSize > 0 ? `${live.sell.accuracyPct}% correct (${live.sell.sampleSize} scored)` : "No sample yet",
+                                  color: "text-red-custom",
+                                },
+                                ...(live.awaitingWindow > 0 ? [{ label: "Awaiting check window", value: `${live.awaitingWindow} signals` }] : []),
+                              ]
+                            : [{ label: "Status", value: "Loading..." }]),
+                          ...(bt
+                            ? [
+                                { label: "Backtested win rate (2yr)", value: `${bt.winRate}%` },
+                                {
+                                  label: "vs NIFTY 50 (same window)",
+                                  value: bt.benchmarkReturn != null ? `${bt.benchmarkReturn >= 0 ? "+" : ""}${bt.benchmarkReturn}%` : "—",
+                                },
+                              ]
+                            : []),
+                        ],
+                        footerAction: { label: "View Full Track Record", href: "/stock-signals" },
+                      })
+                    }
+                  >
+                    <span className="font-mono text-[0.5rem] text-text-3 block uppercase tracking-wider group-hover:text-text-custom transition-colors">TRACK RECORD ⓘ</span>
+                    <span className={`font-mono text-[0.75rem] font-bold ${color}`}>{pct != null ? `${pct}%` : "—"}</span>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Notification Banner */}
@@ -507,9 +779,26 @@ export default function Home() {
                   const sparkPoints = generateSparklineData(idx.symbol, idx.pctChange);
                   
                   return (
-                    <div key={idx.symbol} className="border border-border-custom bg-bg-1 p-3.5 rounded flex flex-col justify-between gap-3 hover:border-border-bright transition-all">
+                    <div
+                      key={idx.symbol}
+                      className="border border-border-custom bg-bg-1 p-3.5 rounded flex flex-col justify-between gap-3 hover:border-border-bright transition-all cursor-pointer"
+                      onClick={() => setKpiModal({
+                        title: idx.symbol,
+                        badge: "INDEX",
+                        value: idx.price ? idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—",
+                        valueColor: isUp ? "text-green-custom" : "text-red-custom",
+                        subtitle: `${isUp ? "▲" : "▼"} ${Math.abs(idx.pctChange || 0).toFixed(2)}% today`,
+                        description: `Live snapshot of ${idx.symbol}. Use this alongside sector performance and market risk to gauge overall market direction before acting on individual stock signals.`,
+                        chartPoints: sparkPoints,
+                        chartColor: color,
+                        rows: [
+                          { label: "Last Price", value: idx.price ? idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—" },
+                          { label: "Change", value: `${isUp ? "+" : ""}${(idx.pctChange || 0).toFixed(2)}%`, color: isUp ? "text-green-custom" : "text-red-custom" },
+                        ],
+                      })}
+                    >
                       <div className="flex flex-col gap-0.5">
-                        <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider truncate block" title={idx.symbol}>{idx.symbol}</span>
+                        <span className="font-mono text-[0.52rem] text-text-3 uppercase tracking-wider truncate block" title={idx.symbol}>{idx.symbol} ⓘ</span>
                         <span className="font-mono text-[0.82rem] text-text-custom font-bold">
                           {idx.price ? idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—"}
                         </span>
@@ -532,14 +821,37 @@ export default function Home() {
                 <div className="w-8 h-8 bg-amber-dim rounded-full flex items-center justify-center text-xs shrink-0 select-none">⚠️</div>
                 <div className="flex flex-col gap-0.5">
                   <div className="font-mono text-[0.72rem] text-text-custom font-bold uppercase tracking-wider">
-                    MARKET RISK <span className="text-amber-custom">{marketRisk?.score || 45} / 100</span> <span className="text-text-4 font-normal text-[0.62rem] lowercase ml-2">7 / 7 risk factors available</span>
+                    MARKET RISK <span className="text-amber-custom">{marketRisk?.score || 45} / 100</span>{" "}
+                    <span className="text-text-4 font-normal text-[0.62rem] lowercase ml-2">
+                      {marketRisk?.factors?.length ? `${marketRisk.factors.filter((f: any) => f.available).length} / ${marketRisk.factors.length} risk factors available` : "Scanning…"}
+                    </span>
                   </div>
                   <span className="font-mono text-[0.58rem] text-text-3">
-                    Broad market indexes are showing support levels with stable volatility profiles.
+                    {marketRisk?.reasons?.[0] ?? "Market risk factors are being computed."}
                   </span>
                 </div>
               </div>
-              <button className="font-mono text-[0.62rem] tracking-[0.1em] border border-border-bright hover:border-green-custom text-text-custom hover:text-green-custom p-[0.35rem_0.8rem] rounded bg-transparent cursor-pointer transition-all whitespace-nowrap">
+              <button
+                className="font-mono text-[0.62rem] tracking-[0.1em] border border-border-bright hover:border-green-custom text-text-custom hover:text-green-custom p-[0.35rem_0.8rem] rounded bg-transparent cursor-pointer transition-all whitespace-nowrap"
+                onClick={() => {
+                  const factors = marketRisk?.factors ?? [];
+                  setKpiModal({
+                    title: "Market Risk Factors",
+                    value: `${marketRisk?.score ?? 45} / 100`,
+                    valueColor: (marketRisk?.score ?? 45) >= 70 ? "text-red-custom" : (marketRisk?.score ?? 45) >= 45 ? "text-amber-custom" : "text-green-custom",
+                    subtitle: marketRisk?.classification ?? "MODERATE RISK",
+                    description: marketRisk?.reasons?.join(" ") ?? "Market risk factors are being computed.",
+                    rows: factors.length > 0
+                      ? factors.map((f: any) => ({
+                          label: f.label,
+                          value: f.available ? (f.detail ?? `${f.score}/100`) : "Unavailable",
+                          color: !f.available ? "text-text-4" : f.score >= 60 ? "text-green-custom" : f.score >= 40 ? "text-amber-custom" : "text-red-custom",
+                        }))
+                      : [{ label: "Status", value: "Scanning in progress" }],
+                    footerAction: { label: "View Full Signals", href: "/stock-signals" },
+                  });
+                }}
+              >
                 View Factors
               </button>
             </div>
@@ -551,59 +863,46 @@ export default function Home() {
           
           {/* Sector Performance Grid */}
           <div className="xl:col-span-8 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-            <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"SECTOR PERFORMANCE"}</div>
-            
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
-              {[
-                { label: "IT", val: "-1.15%", isUp: false, icon: (
-                  <svg className="w-6 h-6 text-red-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                )},
-                { label: "Banking", val: "+0.58%", isUp: true, icon: (
-                  <svg className="w-6 h-6 text-green-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                )},
-                { label: "Auto", val: "-8.74%", isUp: false, icon: (
-                  <svg className="w-6 h-6 text-red-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                )},
-                { label: "Pharma", val: "+8.88%", isUp: true, icon: (
-                  <svg className="w-6 h-6 text-green-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                  </svg>
-                )},
-                { label: "FMCG", val: "-0.95%", isUp: false, icon: (
-                  <svg className="w-6 h-6 text-red-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                  </svg>
-                )},
-                { label: "Energy", val: "+1.27%", isUp: true, icon: (
-                  <svg className="w-6 h-6 text-green-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                  </svg>
-                )},
-                { label: "Realty", val: "-0.83%", isUp: false, icon: (
-                  <svg className="w-6 h-6 text-red-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                )},
-                { label: "Financial", val: "+0.53%", isUp: true, icon: (
-                  <svg className="w-6 h-6 text-green-custom" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"SECTOR PERFORMANCE"}</span>
+              <div className="flex items-center gap-2">
+                {pinnedSectors.length < sectorPerf.length && (
+                  <button
+                    className="font-mono text-[0.62rem] tracking-[0.05em] border border-border-bright hover:border-green-custom text-text-2 hover:text-green-custom px-2 py-1 rounded bg-transparent cursor-pointer transition-all uppercase"
+                    onClick={() => { setSectorModalInitialKey(null); setSectorModalOpen(true); }}
+                  >
+                    + Add
+                  </button>
                 )}
-              ].map((sec) => (
-                <div key={sec.label} className="border border-border-custom bg-bg-2 p-3.5 rounded flex flex-col items-center justify-center gap-2 hover:border-border-bright transition-all">
-                  {sec.icon}
-                  <span className="font-mono text-[0.75rem] text-text-custom font-bold text-center truncate w-full" title={sec.label}>{sec.label}</span>
-                  <span className={`font-mono text-[0.75rem] font-bold ${sec.isUp ? "text-green-custom" : "text-red-custom"}`}>
-                    {sec.isUp ? "▲" : "▼"} {sec.val}
-                  </span>
-                </div>
-              ))}
+                <button
+                  className="font-mono text-[0.65rem] tracking-[0.1em] text-green-custom hover:underline uppercase font-bold"
+                  onClick={() => { setSectorModalInitialKey(null); setSectorModalOpen(true); }}
+                >
+                  See All →
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+              {pinnedSectors.slice(0, 8).map((key) => {
+                const s = sectorPerf.find((x) => x.key === key);
+                const label = s?.label ?? key;
+                const pct = s?.pctChange ?? null;
+                const isUp = (pct ?? 0) >= 0;
+                return (
+                  <div
+                    key={key}
+                    className="border border-border-custom bg-bg-2 p-3.5 rounded flex flex-col items-center justify-center gap-2 hover:border-border-bright transition-all cursor-pointer"
+                    onClick={() => { setSectorModalInitialKey(key); setSectorModalOpen(true); }}
+                  >
+                    <span className={isUp ? "text-green-custom" : "text-red-custom"}>{SECTOR_ICONS[key]}</span>
+                    <span className="font-mono text-[0.75rem] text-text-custom font-bold text-center truncate w-full" title={label}>{label}</span>
+                    <span className={`font-mono text-[0.75rem] font-bold ${isUp ? "text-green-custom" : "text-red-custom"}`}>
+                      {pct != null ? `${isUp ? "▲" : "▼"} ${Math.abs(pct).toFixed(2)}%` : "—"}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -613,27 +912,81 @@ export default function Home() {
             
             <div className="flex flex-col gap-4 justify-between h-full">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-center w-full">
-                <div className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center">
+                <div
+                  className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-green-custom transition-all"
+                  onClick={() => setKpiModal({
+                    title: "BUY Signals",
+                    value: `${displaySummary?.buy ?? 17}`,
+                    valueColor: "text-green-custom",
+                    description: "Stocks currently rated BUY by the 7-pillar quantitative model across the entire scanned market — strong trend, momentum, and fundamentals with no active safety overrides. Top-ranked picks by composite score:",
+                    rows: topMarketPicks.length > 0
+                      ? topMarketPicks.map((p) => ({ label: p.displaySymbol || p.symbol, value: `${p.score}/100`, color: "text-green-custom" }))
+                      : undefined,
+                    footerAction: { label: "View All Signals", href: "/stock-signals" },
+                  })}
+                >
                   <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary?.buy ?? 17}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY</span>
+                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY ⓘ</span>
                 </div>
-                <div className="bg-red-dim/10 border border-red-custom/25 rounded p-2.5 text-center">
+                <div
+                  className="bg-red-dim/10 border border-red-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-red-custom transition-all"
+                  onClick={() => setKpiModal({
+                    title: "SELL Signals",
+                    value: `${displaySummary?.sell ?? 29}`,
+                    valueColor: "text-red-custom",
+                    description: "Stocks currently rated SELL or REDUCE — weakening trend, negative momentum, or fundamentals deteriorating relative to peers.",
+                    footerAction: { label: "View All Signals", href: "/stock-signals" },
+                  })}
+                >
                   <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary?.sell ?? 29}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">SELL</span>
+                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">SELL ⓘ</span>
                 </div>
-                <div className="bg-amber-dim/10 border border-amber-custom/25 rounded p-2.5 text-center">
+                <div
+                  className="bg-amber-dim/10 border border-amber-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-amber-custom transition-all"
+                  onClick={() => setKpiModal({
+                    title: "HOLD Signals",
+                    value: `${displaySummary?.hold ?? 55}`,
+                    valueColor: "text-amber-custom",
+                    description: "Stocks currently rated HOLD — mixed pillar scores where the model doesn't see a strong enough edge to add or exit.",
+                    footerAction: { label: "View All Signals", href: "/stock-signals" },
+                  })}
+                >
                   <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{displaySummary?.hold ?? 55}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD</span>
+                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD ⓘ</span>
                 </div>
-                <div className="bg-blue-dim/10 border border-blue-custom/25 rounded p-2.5 text-center">
+                <div
+                  className="bg-blue-dim/10 border border-blue-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-blue-custom transition-all"
+                  onClick={() => setKpiModal({
+                    title: "WAIT Signals",
+                    value: `${displaySummary?.wait ?? 33}`,
+                    valueColor: "text-blue-custom",
+                    description: "Stocks flagged WAIT — a safety override is active, usually due to insufficient data quality or elevated market/technical risk overriding what would otherwise be a BUY.",
+                    footerAction: { label: "View All Signals", href: "/stock-signals" },
+                  })}
+                >
                   <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary?.wait ?? 33}</div>
-                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT</span>
+                  <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT ⓘ</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between border-t border-border-custom pt-4 w-full">
-                <div className="flex flex-col">
-                  <span className="font-mono text-[0.7rem] text-text-4 uppercase block tracking-wider">MARKET BIAS</span>
+                <div
+                  className="flex flex-col cursor-pointer group"
+                  onClick={() => setKpiModal({
+                    title: "Market Bias",
+                    value: "52/100 — MODERATE RISK",
+                    valueColor: "text-amber-custom",
+                    description: "A blended read of today's BUY/SELL/HOLD/WAIT signal mix and overall market risk score — a quick gut-check on whether conditions favor initiating new positions right now.",
+                    rows: [
+                      { label: "BUY Signals", value: `${displaySummary?.buy ?? 17}`, color: "text-green-custom" },
+                      { label: "SELL Signals", value: `${displaySummary?.sell ?? 29}`, color: "text-red-custom" },
+                      { label: "HOLD Signals", value: `${displaySummary?.hold ?? 55}`, color: "text-amber-custom" },
+                      { label: "WAIT Signals", value: `${displaySummary?.wait ?? 33}`, color: "text-blue-custom" },
+                    ],
+                    footerAction: { label: "View All Signals", href: "/stock-signals" },
+                  })}
+                >
+                  <span className="font-mono text-[0.7rem] text-text-4 uppercase block tracking-wider group-hover:text-text-custom transition-colors">MARKET BIAS ⓘ</span>
                   <span className="font-mono text-[0.82rem] text-text-custom font-bold uppercase mt-0.5 leading-none">
                     52/100 — <span className="text-amber-custom font-extrabold">MODERATE RISK</span>
                   </span>
@@ -676,7 +1029,16 @@ export default function Home() {
                       {suggestions.map((s) => (
                         <div
                           key={s.symbol}
-                          onClick={() => handleSelectSuggestion(s.symbol)}
+                          // onMouseDown (not onClick) + preventDefault: mousedown
+                          // fires before the input's onBlur, so this runs before
+                          // the 200ms blur-hide timer can race it and make the
+                          // click land on a dropdown that already disappeared —
+                          // exactly what was making this feel "not functional"
+                          // under any real load.
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            handleSelectSuggestion(s.symbol);
+                          }}
                           className="flex items-center justify-between p-[0.65rem_1rem] cursor-pointer hover:bg-bg-3 border-b border-border-custom/30 last:border-b-0 transition-colors"
                         >
                           <div className="flex flex-col gap-0.5 min-w-0">
@@ -871,6 +1233,19 @@ export default function Home() {
       <NotificationSystem toasts={toasts} onDismiss={(id) =>
         setToasts((prev) => prev.filter((t) => t.id !== id))
       } />
+
+      {/* ── KPI Detail Modal ── */}
+      <KpiDetailModal data={kpiModal} onClose={() => setKpiModal(null)} />
+
+      {/* ── Sector Explorer Modal ── */}
+      <SectorExplorerModal
+        isOpen={sectorModalOpen}
+        onClose={() => setSectorModalOpen(false)}
+        sectors={sectorPerf}
+        pinned={pinnedSectors}
+        onTogglePin={togglePinnedSector}
+        initialSectorKey={sectorModalInitialKey}
+      />
 
       {/* ── Trade Modal ── */}
       {data && (

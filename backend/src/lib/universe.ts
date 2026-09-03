@@ -77,7 +77,13 @@ export const UNIVERSE: UniverseEntry[] = [
 
   // ── Automobiles ──
   nse("MARUTI", "Maruti Suzuki India", "Automobile", "AUTO"),
-  nse("TATAMOTORS", "Tata Motors", "Automobile", "AUTO"),
+  // Tata Motors demerged into two separately-listed companies (effective
+  // 2025); the old TATAMOTORS.NS ticker no longer resolves on the live feed
+  // (Yahoo returns "symbol may be delisted") — verified directly before
+  // making this change. Both successor tickers below were checked against
+  // the real feed and return live quotes.
+  nse("TMCV", "Tata Motors Limited (Commercial Vehicles)", "Automobile", "AUTO"),
+  nse("TMPV", "Tata Motors Passenger Vehicles", "Automobile", "AUTO"),
   nse("M&M", "Mahindra and Mahindra", "Automobile", "AUTO"),
   nse("BAJAJ-AUTO", "Bajaj Auto", "Automobile", "AUTO"),
   nse("HEROMOTOCO", "Hero MotoCorp", "Automobile", "AUTO"),

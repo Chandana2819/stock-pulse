@@ -2,8 +2,10 @@ import express from "express";
 import { prisma } from "../lib/prisma";
 import { financialYear, financialYearRange, round } from "../lib/finance";
 import { asyncHandler } from "../lib/http";
+import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
+router.use(requireAuth);
 
 const STCG_HOLDING_DAYS = 365; // simplified Indian equity STCG/LTCG threshold (1 year)
 const DAY_MS = 24 * 60 * 60 * 1000;

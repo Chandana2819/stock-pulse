@@ -67,10 +67,20 @@ router.post(
       throw ApiError.badRequest("Payment verification failed");
     }
 
+    if (payment.type === "WITHDRAWAL") {
+      const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      if (!user || user.walletInr < payment.amount) {
+        await prisma.payment.update({ where: { id: payment.id }, data: { status: "FAILED", failureReason: "Insufficient wallet balance at confirmation time" } });
+        throw ApiError.badRequest("Withdrawal could not be completed: insufficient wallet balance");
+      }
+    }
+
     const updated = await prisma.$transaction(async (tx) => {
       const p = await tx.payment.update({ where: { id: payment.id }, data: { status: "SUCCESS" } });
       if (p.type === "DEPOSIT") {
         await tx.user.update({ where: { id: req.user!.id }, data: { walletInr: { increment: p.amount } } });
+      } else {
+        await tx.user.update({ where: { id: req.user!.id }, data: { walletInr: { decrement: p.amount } } });
       }
       return p;
     });

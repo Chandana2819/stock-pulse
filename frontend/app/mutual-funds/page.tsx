@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api } from "../lib/api";
 
 type Fund = { schemeCode: string; schemeName: string };
@@ -11,6 +11,19 @@ type FundDetail = Fund & {
   navDate: string | null;
   returns: { oneMonth: number | null; sixMonth: number | null; oneYear: number | null; threeYear: number | null; fiveYear: number | null };
 };
+
+type RankedFund = {
+  schemeCode: string;
+  schemeName: string;
+  fundHouse: string;
+  category: string;
+  categoryLabel: string;
+  nav: number | null;
+  navDate: string | null;
+  returns: { oneMonth: number | null; sixMonth: number | null; oneYear: number | null; threeYear: number | null; fiveYear: number | null };
+};
+
+const CATEGORY_ORDER = ["INDEX", "LARGE_CAP", "FLEXI_CAP", "MID_CAP", "SMALL_CAP", "ELSS", "DEBT"];
 
 function Ret({ label, val }: { label: string; val: number | null }) {
   return (
@@ -28,6 +41,28 @@ export default function MutualFundsPage() {
   const [loading, setLoading] = useState(false);
   const [sip, setSip] = useState({ monthly: "5000", years: "10" });
   const [projection, setProjection] = useState<{ futureValue: number; invested: number; gain: number; assumedAnnualReturnPct: number } | null>(null);
+
+  const [byCategory, setByCategory] = useState<Record<string, RankedFund[]>>({});
+  const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>({});
+  const [activeCategory, setActiveCategory] = useState<string>("INDEX");
+  const [recoLoading, setRecoLoading] = useState(true);
+
+  const loadRecommendations = useCallback(async () => {
+    setRecoLoading(true);
+    try {
+      const res = await api.get<{ byCategory: Record<string, RankedFund[]>; categories: Record<string, string> }>("/api/mutual-funds/recommendations");
+      setByCategory(res.byCategory);
+      setCategoryLabels(res.categories);
+    } catch {
+      setByCategory({});
+    } finally {
+      setRecoLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRecommendations();
+  }, [loadRecommendations]);
 
   const search = async () => {
     if (!query.trim()) return;
@@ -71,6 +106,64 @@ export default function MutualFundsPage() {
         <h1 className="font-display text-2xl tracking-[0.1em] text-text-custom">MUTUAL FUNDS</h1>
         <p className="font-mono text-[0.65rem] text-text-3 mt-1">NAV & returns sourced from the public AMFI feed — search any scheme.</p>
       </div>
+
+      {/* Recommended Funds — hidden while viewing a fund's detail so selecting
+          one doesn't feel like a no-op (the detail panel renders below the
+          search box, off-screen under this section otherwise). */}
+      {!selected && (
+      <div className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
+        <div>
+          <h2 className="font-display text-lg text-text-custom">RECOMMENDED FUNDS</h2>
+          <p className="font-mono text-[0.6rem] text-text-3 mt-0.5">
+            A curated set of well-known schemes, ranked by real trailing 3-year return within each category — past performance, not a guarantee of future returns.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {CATEGORY_ORDER.filter((c) => byCategory[c]?.length).map((c) => (
+            <button
+              key={c}
+              onClick={() => setActiveCategory(c)}
+              className={`font-mono text-[0.6rem] px-2.5 py-1 border ${activeCategory === c ? "border-green-custom text-green-custom bg-green-dim" : "border-border-custom text-text-3"}`}
+            >
+              {categoryLabels[c] ?? c}
+            </button>
+          ))}
+        </div>
+
+        {recoLoading ? (
+          <div className="font-mono text-xs text-text-3 text-center py-4">Loading...</div>
+        ) : (byCategory[activeCategory]?.length ?? 0) === 0 ? (
+          <div className="font-mono text-xs text-text-3 text-center py-4">No funds available for this category right now.</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {byCategory[activeCategory].map((f, i) => (
+              <button
+                key={f.schemeCode}
+                onClick={() => select(f)}
+                className="text-left border border-border-custom bg-bg-2 p-3 flex items-center justify-between gap-3 hover:border-green-custom transition-colors"
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-[0.5rem] text-text-4">#{i + 1}</div>
+                  <div className="text-xs text-text-custom font-bold truncate">{f.schemeName}</div>
+                  <div className="font-mono text-[0.58rem] text-text-3">{f.fundHouse}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-mono text-[0.5rem] text-text-3 uppercase">3Y (ann.)</div>
+                  <div className={`font-mono text-sm font-bold ${(f.returns.threeYear ?? f.returns.fiveYear ?? 0) >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                    {f.returns.threeYear != null
+                      ? `${f.returns.threeYear >= 0 ? "+" : ""}${f.returns.threeYear.toFixed(1)}%`
+                      : f.returns.fiveYear != null
+                      ? `${f.returns.fiveYear >= 0 ? "+" : ""}${f.returns.fiveYear.toFixed(1)}% (5Y)`
+                      : "—"}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
 
       <div className="flex gap-2">
         <input

@@ -86,7 +86,7 @@ export default function AnalyticsConsolePage() {
 
             {/* Growth Table Chart */}
             <div className="lg:col-span-8 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Daily Signups Growth Log</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Daily Signups Growth Log</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[0.7rem] border-collapse">
                   <thead>

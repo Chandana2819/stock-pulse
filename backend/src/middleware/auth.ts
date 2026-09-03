@@ -2,6 +2,17 @@ import type { NextFunction, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
 import { hashToken } from "../lib/auth";
 import { ApiError } from "../lib/http";
+import { cache } from "../lib/cache";
+
+// This resolves on EVERY request (attachUser is mounted before all routers),
+// so an uncached DB round trip here is a tax on literally every page load —
+// on a remote/serverless Postgres (cold-start pauses, real network latency
+// per query) that shows up as generic "everything feels slow" complaints
+// with no single obvious culprit. A short cache keeps auth state fresh
+// enough (revocation/suspension takes effect within this window) while
+// cutting the common case — the same browser firing several requests in a
+// row — down to zero extra DB round trips.
+const AUTH_CACHE_TTL_MS = 15_000;
 
 export type AuthUser = {
   id: string;
@@ -36,21 +47,24 @@ async function resolveUser(req: Request): Promise<{ user: AuthUser; sessionId?: 
   const header = req.headers.authorization;
   if (header?.startsWith("Bearer ")) {
     const token = header.slice(7).trim();
-    const session = await prisma.session.findUnique({
-      where: { tokenHash: hashToken(token) },
-      include: { user: true },
-    });
-    if (session && !session.revokedAt && session.expiresAt >= new Date()) {
+    const tokenHash = hashToken(token);
+    const { value } = await cache.wrap(`auth:session:${tokenHash}`, AUTH_CACHE_TTL_MS, async () => {
+      const session = await prisma.session.findUnique({
+        where: { tokenHash },
+        include: { user: true },
+      });
+      if (!session || session.revokedAt || session.expiresAt < new Date()) return null;
       // Touch at most once a minute so a busy dashboard does not write on every request.
       if (Date.now() - session.lastSeenAt.getTime() > 60_000) {
-        await prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } });
+        await prisma.session.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } }).catch(() => {});
       }
       const u = session.user;
       return {
-        user: { id: u.id, deviceId: u.deviceId, username: u.username, email: u.email, role: u.role, status: u.status },
-        sessionId: session.id,
+        user: { id: u.id, deviceId: u.deviceId, username: u.username, email: u.email, role: u.role, status: u.status } as AuthUser,
+        sessionId: session.id as string | undefined,
       };
-    }
+    });
+    if (value) return value;
     // Invalid/expired token: fall through to the device-id credential rather
     // than hard-failing the request — e.g. a dev secret rotation invalidates
     // the token hash without revoking the underlying account.
@@ -59,8 +73,20 @@ async function resolveUser(req: Request): Promise<{ user: AuthUser; sessionId?: 
   const deviceId = req.headers["x-device-id"];
   if (typeof deviceId === "string" && deviceId.trim()) {
     const id = deviceId.trim().slice(0, 128);
-    let u = await prisma.user.findUnique({ where: { deviceId: id } });
-    if (!u) u = await prisma.user.create({ data: { deviceId: id } });
+    const { value: u } = await cache.wrap(`auth:device:${id}`, AUTH_CACHE_TTL_MS, async () => {
+      let found = await prisma.user.findUnique({ where: { deviceId: id } });
+      if (!found) {
+        try {
+          found = await prisma.user.create({ data: { deviceId: id } });
+        } catch {
+          // Lost a create race against a concurrent request for the same
+          // brand-new device id — the row exists now, just fetch it.
+          found = await prisma.user.findUnique({ where: { deviceId: id } });
+        }
+      }
+      return found;
+    });
+    if (!u) return null;
     return {
       user: { id: u.id, deviceId: u.deviceId, username: u.username, email: u.email, role: u.role, status: u.status },
     };
