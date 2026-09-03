@@ -50,7 +50,7 @@ export default function FundamentalsPanel({ fundamentals, indicators }: { fundam
   return (
     <div className="border border-border-bright bg-bg-1 overflow-hidden">
       <div className="py-[0.6rem] px-6 border-b border-border-custom bg-bg-2">
-        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">// FUNDAMENTALS & TECHNICALS</span>
+        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">FUNDAMENTALS & TECHNICALS</span>
       </div>
       <div className="p-6 flex flex-col gap-5">
         <div>

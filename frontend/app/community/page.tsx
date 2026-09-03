@@ -292,7 +292,7 @@ export default function CommunityPage() {
             ) : (
               <form onSubmit={handleCreatePost} className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-mono text-xs font-bold text-text-custom uppercase">// Write Discussion Post</h3>
+                  <h3 className="font-mono text-xs font-bold text-text-custom uppercase">Write Discussion Post</h3>
                   <button type="button" onClick={() => setNewPostOpen(false)} className="font-mono text-[0.62rem] text-red-custom hover:underline">
                     CANCEL
                   </button>
@@ -398,7 +398,7 @@ export default function CommunityPage() {
                     {/* COMMENTS PANEL */}
                     {commentsOpenPostId === post.id && (
                       <div className="mt-3 border-t border-border-custom pt-4 flex flex-col gap-3 bg-bg-2/30 p-3 rounded">
-                        <h4 className="font-mono text-[0.62rem] font-bold text-text-3 uppercase tracking-wider">// Discussion Comments</h4>
+                        <h4 className="font-mono text-[0.62rem] font-bold text-text-3 uppercase tracking-wider">Discussion Comments</h4>
 
                         {/* List Comments */}
                         {commentsLoading ? (
@@ -458,7 +458,7 @@ export default function CommunityPage() {
             ) : (
               <form onSubmit={handleShareWatchlist} className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-mono text-xs font-bold text-text-custom uppercase">// Share Watchlist</h3>
+                  <h3 className="font-mono text-xs font-bold text-text-custom uppercase">Share Watchlist</h3>
                   <button type="button" onClick={() => setNewWlOpen(false)} className="font-mono text-[0.62rem] text-red-custom hover:underline">
                     CANCEL
                   </button>

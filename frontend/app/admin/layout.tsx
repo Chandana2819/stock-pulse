@@ -184,7 +184,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex-grow flex flex-col min-w-0 h-full overflow-hidden">
         {/* Top Header */}
         <header className="h-14 border-b border-border-custom bg-bg-1 flex items-center justify-between px-6 shrink-0 font-mono text-xs">
-          <div className="text-text-3 uppercase tracking-wider font-bold">// StockPulse Operations Panel</div>
+          <div className="text-text-3 uppercase tracking-wider font-bold">StockPulse Operations Panel</div>
           <div className="flex items-center gap-4">
             <span className="px-2 py-0.5 rounded bg-red-dim/20 text-red-custom font-extrabold text-[0.65rem] tracking-wider uppercase border border-red-custom/25">
               ● SECURE CONSOLE

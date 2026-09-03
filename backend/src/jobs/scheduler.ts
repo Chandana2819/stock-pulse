@@ -8,6 +8,8 @@
 import { env } from "../config/env";
 import { evaluateAllActiveUsers } from "../lib/services/alerts";
 import { startScannerBackgroundJob } from "../lib/services/scanner";
+import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
+import { getFundRecommendations } from "../lib/services/fundRecommendations";
 
 export function startBackgroundJobs() {
   if (!env.enableJobs) {
@@ -21,6 +23,19 @@ export function startBackgroundJobs() {
   } catch (err) {
     console.error("[jobs] Failed to start scanner background job:", err);
   }
+
+  // Pre-warm the track record cache so the first dashboard visitor doesn't pay
+  // for the full-universe backtest inline.
+  Promise.all([getBacktestedTrackRecord(), getLiveTrackRecord()])
+    .then(() => console.log("[jobs] Track record cache pre-warmed"))
+    .catch((err) => console.error("[jobs] Track record pre-warm failed:", err));
+
+  // Same reasoning: the mutual-fund recommendation list fetches ~13 real
+  // schemes from the AMFI feed on a cold cache — pre-warm it so neither the
+  // Mutual Funds page nor a goal's fund suggestion pays that cost inline.
+  getFundRecommendations()
+    .then(() => console.log("[jobs] Fund recommendations cache pre-warmed"))
+    .catch((err) => console.error("[jobs] Fund recommendations pre-warm failed:", err));
 
   const alertTimer = setInterval(async () => {
     try {

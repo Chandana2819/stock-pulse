@@ -21,7 +21,7 @@ export default function WhyMovingPanel({ attribution, symbol }: { attribution: A
   return (
     <div className="border border-border-bright bg-bg-1 overflow-hidden">
       <div className="flex items-center justify-between py-[0.6rem] px-6 border-b border-border-custom bg-bg-2">
-        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">// WHY IS {symbol} MOVING?</span>
+        <span className="font-mono text-[0.65rem] tracking-[0.12em] text-text-3 uppercase">WHY IS {symbol} MOVING?</span>
         <span className={`font-mono text-[0.6rem] font-bold ${CONF_COLOR[attribution.confidence]}`}>{attribution.confidence} CONFIDENCE</span>
       </div>
       <div className="p-6 flex flex-col gap-4">

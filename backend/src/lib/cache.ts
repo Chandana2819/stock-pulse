@@ -165,4 +165,5 @@ export const TTL = {
   screener: 5 * 60 * 1000,
   ipo: 12 * 60 * 60 * 1000,
   events: 6 * 60 * 60 * 1000,
+  trackRecord: 12 * 60 * 60 * 1000,
 };

@@ -69,15 +69,44 @@ type BacktestResult = {
   averageReturn: number;
   maxDrawdown: number;
   averageHoldingPeriod: number;
-  benchmarkReturn: number;
+  benchmarkReturn: number | null;
   trades: BacktestTrade[];
+};
+
+type DirectionalOutcome = { sampleSize: number; accuracyPct: number | null; avgReturnPct: number | null };
+
+type TrackRecordData = {
+  backtested: {
+    totalTrades: number;
+    winRate: number;
+    averageReturn: number;
+    maxDrawdown: number;
+    averageHoldingPeriod: number;
+    benchmarkReturn: number | null;
+    symbolsCovered: number;
+    windowLabel: string;
+    computedAt: string;
+  };
+  live: {
+    totalSignalsIssued: number;
+    scoredSignals: number;
+    awaitingWindow: number;
+    abstentions: number;
+    windowTradingDays: number;
+    oldestSignalDate: string | null;
+    newestScoredDate: string | null;
+    directionalAccuracyPct: number | null;
+    buy: DirectionalOutcome;
+    sell: DirectionalOutcome;
+    hold: { sampleSize: number; stabilityPct: number | null };
+  };
 };
 
 export default function StockSignalsPage() {
   const router = useRouter();
   const [items, setItems] = useState<SignalItem[]>([]);
   const [portfolioSignals, setPortfolioSignals] = useState<any[]>([]);
-  const [brokerConnection, setBrokerConnection] = useState<{ connected: boolean; broker: string | null; expired: boolean; lastSyncAt: string | null; lastError: string | null } | null>(null);
+  const [brokerConnection, setBrokerConnection] = useState<{ connected: boolean; broker: string | null; expired: boolean; everConnected: boolean; lastSyncAt: string | null; lastError: string | null } | null>(null);
   const [summary, setSummary] = useState<SignalsSummary | null>(null);
   const [riskData, setRiskData] = useState<MarketRiskData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,6 +124,11 @@ export default function StockSignalsPage() {
   const [backtestResult, setBacktestResult] = useState<BacktestResult | null>(null);
   const [backtestStocks, setBacktestStocks] = useState<string[]>(["TCS.NS", "INFY.NS", "RELIANCE.NS"]);
   const [backtestDays, setBacktestDays] = useState<number>(180);
+
+  // Track record state
+  const [trackRecord, setTrackRecord] = useState<TrackRecordData | null>(null);
+  const [trackRecordLoading, setTrackRecordLoading] = useState(true);
+  const [trackRecordError, setTrackRecordError] = useState<string | null>(null);
 
   // Unique list of sectors for filter
   const sectors = Array.from(new Set(items.map((i) => i.sector))).sort();
@@ -136,6 +170,16 @@ export default function StockSignalsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    // Independent of the signals list: the full-universe backtest behind this
+    // can be slow on a cold cache, so it shouldn't block the rest of the page.
+    api
+      .get<TrackRecordData>("/api/signals/track-record")
+      .then((res) => setTrackRecord(res))
+      .catch((e) => setTrackRecordError(e instanceof ApiRequestError ? e.message : "Failed to load track record"))
+      .finally(() => setTrackRecordLoading(false));
+  }, []);
 
   const handleRefreshScan = async () => {
     setScanning(true);
@@ -225,13 +269,13 @@ export default function StockSignalsPage() {
   const portfolioSymbols = new Set(portfolioSignals.map((s) => s.symbol.toUpperCase().trim()));
   const marketItems = items.filter((item) => !portfolioSymbols.has(item.symbol.toUpperCase().trim()));
 
-  // buySignals are general market buy recommendations
+  // These four tabs are the market-wide screener — every scanned stock, not just
+  // holdings — so counts here match the Dashboard's "Today's Market Signals" tile.
+  // Portfolio holdings get their own dedicated signals section further up the page.
   const buySignals = marketItems.filter((item) => item.action.includes("BUY"));
-
-  // sellSignals, holdSignals, waitSignals are strictly restricted to portfolio holdings
-  const sellSignals = portfolioSignals.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
-  const holdSignals = portfolioSignals.filter((item) => item.action === "HOLD");
-  const waitSignals = portfolioSignals.filter((item) => item.action === "WAIT");
+  const sellSignals = marketItems.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const holdSignals = marketItems.filter((item) => item.action === "HOLD");
+  const waitSignals = marketItems.filter((item) => item.action === "WAIT");
 
   const scanDate = scanTime ? new Date(scanTime) : null;
   const formattedScanTime = scanDate ? scanDate.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" }) + " IST" : "Pending";
@@ -270,7 +314,10 @@ export default function StockSignalsPage() {
         </div>
       </div>
 
-      {/* Broker Connection Status Indicator */}
+      {/* Broker Connection Status Indicator — a stale/no broker link is a
+          normal, non-broken state (signals already work from holdings on
+          record + live prices), so this never uses error/red styling. Red is
+          reserved for an actual failed sync attempt, not "not connected". */}
       <div className="border border-border-custom bg-bg-1 p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="font-mono text-xs text-text-3 uppercase tracking-wider">Broker Connection:</span>
@@ -279,30 +326,30 @@ export default function StockSignalsPage() {
               🟢 ZERODHA CONNECTED
             </span>
           ) : (
-            <span className="text-[0.68rem] font-mono font-bold text-red-custom px-2 py-0.5 border border-red-custom bg-red-dim">
-              🔴 ZERODHA DISCONNECTED
+            <span className="text-[0.68rem] font-mono font-bold text-text-3 px-2 py-0.5 border border-border-custom bg-bg-2">
+              ⚪ {brokerConnection?.everConnected ? "AUTO-SYNC PAUSED" : "NOT CONNECTED"}
             </span>
           )}
         </div>
-        
-        {brokerConnection?.expired && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-red-dim border border-red-custom p-3 w-full sm:w-auto">
-            <span className="text-xs font-mono text-red-custom">
-              ⚠️ Zerodha session expired. Stale portfolio data hidden.
+
+        {!brokerConnection?.connected && brokerConnection?.everConnected && (
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+            <span className="text-xs text-text-3 font-mono">
+              Zerodha's daily session expired, as it does every day — signals below still use your last-synced holdings and live prices. Sync whenever it's convenient.
             </span>
             <button
               onClick={() => router.push("/portfolio")}
-              className="font-mono text-[0.62rem] tracking-wider bg-red-custom text-bg font-bold px-3 py-1 hover:opacity-85 shrink-0"
+              className="font-mono text-[0.62rem] tracking-wider bg-bg-3 border border-border-bright text-text-custom px-3 py-1 hover:bg-bg-4 shrink-0"
             >
-              RECONNECT ZERODHA
+              SYNC ZERODHA
             </button>
           </div>
         )}
-        
-        {!brokerConnection?.connected && !brokerConnection?.expired && (
+
+        {!brokerConnection?.connected && !brokerConnection?.everConnected && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
             <span className="text-xs text-text-3 font-mono">
-              Connect Zerodha to personalize your portfolio signals.
+              Connect Zerodha to auto-sync new trades — signals below already reflect any holdings on record.
             </span>
             <button
               onClick={() => router.push("/portfolio")}
@@ -320,11 +367,14 @@ export default function StockSignalsPage() {
         </div>
       )}
 
-      {/* MY PORTFOLIO SIGNALS */}
-      {brokerConnection?.connected && (
-        <div className="border border-border-bright bg-bg-1 p-6 flex flex-col gap-4">
+      {/* MY PORTFOLIO SIGNALS — shown for any holdings already on record
+          (broker-synced, CSV-imported, or demo), independent of whether the
+          broker OAuth session happens to be fresh right now. A stale token
+          only blocks pulling in new trades, not scoring the ones we already
+          know about against live prices. */}
+      <div className="border border-border-bright bg-bg-1 p-6 flex flex-col gap-4">
           <h2 className="font-display text-2xl tracking-[0.1em] text-text-custom border-b border-border-custom pb-2">
-            💼 MY PORTFOLIO SIGNALS
+            MY PORTFOLIO SIGNALS
           </h2>
           {portfolioSignals.length === 0 ? (
             <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono">
@@ -394,7 +444,6 @@ export default function StockSignalsPage() {
             </div>
           )}
         </div>
-      )}
 
       {/* Signals Summary Counts Panel */}
       {summary && (
@@ -582,6 +631,121 @@ export default function StockSignalsPage() {
 
       </div>
 
+      {/* AI Track Record */}
+      <div className="border border-border-bright bg-bg-1 p-6 flex flex-col gap-6">
+        <div>
+          <h2 className="font-display text-2xl tracking-[0.1em] text-text-custom">AI TRACK RECORD</h2>
+          <p className="text-xs text-text-3 leading-relaxed mt-1">
+            How this engine's calls have actually done — real signals checked against real price moves, plus a historical replay across the full universe. Nothing here is a forecast.
+          </p>
+        </div>
+
+        {trackRecordLoading ? (
+          <div className="text-center font-mono text-xs text-text-3 animate-pulse py-6">Loading track record...</div>
+        ) : trackRecordError || !trackRecord ? (
+          <div className="text-center font-mono text-xs text-text-3 py-6">{trackRecordError || "Track record unavailable."}</div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LIVE */}
+            <div className="border border-border-custom bg-bg-2 p-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-mono text-[0.6rem] tracking-[0.15em] text-cyan-custom uppercase">● LIVE SIGNAL ACCURACY</span>
+                <span className="font-mono text-[0.55rem] text-text-4">{trackRecord.live.scoredSignals} scored</span>
+              </div>
+
+              {trackRecord.live.scoredSignals === 0 ? (
+                <div className="text-xs text-text-3 leading-relaxed">
+                  No real signals have crossed their {trackRecord.live.windowTradingDays}-trading-day check window yet.
+                  {trackRecord.live.awaitingWindow > 0 && ` ${trackRecord.live.awaitingWindow} signals are logged and waiting on that window — check back soon.`}
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-baseline gap-3">
+                    <span className="font-mono text-3xl font-bold text-text-custom">
+                      {trackRecord.live.directionalAccuracyPct ?? "—"}{trackRecord.live.directionalAccuracyPct !== null ? "%" : ""}
+                    </span>
+                    <span className="text-[0.62rem] text-text-3 font-mono uppercase leading-tight">directional accuracy<br />(buy + sell calls)</span>
+                  </div>
+
+                  <div className="flex flex-col gap-2 font-mono text-[0.68rem]">
+                    <div className="flex justify-between items-center border-t border-border-custom pt-2">
+                      <span className="text-green-custom">BUY calls</span>
+                      <span className="text-text-2 text-right">
+                        {trackRecord.live.buy.sampleSize === 0
+                          ? "no sample yet"
+                          : `${trackRecord.live.buy.accuracyPct}% correct · ${trackRecord.live.buy.sampleSize} scored · avg ${trackRecord.live.buy.avgReturnPct! >= 0 ? "+" : ""}${trackRecord.live.buy.avgReturnPct}%`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-red-custom">SELL / REDUCE calls</span>
+                      <span className="text-text-2 text-right">
+                        {trackRecord.live.sell.sampleSize === 0
+                          ? "no sample yet"
+                          : `${trackRecord.live.sell.accuracyPct}% correct · ${trackRecord.live.sell.sampleSize} scored · avg ${trackRecord.live.sell.avgReturnPct! >= 0 ? "+" : ""}${trackRecord.live.sell.avgReturnPct}%`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-text-3">HOLD calls</span>
+                      <span className="text-text-2 text-right">
+                        {trackRecord.live.hold.sampleSize === 0
+                          ? "no sample yet"
+                          : `${trackRecord.live.hold.stabilityPct}% stayed within ±3% · ${trackRecord.live.hold.sampleSize} scored`}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <span className="text-[0.55rem] text-text-4 leading-relaxed">
+                {trackRecord.live.oldestSignalDate ? `Tracking since ${trackRecord.live.oldestSignalDate}. ` : ""}
+                Each signal is scored {trackRecord.live.windowTradingDays} trading days after it was issued, against that stock's real subsequent price.
+                {trackRecord.live.awaitingWindow > 0 ? ` ${trackRecord.live.awaitingWindow} more are still inside that window.` : ""}{" "}
+                This sample grows the longer the scanner runs — treat early numbers as directional, not definitive.
+              </span>
+            </div>
+
+            {/* BACKTESTED */}
+            <div className="border border-border-custom bg-bg-2 p-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-mono text-[0.6rem] tracking-[0.15em] text-text-3 uppercase">◆ HISTORICAL REPLAY</span>
+                <span className="font-mono text-[0.55rem] text-text-4">{trackRecord.backtested.symbolsCovered} NSE stocks · {trackRecord.backtested.windowLabel}</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="flex flex-col items-center">
+                  <span className="font-mono text-xl font-bold text-text-custom">{trackRecord.backtested.winRate}%</span>
+                  <span className="font-mono text-[0.52rem] text-text-3 uppercase">Win rate</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className={`font-mono text-xl font-bold ${trackRecord.backtested.averageReturn >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                    {trackRecord.backtested.averageReturn >= 0 ? "+" : ""}{trackRecord.backtested.averageReturn}%
+                  </span>
+                  <span className="font-mono text-[0.52rem] text-text-3 uppercase">Avg trade</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="font-mono text-xl font-bold text-red-custom">-{trackRecord.backtested.maxDrawdown}%</span>
+                  <span className="font-mono text-[0.52rem] text-text-3 uppercase">Max drawdown</span>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center font-mono text-[0.68rem] border-t border-border-custom pt-3">
+                <span className="text-text-3">NIFTY 50 buy &amp; hold, same window:</span>
+                <span className="font-bold text-text-2">
+                  {trackRecord.backtested.benchmarkReturn === null
+                    ? "—"
+                    : `${trackRecord.backtested.benchmarkReturn >= 0 ? "+" : ""}${trackRecord.backtested.benchmarkReturn}%`}
+                </span>
+              </div>
+
+              <span className="text-[0.55rem] text-text-4 leading-relaxed">
+                Simulated day-by-day replay of the current decision engine over {trackRecord.backtested.symbolsCovered} real historical price series, {trackRecord.backtested.totalTrades} total trades, avg hold {trackRecord.backtested.averageHoldingPeriod} days.
+                Past performance does not guarantee future results — this shows how today's engine logic would have called it, not what it will do next.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Backtesting Dashboard Widget */}
       <div className="border border-border-bright bg-bg-1 p-6">
         <h2 className="font-mono text-[0.68rem] tracking-[0.18em] text-text-3 uppercase mb-4">SYSTEM BACKTEST ENGINE</h2>
@@ -664,8 +828,10 @@ export default function StockSignalsPage() {
                     <span className="font-bold text-green-custom">+{backtestResult.averageReturn * backtestResult.totalTrades}%</span>
                   </div>
                   <div className="flex justify-between text-xs text-text-2 mt-1">
-                    <span>NIFTY 50 Buy & Hold Returns (proxy):</span>
-                    <span className="font-bold">+{backtestResult.benchmarkReturn}%</span>
+                    <span>NIFTY 50 Buy & Hold Returns:</span>
+                    <span className="font-bold">
+                      {backtestResult.benchmarkReturn === null ? "—" : `${backtestResult.benchmarkReturn >= 0 ? "+" : ""}${backtestResult.benchmarkReturn}%`}
+                    </span>
                   </div>
                   <span className="text-[0.55rem] text-text-4 block mt-2">
                     *Based on simulated historical paper signals. Past performance does not guarantee future returns.

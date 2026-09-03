@@ -205,6 +205,7 @@ export function maxDrawdown(closes: number[], lookback = 30): number | null {
 }
 
 export type IndicatorSnapshot = {
+  price: number | null;
   sma20: number | null;
   sma50: number | null;
   sma200: number | null;
@@ -246,6 +247,7 @@ export function computeIndicators(candles: Candle[]): IndicatorSnapshot {
   const relativeStrength = stockReturn - 0.02; // relative performance
 
   return {
+    price,
     sma20: s20,
     sma50: s50,
     sma200: last(sma(closes, 200)),

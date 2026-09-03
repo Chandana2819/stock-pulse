@@ -249,23 +249,6 @@ export default function KycPage() {
         documentType,
         documentNumber: cleanDocNum,
         consent,
-      }).catch((err) => {
-        console.warn("Verify API failed, falling back to mock pending state:", err);
-        return {
-          kycStatus: "PENDING" as const,
-          kycRecord: {
-            id: "mock-id",
-            fullName: fullName.trim(),
-            panNumber: cleanDocNum,
-            documentType,
-            address: "NOT_PROVIDED",
-            birthDate,
-            amlStatus: "PENDING",
-            amlMatchScore: 0.0,
-            verifiedAt: null,
-            rejectedReason: null,
-          }
-        };
       });
 
       setKycStatus(res.kycStatus);
@@ -539,7 +522,7 @@ export default function KycPage() {
       {/* STEP 1: PERSONAL DETAILS */}
       {step === 1 && (
         <form onSubmit={handleStep1Submit} className="border border-border-custom bg-bg-1 p-6 flex flex-col gap-5 rounded-lg-custom">
-          <h2 className="font-mono text-xs font-bold text-text-2 uppercase">// Step 1: Personal Details</h2>
+          <h2 className="font-mono text-xs font-bold text-text-2 uppercase">Step 1: Personal Details</h2>
           
           <div className="flex flex-col gap-4 font-mono text-xs">
             {/* Full Name */}
@@ -588,7 +571,7 @@ export default function KycPage() {
       {step === 2 && (
         <form onSubmit={handleStep2Submit} className="border border-border-custom bg-bg-1 p-6 flex flex-col gap-5 rounded-lg-custom">
           <div className="flex items-center justify-between">
-            <h2 className="font-mono text-xs font-bold text-text-2 uppercase">// Step 2: Identity Verification</h2>
+            <h2 className="font-mono text-xs font-bold text-text-2 uppercase">Step 2: Identity Verification</h2>
             <button
               type="button"
               onClick={() => setStep(1)}

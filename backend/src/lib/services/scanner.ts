@@ -6,189 +6,17 @@ import { computeMarketRisk } from "../engine/marketRisk";
 import { RecommendationEngine, type SignalAction } from "./recommendationEngine";
 import { getSectorChangeForKey } from "./market";
 
-function generateModeledPrices(symbol: string, basePrice: number, dailyVol: number, trend: number, count = 90) {
-  const candles = [];
-  let price = basePrice;
-  const start = new Date(Date.now() - count * 24 * 3600 * 1000);
-  
-  for (let i = 0; i < count; i++) {
-    const date = new Date(start.getTime() + i * 24 * 3600 * 1000);
-    date.setUTCHours(0, 0, 0, 0);
-    
-    const ret = trend + (Math.random() - 0.5) * dailyVol;
-    const open = price;
-    const close = price * (1 + ret);
-    const high = Math.max(open, close) * (1 + Math.random() * 0.008);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.008);
-    const volume = Math.round(150000 + Math.random() * 600000);
-    
-    candles.push({
-      symbol,
-      date,
-      open: Number(open.toFixed(2)),
-      high: Number(high.toFixed(2)),
-      low: Number(low.toFixed(2)),
-      close: Number(close.toFixed(2)),
-      volume,
-    });
-    
-    price = close;
-  }
-  return candles;
-}
-
-export async function seedInitialSignalsData(): Promise<void> {
-  try {
-    console.log("[scanner] Seeding database with modeled historical candles and recommendations...");
-    
-    // Seed default Market Risk Snapshot
-    await prisma.marketRisk.create({
-      data: {
-        score: 62,
-        level: "MODERATE",
-        details: JSON.stringify({
-          factors: [
-            { key: "indexTrend", label: "Index Trend", score: 55, weight: 0.20, available: true, detail: "Index holding short term support levels" },
-            { key: "volatility", label: "Market Volatility", score: 48, weight: 0.20, available: true, detail: "India VIX at 14.2" },
-            { key: "globalMarkets", label: "Global Markets", score: 65, weight: 0.15, available: true, detail: "Nasdaq index consolidation" },
-            { key: "largeCapDivergence", label: "Sector Divergence", score: 40, weight: 0.10, available: true, detail: "Normal banking divergence" },
-            { key: "breadth", label: "Market Breadth", score: 70, weight: 0.15, available: true, detail: "105 Advances / 78 Declines" }
-          ],
-          reasons: ["Indices are consolidating with moderate volatility and stable market breadth."],
-          statusEmoji: "🟡"
-        })
-      }
-    });
-
-    const seeds = [
-      { symbol: "TCS.NS", basePrice: 3420, vol: 0.015, trend: 0.0008 },
-      { symbol: "INFY.NS", basePrice: 1450, vol: 0.018, trend: -0.0015 },
-      { symbol: "RELIANCE.NS", basePrice: 2450, vol: 0.012, trend: 0.0001 },
-      { symbol: "HDFCBANK.NS", basePrice: 1580, vol: 0.014, trend: 0.0004 },
-      { symbol: "SBIN.NS", basePrice: 650, vol: 0.016, trend: 0.0003 },
-      { symbol: "AAPL", basePrice: 182, vol: 0.014, trend: 0.0006 },
-      { symbol: "TSLA", basePrice: 210, vol: 0.032, trend: -0.002 },
-      { symbol: "NVDA", basePrice: 850, vol: 0.028, trend: 0.0028 }
-    ];
-
-    for (const seed of seeds) {
-      const prices = generateModeledPrices(seed.symbol, seed.basePrice, seed.vol, seed.trend);
-      
-      // Save candles
-      await prisma.stockPrice.createMany({
-        data: prices,
-        skipDuplicates: true
-      });
-
-      const candles = prices.map((p) => ({
-        time: Math.floor(p.date.getTime() / 1000),
-        open: p.open,
-        high: p.high,
-        low: p.low,
-        close: p.close,
-        volume: p.volume,
-      }));
-
-      const indicators = computeIndicators(candles);
-      const lastPrice = prices[prices.length - 1];
-
-      // Save Indicators
-      const todayDate = new Date();
-      todayDate.setUTCHours(0, 0, 0, 0);
-      await prisma.stockIndicator.upsert({
-        where: { symbol_date: { symbol: seed.symbol, date: todayDate } },
-        update: { indicators: JSON.stringify(indicators) },
-        create: { symbol: seed.symbol, date: todayDate, indicators: JSON.stringify(indicators) },
-      });
-
-      // Generate recommendation
-      const rec = RecommendationEngine.generate({
-        symbol: seed.symbol,
-        price: lastPrice.close,
-        prevClose: prices[prices.length - 2]?.close ?? null,
-        indicators,
-        fundamentals: {
-          symbol: seed.symbol,
-          name: seed.symbol,
-          sector: "Technology",
-          industry: "Software",
-          marketCap: 100000000,
-          peRatio: seed.symbol.includes("NVDA") ? 75 : seed.symbol.includes("TCS") ? 28 : 14,
-          pbRatio: 3.5,
-          roe: 22,
-          debtToEquity: 0.2,
-          revenueGrowth: 15,
-          freeCashFlow: 10000000,
-          dividendYield: 1.2,
-          beta: 1.1,
-          eps: 12.5,
-        } as any,
-        sectorChangePct: 0.005,
-        marketRiskScore: 62,
-        candlesCount: prices.length,
-        newsSentimentScore: 0.2,
-      });
-
-      // Save recommendation
-      await prisma.stockRecommendation.upsert({
-        where: { symbol: seed.symbol },
-        update: {
-          action: rec.action,
-          score: rec.score,
-          confidence: rec.confidence,
-          risk: rec.risk,
-          reasons: JSON.stringify(rec.reasons),
-          warnings: JSON.stringify(rec.warnings),
-          entryZoneMin: rec.entryZone?.min ?? null,
-          entryZoneMax: rec.entryZone?.max ?? null,
-          stopLoss: rec.stopLoss ?? null,
-          targetRangeMin: rec.targetRange?.min ?? null,
-          targetRangeMax: rec.targetRange?.max ?? null,
-          dataQuality: rec.dataQuality,
-          generatedAt: rec.generatedAt,
-        },
-        create: {
-          symbol: seed.symbol,
-          action: rec.action,
-          score: rec.score,
-          confidence: rec.confidence,
-          risk: rec.risk,
-          reasons: JSON.stringify(rec.reasons),
-          warnings: JSON.stringify(rec.warnings),
-          entryZoneMin: rec.entryZone?.min ?? null,
-          entryZoneMax: rec.entryZone?.max ?? null,
-          stopLoss: rec.stopLoss ?? null,
-          targetRangeMin: rec.targetRange?.min ?? null,
-          targetRangeMax: rec.targetRange?.max ?? null,
-          dataQuality: rec.dataQuality,
-          generatedAt: rec.generatedAt,
-        }
-      });
-
-      // Save history
-      await prisma.recommendationHistory.create({
-        data: {
-          symbol: seed.symbol,
-          action: rec.action,
-          score: rec.score,
-          confidence: rec.confidence,
-          risk: rec.risk,
-          reasons: JSON.stringify(rec.reasons),
-          generatedAt: rec.generatedAt,
-        }
-      });
-    }
-
-    console.log("[scanner] Seeding completed successfully!");
-  } catch (err) {
-    console.error("[scanner] Seeding failed:", err);
-  }
+function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
+  if (action.includes("BUY")) return "BUY";
+  if (action.includes("SELL") || action === "REDUCE") return "SELL";
+  if (action === "HOLD") return "HOLD";
+  return "WAIT";
 }
 
 export async function backfillStock(symbol: string): Promise<boolean> {
   try {
     console.log(`[scanner] Starting backfill for ${symbol}...`);
-    const candles = await marketDataProvider.getCandles(symbol, "1Y");
+    const candles = await marketDataProvider.getCandles(symbol, "5Y");
     
     if (candles.length === 0) {
       console.warn(`[scanner] No historical candles returned for ${symbol}`);
@@ -243,68 +71,99 @@ export async function runMarketScan(): Promise<void> {
     changePct: number | null;
   }> = [];
 
-  for (const item of UNIVERSE) {
+  // Check history depth for every symbol concurrently — these are cheap local
+  // DB reads (no external API involved), so unlike the backfill/quote calls
+  // below there's no rate limit to respect in batching all of them at once.
+  // Sequentially awaiting 138 of these one at a time was the single biggest
+  // cost in a full scan once the DB itself is remote (each round trip pays
+  // real network latency even for a trivial COUNT).
+  const historyCounts = await Promise.all(
+    UNIVERSE.map(async (item) => {
+      try {
+        return { symbol: item.symbol, count: await prisma.stockPrice.count({ where: { symbol: item.symbol } }) };
+      } catch (err) {
+        console.error(`[scanner] Error checking history depth for ${item.symbol}:`, err);
+        return { symbol: item.symbol, count: 30 }; // assume sufficient; don't force a backfill on a transient DB error
+      }
+    })
+  );
+  const needsBackfill = historyCounts.filter((c) => c.count < 30).map((c) => c.symbol);
+  for (const symbol of needsBackfill) {
     try {
-      const existingCount = await prisma.stockPrice.count({ where: { symbol: item.symbol } });
-      
-      if (existingCount < 30) {
-        const ok = await backfillStock(item.symbol);
-        if (!ok) {
-          failedCount++;
-          continue;
-        }
-      }
-
-      const quote = await marketDataProvider.getQuote(item.symbol);
-      if (quote && quote.price > 0) {
-        const todayDate = new Date();
-        todayDate.setUTCHours(0, 0, 0, 0);
-
-        await prisma.stockPrice.upsert({
-          where: {
-            symbol_date: { symbol: item.symbol, date: todayDate }
-          },
-          update: {
-            open: quote.open ?? quote.price,
-            high: quote.dayHigh ?? quote.price,
-            low: quote.dayLow ?? quote.price,
-            close: quote.price,
-            volume: quote.volume ?? 0,
-          },
-          create: {
-            symbol: item.symbol,
-            date: todayDate,
-            open: quote.open ?? quote.price,
-            high: quote.dayHigh ?? quote.price,
-            low: quote.dayLow ?? quote.price,
-            close: quote.price,
-            volume: quote.volume ?? 0,
-          }
-        });
-
-        const changePct = pctChange(quote.price, quote.prevClose);
-        if (changePct != null) {
-          if (changePct > 0) advancesList.push(item.symbol);
-          else if (changePct < 0) declinesList.push(item.symbol);
-        }
-
-        scanResults.push({
-          symbol: item.symbol,
-          price: quote.price,
-          prevClose: quote.prevClose,
-          changePct,
-        });
-
-        successCount++;
-      } else {
-        console.warn(`[scanner] Failed to get live quote for ${item.symbol}`);
-        failedCount++;
-      }
+      const ok = await backfillStock(symbol);
+      if (!ok) failedCount++;
     } catch (err) {
-      console.error(`[scanner] Error scanning ${item.symbol} in Phase 1:`, err);
+      console.error(`[scanner] Error backfilling ${symbol} in Phase 1:`, err);
       failedCount++;
     }
   }
+
+  // Bulk-fetch today's quotes in one call — getQuotes() already batches
+  // requests (12 concurrent at a time, see yahooProvider.ts) instead of this
+  // loop opening one socket per symbol and waiting on it sequentially, which
+  // is what made a 138-symbol scan take several minutes end to end.
+  const liveQuotes = await marketDataProvider.getQuotes(UNIVERSE.map((u) => u.symbol));
+
+  // These upserts were the other half of the "sequential remote-DB round
+  // trip" cost — each one only needs the quote already fetched above, so
+  // there's nothing to wait on between symbols. Same reasoning as the history
+  // count pass: safe to fire all of them at once (JS's event loop makes the
+  // shared array/counter mutations below race-free even though they run
+  // concurrently — nothing here awaits mid-mutation).
+  await Promise.all(
+    UNIVERSE.map(async (item) => {
+      try {
+        const quote = liveQuotes[item.symbol];
+        if (quote && quote.price > 0) {
+          const todayDate = new Date();
+          todayDate.setUTCHours(0, 0, 0, 0);
+
+          await prisma.stockPrice.upsert({
+            where: {
+              symbol_date: { symbol: item.symbol, date: todayDate }
+            },
+            update: {
+              open: quote.open ?? quote.price,
+              high: quote.dayHigh ?? quote.price,
+              low: quote.dayLow ?? quote.price,
+              close: quote.price,
+              volume: quote.volume ?? 0,
+            },
+            create: {
+              symbol: item.symbol,
+              date: todayDate,
+              open: quote.open ?? quote.price,
+              high: quote.dayHigh ?? quote.price,
+              low: quote.dayLow ?? quote.price,
+              close: quote.price,
+              volume: quote.volume ?? 0,
+            }
+          });
+
+          const changePct = pctChange(quote.price, quote.prevClose);
+          if (changePct != null) {
+            if (changePct > 0) advancesList.push(item.symbol);
+            else if (changePct < 0) declinesList.push(item.symbol);
+          }
+
+          scanResults.push({
+            symbol: item.symbol,
+            price: quote.price,
+            prevClose: quote.prevClose,
+            changePct,
+          });
+
+          successCount++;
+        } else {
+          console.warn(`[scanner] Failed to get live quote for ${item.symbol}`);
+          failedCount++;
+        }
+      } catch (err) {
+        console.error(`[scanner] Error scanning ${item.symbol} in Phase 1:`, err);
+        failedCount++;
+      }
+    })
+  );
 
   console.log("[scanner] Phase 2: Evaluating market risk radar & sector strengths...");
   const niftySymbol = "^NSEI"; 
@@ -364,12 +223,19 @@ export async function runMarketScan(): Promise<void> {
   }
 
   console.log("[scanner] Phase 3: Generating individual buy/sell indicators and recommendation cards...");
-  const users = await prisma.user.findMany({ select: { id: true } });
 
-  for (const stock of scanResults) {
-    try {
-      const uItem = lookupUniverse(stock.symbol);
-      if (!uItem) continue;
+  // Same bounded-concurrency approach as the quote fetch above — process a
+  // batch of symbols' fundamentals/news/indicators/DB writes at once instead
+  // of one at a time, which is what made this phase take the bulk of a
+  // multi-minute scan.
+  const PHASE3_BATCH_SIZE = 12;
+  for (let i = 0; i < scanResults.length; i += PHASE3_BATCH_SIZE) {
+    const batch = scanResults.slice(i, i + PHASE3_BATCH_SIZE);
+    await Promise.all(
+      batch.map(async (stock) => {
+        try {
+          const uItem = lookupUniverse(stock.symbol);
+          if (!uItem) return;
 
       const [prices, fundamentals, newsRaw] = await Promise.all([
         prisma.stockPrice.findMany({
@@ -382,7 +248,7 @@ export async function runMarketScan(): Promise<void> {
 
       if (prices.length < 30) {
         console.warn(`[scanner] Skipping indicators for ${stock.symbol} due to insufficient price candles (${prices.length} found)`);
-        continue;
+        return;
       }
 
       const candles = prices.map((p) => ({
@@ -411,7 +277,6 @@ export async function runMarketScan(): Promise<void> {
       });
 
       const lastRec = await prisma.stockRecommendation.findUnique({ where: { symbol: stock.symbol } });
-      const yesterdayAction = lastRec ? lastRec.action : "HOLD";
 
       await prisma.stockRecommendation.upsert({
         where: { symbol: stock.symbol },
@@ -460,33 +325,51 @@ export async function runMarketScan(): Promise<void> {
         }
       });
 
-      if (yesterdayAction !== rec.action && users.length > 0) {
-        const isSignificant =
-          (yesterdayAction === "HOLD" && rec.action.includes("BUY")) ||
-          (yesterdayAction.includes("BUY") && rec.action === "HOLD") ||
-          (yesterdayAction.includes("BUY") && rec.action.includes("SELL")) ||
-          (yesterdayAction === "HOLD" && rec.action.includes("SELL"));
+      // Only notify on a real change from a real prior reading — a brand new
+      // symbol (no lastRec yet) has no genuine "before" state, so treating its
+      // first-ever score as a change from a fabricated HOLD baseline would
+      // fire false alerts for every newly-added symbol. And only the users
+      // who actually hold or watch this symbol are notified — not the whole
+      // user base — so this stays a signal about something they own or
+      // track, not market-wide noise.
+      if (lastRec && lastRec.action !== rec.action) {
+        const oldBucket = directionBucket(lastRec.action);
+        const newBucket = directionBucket(rec.action);
+        // WAIT is a temporary safety override, not a directional call — skip
+        // transitions into/out of it so this doesn't fire on risk-off noise.
+        if (oldBucket !== newBucket && oldBucket !== "WAIT" && newBucket !== "WAIT") {
+          // Holdings/watchlist entries are inconsistently stored with or
+          // without the provider's exchange suffix (e.g. "RELIANCE" vs
+          // "RELIANCE.NS") — match either form rather than assuming one.
+          const bareSymbol = stock.symbol.replace(/\.(NS|BO)$/, "");
+          const [holders, watchers] = await Promise.all([
+            prisma.holding.findMany({ where: { stock: { in: [stock.symbol, bareSymbol] } }, select: { userId: true } }),
+            prisma.watchlistItem.findMany({ where: { symbol: { in: [stock.symbol, bareSymbol] } }, select: { userId: true } }),
+          ]);
+          const interestedUserIds = new Set([...holders.map((h) => h.userId), ...watchers.map((w) => w.userId)]);
 
-        if (isSignificant) {
-          const title = `🔔 SIGNAL CHANGE: ${uItem.display}`;
-          const body = `${uItem.display} changed from ${yesterdayAction} to ${rec.action} (Score: ${rec.score}/100)`;
-          
-          const notifs = users.map((u) => ({
-            userId: u.id,
-            category: "RECOMMENDATION",
-            title,
-            body,
-            link: `/stock/${encodeURIComponent(uItem.display)}`,
-            priority: rec.action.includes("STRONG") ? "HIGH" : "NORMAL",
-          }));
-
-          await prisma.notification.createMany({ data: notifs });
+          if (interestedUserIds.size > 0) {
+            const title = `Signal change: ${uItem.display}`;
+            const body = `${uItem.display} moved from ${lastRec.action} to ${rec.action} (score ${rec.score}/100).`;
+            await prisma.notification.createMany({
+              data: [...interestedUserIds].map((userId) => ({
+                userId,
+                category: "STOCK",
+                priority: rec.action.includes("STRONG") ? "HIGH" : "NORMAL",
+                title,
+                body,
+                link: `/stock/${encodeURIComponent(stock.symbol)}`,
+              })),
+            });
+          }
         }
       }
 
-    } catch (err) {
-      console.error(`[scanner] Failed to generate signals for ${stock.symbol}:`, err);
-    }
+        } catch (err) {
+          console.error(`[scanner] Failed to generate signals for ${stock.symbol}:`, err);
+        }
+      })
+    );
   }
 
   await prisma.dataSyncLog.create({
@@ -503,18 +386,17 @@ export async function runMarketScan(): Promise<void> {
 }
 
 export function startScannerBackgroundJob() {
-  // Check if we need to seed initial indicators/recommendations for first-time use
-  prisma.stockRecommendation.count().then((count) => {
-    if (count === 0) {
-      seedInitialSignalsData().catch((err) => {
-        console.error("[scanner] Seeding on boot failed:", err);
-      });
-    } else {
-      // Run normal scan if already seeded
-      runMarketScan().catch((err) => {
-        console.error("[scanner] Initial scanner run failed:", err);
-      });
-    }
+  // First boot and every restart both just run the real scan — it already
+  // backfills real history for any symbol with thin data (see backfillStock),
+  // so there's no need for a synthetic seed path. A fabricated first-boot
+  // seed previously written ~90 days of Math.random() candles for 8 marquee
+  // symbols (TCS, INFY, RELIANCE, HDFCBANK, SBIN, AAPL, TSLA, NVDA) directly
+  // into StockPrice; because backfill only triggers under 30 existing rows,
+  // that fake history never got replaced and permanently skewed their
+  // SMA/RSI/trend indicators. Real data takes longer to appear on a cold
+  // database, but it's never wrong.
+  runMarketScan().catch((err) => {
+    console.error("[scanner] Initial scanner run failed:", err);
   });
 
   const timer = setInterval(async () => {

@@ -114,7 +114,7 @@ export default function LearningContentPage() {
       {/* Publisher Form Modal */}
       {formOpen && (
         <form onSubmit={handleSubmit} className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4 font-mono text-xs max-w-xl">
-          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Publish Article Details</h3>
+          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Publish Article Details</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-text-3 uppercase text-[0.62rem]">Lesson ID (Unique URL Slug):</label>

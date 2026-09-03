@@ -3,8 +3,10 @@ import { prisma } from "../lib/prisma";
 import { evaluateAlertsForUser } from "../lib/services/alerts";
 import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v, SYMBOL_RE } from "../lib/validate";
+import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
+router.use(requireAuth);
 
 const ALERT_TYPES = ["PRICE_ABOVE", "PRICE_BELOW", "PCT_MOVE", "VOLUME_SPIKE", "RSI_ABOVE", "RSI_BELOW", "NEWS", "MARKET_RISK", "PORTFOLIO_LOSS", "CONCENTRATION"] as const;
 

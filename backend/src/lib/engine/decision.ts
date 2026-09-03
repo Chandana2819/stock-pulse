@@ -1,271 +1,467 @@
-// Explainable decision engine.
+// Explainable decision engine for EQUistiq / StockPulse.
 //
-// Combines fundamentals + valuation + technicals + market conditions + sector
-// conditions + news sentiment + volatility + liquidity + portfolio exposure +
-// user risk profile + horizon into one of BUY / HOLD / WAIT / REDUCE / AVOID /
-// WATCH. Every score is a named "pillar" with its own evidence, so the final
-// call is never a black box, and the engine is allowed to conclude "do
-// nothing" when nothing clearly supports action.
+// Calculates normalized 0-100 scores across 7 pillars:
+// 1. Trend (20%)
+// 2. Momentum (15%)
+// 3. Volume (10%)
+// 4. Fundamentals (20%)
+// 5. News / Sentiment (10%)
+// 6. Stock Risk (10%) — 100 = Low Risk / Favorable
+// 7. Market + Sector (15%)
+//
+// Signals produced: STRONG BUY | BUY | HOLD | REDUCE | SELL | STRONG SELL | WAIT
 
 import type { FundamentalsData } from "../providers/types";
 import type { IndicatorSnapshot } from "../indicators";
+import { SCORING_WEIGHTS } from "../../config/scoring";
+import { computeSignalHorizon, type SignalHorizon } from "./horizon";
 
-export type Decision = "BUY" | "HOLD" | "WAIT" | "REDUCE" | "AVOID" | "WATCH";
+export type SignalAction = "STRONG BUY" | "BUY" | "HOLD" | "REDUCE" | "SELL" | "STRONG SELL" | "WAIT";
 
 export type PillarScore = {
   key: string;
   label: string;
-  score: number; // -100 (very bearish) .. +100 (very bullish)
+  score: number; // 0..100
   weight: number;
   evidence: string[];
   available: boolean;
 };
 
+export type DecisionScores = {
+  trend: number;
+  momentum: number;
+  volume: number;
+  fundamentals: number;
+  sentiment: number;
+  risk: number;
+  marketSector: number;
+  final: number;
+};
+
 export type DecisionResult = {
-  decision: Decision;
-  confidence: number; // 0-100
-  totalScore: number; // -100..100
+  symbol: string;
+  signal: SignalAction;
+  confidence: number; // 0..100
+  scores: DecisionScores;
   pillars: PillarScore[];
   reasons: string[];
+  warnings: string[];
   mainRisk: string;
   wouldChange: string[];
+  dataQuality: "EXCELLENT" | "GOOD" | "MODERATE" | "POOR" | "INSUFFICIENT";
+  dataQualityScore: number; // 0..100
+  horizon: SignalHorizon;
 };
 
 export type DecisionInput = {
+  symbol: string;
+  price: number;
+  averagePrice?: number | null;
+  quantity?: number;
   fundamentals: FundamentalsData | null;
   indicators: IndicatorSnapshot | null;
   priceChangePct: number | null;
-  marketRiskScore: number | null; // 0-100, higher = riskier
+  marketRiskScore: number | null; // 0..100, higher = higher market risk
   sectorChangePct: number | null;
-  newsSentimentScore: number | null; // -1..1
+  newsArticles?: Array<{ title: string; sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE"; sentimentScore?: number }>;
   volatility30d: number | null;
   avgVolume: number | null;
   volume: number | null;
-  ownedQuantity: number;
-  portfolioWeightPct: number | null; // this stock's % of the user's portfolio, if held
-  riskTolerance: "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE";
-  horizonYears: number;
+  ownedQuantity?: number;
+  candlesCount?: number;
 };
 
-function clampScore(n: number) {
-  return Math.round(Math.max(-100, Math.min(100, n)));
+function clamp0to100(n: number): number {
+  return Math.round(Math.max(0, Math.min(100, n)));
 }
 
-function fundamentalsPillar(f: FundamentalsData | null): PillarScore {
-  if (!f) return { key: "fundamentals", label: "Fundamentals", score: 0, weight: 0.22, evidence: ["No fundamentals data available"], available: false };
+// 1. TREND PILLAR (0-100)
+function computeTrendPillar(ind: IndicatorSnapshot | null, priceChangePct: number | null): PillarScore {
+  if (!ind) {
+    return { key: "trend", label: "Trend", score: 50, weight: SCORING_WEIGHTS.trend, evidence: ["No technical trend data available"], available: false };
+  }
   const evidence: string[] = [];
-  let score = 0;
-  let signals = 0;
+  let score = 50;
 
-  if (f.roe != null) {
-    signals++;
-    score += f.roe >= 20 ? 25 : f.roe >= 12 ? 12 : f.roe >= 5 ? 0 : -20;
-    evidence.push(`ROE ${f.roe.toFixed(1)}%`);
-  }
-  if (f.revenueGrowth != null) {
-    signals++;
-    score += f.revenueGrowth >= 15 ? 20 : f.revenueGrowth >= 5 ? 8 : f.revenueGrowth >= 0 ? -3 : -20;
-    evidence.push(`Revenue growth ${f.revenueGrowth.toFixed(1)}%`);
-  }
-  if (f.profitGrowth != null) {
-    signals++;
-    score += f.profitGrowth >= 15 ? 20 : f.profitGrowth >= 5 ? 8 : f.profitGrowth >= 0 ? -3 : -20;
-    evidence.push(`Profit growth ${f.profitGrowth.toFixed(1)}%`);
-  }
-  if (f.debtToEquity != null) {
-    signals++;
-    score += f.debtToEquity <= 0.3 ? 15 : f.debtToEquity <= 1 ? 5 : f.debtToEquity <= 2 ? -10 : -25;
-    evidence.push(`Debt/Equity ${f.debtToEquity.toFixed(2)}`);
-  }
-  if (f.freeCashFlow != null) {
-    signals++;
-    score += f.freeCashFlow > 0 ? 10 : -15;
-    evidence.push(f.freeCashFlow > 0 ? "Positive free cash flow" : "Negative free cash flow");
-  }
-
-  if (signals === 0) return { key: "fundamentals", label: "Fundamentals", score: 0, weight: 0.22, evidence: ["Insufficient fundamentals coverage"], available: false };
-  return { key: "fundamentals", label: "Fundamentals", score: clampScore(score), weight: 0.22, evidence, available: true };
-}
-
-function valuationPillar(f: FundamentalsData | null): PillarScore {
-  if (!f || f.peRatio == null) {
-    return { key: "valuation", label: "Valuation", score: 0, weight: 0.18, evidence: ["PE ratio not available"], available: false };
-  }
-  const evidence = [`PE ${f.peRatio.toFixed(1)}`];
-  let score = 0;
-  if (f.peRatio <= 0) {
-    score = -10;
-    evidence.push("Negative/undefined earnings");
-  } else if (f.peRatio < 12) {
-    score = 25;
-  } else if (f.peRatio < 22) {
-    score = 10;
-  } else if (f.peRatio < 35) {
-    score = -10;
+  if (ind.trend === "UPTREND") {
+    score += 30;
+    evidence.push("Technical price trend is in a clear uptrend (SMA20 > SMA50)");
+  } else if (ind.trend === "DOWNTREND") {
+    score -= 30;
+    evidence.push("Technical price trend is in a downtrend (SMA20 < SMA50)");
   } else {
-    score = -30;
+    evidence.push("Price is consolidating near its moving averages");
   }
-  if (f.pbRatio != null) {
-    evidence.push(`PB ${f.pbRatio.toFixed(1)}`);
-    score += f.pbRatio < 3 ? 5 : f.pbRatio > 8 ? -10 : 0;
+
+  if (ind.sma200 != null && ind.price != null) {
+    if (ind.price > ind.sma200) {
+      score += 15;
+      evidence.push("Price is trading above 200-day moving average (long-term bull)");
+    } else {
+      score -= 15;
+      evidence.push("Price is trading below 200-day moving average (long-term bear)");
+    }
   }
-  if (f.dividendYield != null && f.dividendYield > 1.5) {
-    evidence.push(`Dividend yield ${f.dividendYield.toFixed(1)}%`);
-    score += 5;
+
+  if (priceChangePct != null) {
+    if (priceChangePct >= 3) {
+      evidence.push(`Strong daily gain of +${priceChangePct.toFixed(2)}%`);
+    } else if (priceChangePct <= -3) {
+      evidence.push(`Significant daily drop of ${priceChangePct.toFixed(2)}%`);
+    }
   }
-  return { key: "valuation", label: "Valuation", score: clampScore(score), weight: 0.18, evidence, available: true };
+
+  return { key: "trend", label: "Trend", score: clamp0to100(score), weight: SCORING_WEIGHTS.trend, evidence, available: true };
 }
 
-function technicalPillar(ind: IndicatorSnapshot | null, priceChangePct: number | null): PillarScore {
-  if (!ind) return { key: "technical", label: "Technical", score: 0, weight: 0.16, evidence: ["No chart data available"], available: false };
+// 2. MOMENTUM PILLAR (0-100)
+function computeMomentumPillar(ind: IndicatorSnapshot | null): PillarScore {
+  if (!ind) {
+    return { key: "momentum", label: "Momentum", score: 50, weight: SCORING_WEIGHTS.momentum, evidence: ["No momentum data available"], available: false };
+  }
   const evidence: string[] = [];
-  let score = 0;
-
-  if (ind.trend === "UPTREND") { score += 20; evidence.push("Price above SMA20 and SMA20 above SMA50 (uptrend)"); }
-  else if (ind.trend === "DOWNTREND") { score -= 20; evidence.push("Price below SMA20 and SMA20 below SMA50 (downtrend)"); }
-  else if (ind.trend === "SIDEWAYS") { evidence.push("Price consolidating near its moving averages"); }
+  let score = 50;
 
   if (ind.rsi14 != null) {
-    evidence.push(`RSI(14) ${ind.rsi14.toFixed(0)}`);
-    if (ind.rsi14 >= 75) score -= 20;
-    else if (ind.rsi14 >= 60) score += 8;
-    else if (ind.rsi14 <= 25) score -= 10; // deeply oversold reads as weak momentum, not a buy signal by itself
-    else if (ind.rsi14 <= 40) score -= 5;
+    const rsi = ind.rsi14;
+    evidence.push(`RSI(14) is at ${rsi.toFixed(1)}`);
+    if (rsi >= 50 && rsi <= 65) {
+      score += 25; // healthy bullish momentum
+      evidence.push("RSI indicates healthy bullish momentum");
+    } else if (rsi > 65 && rsi < 75) {
+      score += 15;
+      evidence.push("RSI shows strong momentum (approaching overbought)");
+    } else if (rsi >= 75) {
+      score -= 10;
+      evidence.push("RSI indicates overbought conditions (>75)");
+    } else if (rsi >= 30 && rsi < 40) {
+      score -= 15;
+      evidence.push("RSI shows weak momentum");
+    } else if (rsi < 30) {
+      score -= 25;
+      evidence.push("RSI indicates oversold conditions (<30)");
+    }
   }
 
-  if (ind.macd.histogram != null) {
-    score += ind.macd.histogram > 0 ? 10 : -10;
-    evidence.push(`MACD histogram ${ind.macd.histogram > 0 ? "positive" : "negative"}`);
+  if (ind.macd) {
+    if (ind.macd.histogram != null) {
+      if (ind.macd.histogram > 0) {
+        score += 15;
+        evidence.push("MACD histogram is positive (bullish momentum)");
+      } else {
+        score -= 15;
+        evidence.push("MACD histogram is negative (bearish momentum)");
+      }
+    }
   }
 
-  if (priceChangePct != null && Math.abs(priceChangePct) >= 5) {
-    score += priceChangePct > 0 ? -8 : -5; // sharp one-day moves in either direction reduce near-term confidence
-    evidence.push(`Sharp ${priceChangePct > 0 ? "rally" : "drop"} of ${Math.abs(priceChangePct).toFixed(1)}% today`);
-  }
-
-  return { key: "technical", label: "Technical", score: clampScore(score), weight: 0.16, evidence, available: true };
+  return { key: "momentum", label: "Momentum", score: clamp0to100(score), weight: SCORING_WEIGHTS.momentum, evidence, available: true };
 }
 
-function marketPillar(marketRiskScore: number | null): PillarScore {
-  if (marketRiskScore == null) return { key: "market", label: "Market Conditions", score: 0, weight: 0.12, evidence: ["Market risk data unavailable"], available: false };
-  const score = clampScore(50 - marketRiskScore); // risk 0 -> +50, risk 100 -> -50
-  return {
-    key: "market",
-    label: "Market Conditions",
-    score,
-    weight: 0.12,
-    evidence: [`Market Risk Radar at ${marketRiskScore}/100`],
-    available: true,
-  };
-}
-
-function sectorPillar(sectorChangePct: number | null): PillarScore {
-  if (sectorChangePct == null) return { key: "sector", label: "Sector Conditions", score: 0, weight: 0.08, evidence: ["Sector index unavailable"], available: false };
-  return {
-    key: "sector",
-    label: "Sector Conditions",
-    score: clampScore(sectorChangePct * 10),
-    weight: 0.08,
-    evidence: [`Sector index ${sectorChangePct >= 0 ? "+" : ""}${sectorChangePct.toFixed(2)}% today`],
-    available: true,
-  };
-}
-
-function newsPillar(sentiment: number | null): PillarScore {
-  if (sentiment == null) return { key: "news", label: "News Sentiment", score: 0, weight: 0.08, evidence: ["No recent relevant headlines"], available: false };
-  return {
-    key: "news",
-    label: "News Sentiment",
-    score: clampScore(sentiment * 60),
-    weight: 0.08,
-    evidence: [`Aggregate recent-news sentiment: ${sentiment > 0.1 ? "positive" : sentiment < -0.1 ? "negative" : "neutral"}`],
-    available: true,
-  };
-}
-
-function volatilityLiquidityPillar(volatility30d: number | null, volume: number | null, avgVolume: number | null): PillarScore {
+// 3. VOLUME PILLAR (0-100)
+function computeVolumePillar(ind: IndicatorSnapshot | null, volume: number | null, avgVolume: number | null, priceChangePct: number | null): PillarScore {
   const evidence: string[] = [];
-  let score = 0;
-  let signals = 0;
-  if (volatility30d != null) {
-    signals++;
-    evidence.push(`30D annualised volatility ${volatility30d.toFixed(0)}%`);
-    score += volatility30d > 60 ? -20 : volatility30d > 35 ? -8 : 5;
+  let score = 50;
+
+  const volRatio = ind?.volumeTrendRatio ?? (volume && avgVolume && avgVolume > 0 ? volume / avgVolume : null);
+
+  if (volRatio != null) {
+    evidence.push(`Volume is ${volRatio.toFixed(2)}x of 20-day average`);
+    if (volRatio >= 1.5) {
+      if (priceChangePct != null && priceChangePct > 0) {
+        score += 35;
+        evidence.push("High volume accumulation on price rise");
+      } else if (priceChangePct != null && priceChangePct < 0) {
+        score -= 35;
+        evidence.push("High volume distribution/selling pressure on price fall");
+      } else {
+        score += 10;
+      }
+    } else if (volRatio >= 1.0) {
+      score += 10;
+    } else if (volRatio < 0.6) {
+      score -= 15;
+      evidence.push("Low volume indicates lack of buying interest");
+    }
+  } else {
+    return { key: "volume", label: "Volume", score: 50, weight: SCORING_WEIGHTS.volume, evidence: ["Volume average data unavailable"], available: false };
   }
-  if (volume != null && avgVolume && avgVolume > 0) {
-    signals++;
-    const ratio = volume / avgVolume;
-    evidence.push(`Volume ${ratio.toFixed(1)}x average`);
-    if (ratio < 0.3) score -= 10; // illiquid
-    else if (ratio > 3) score -= 5; // unusual spike adds uncertainty
-  }
-  if (signals === 0) return { key: "volLiquidity", label: "Volatility & Liquidity", score: 0, weight: 0.08, evidence: ["Insufficient data"], available: false };
-  return { key: "volLiquidity", label: "Volatility & Liquidity", score: clampScore(score), weight: 0.08, evidence, available: true };
+
+  return { key: "volume", label: "Volume", score: clamp0to100(score), weight: SCORING_WEIGHTS.volume, evidence, available: true };
 }
 
-function exposurePillar(portfolioWeightPct: number | null, riskTolerance: DecisionInput["riskTolerance"]): PillarScore {
-  if (portfolioWeightPct == null) return { key: "exposure", label: "Portfolio Exposure", score: 0, weight: 0.08, evidence: ["Not currently held"], available: true };
-  const cap = riskTolerance === "CONSERVATIVE" ? 10 : riskTolerance === "MODERATE" ? 15 : 22;
-  const evidence = [`Currently ${portfolioWeightPct.toFixed(1)}% of your simulated portfolio`];
-  let score = 0;
-  if (portfolioWeightPct > cap * 1.5) { score = -35; evidence.push(`Well above your ${cap}% concentration guideline for a ${riskTolerance.toLowerCase()} profile`); }
-  else if (portfolioWeightPct > cap) { score = -15; evidence.push(`Above your ${cap}% concentration guideline`); }
-  return { key: "exposure", label: "Portfolio Exposure", score, weight: 0.08, evidence, available: true };
+// 4. FUNDAMENTALS PILLAR (0-100)
+function computeFundamentalsPillar(f: FundamentalsData | null): PillarScore {
+  if (!f) {
+    return { key: "fundamentals", label: "Fundamentals", score: 50, weight: SCORING_WEIGHTS.fundamentals, evidence: ["Fundamentals data unavailable"], available: false };
+  }
+  const evidence: string[] = [];
+  let totalPoints = 0;
+  let maxPoints = 0;
+
+  if (f.roe != null) {
+    maxPoints += 20;
+    if (f.roe >= 20) { totalPoints += 20; evidence.push(`Strong ROE at ${f.roe.toFixed(1)}%`); }
+    else if (f.roe >= 12) { totalPoints += 14; evidence.push(`Moderate ROE at ${f.roe.toFixed(1)}%`); }
+    else if (f.roe >= 5) { totalPoints += 8; }
+    else { evidence.push(`Low ROE at ${f.roe.toFixed(1)}%`); }
+  }
+
+  if (f.revenueGrowth != null) {
+    maxPoints += 20;
+    if (f.revenueGrowth >= 15) { totalPoints += 20; evidence.push(`High revenue growth +${f.revenueGrowth.toFixed(1)}%`); }
+    else if (f.revenueGrowth >= 5) { totalPoints += 12; evidence.push(`Stable revenue growth +${f.revenueGrowth.toFixed(1)}%`); }
+    else if (f.revenueGrowth >= 0) { totalPoints += 6; }
+    else { evidence.push(`Declining revenue ${f.revenueGrowth.toFixed(1)}%`); }
+  }
+
+  if (f.profitGrowth != null) {
+    maxPoints += 20;
+    if (f.profitGrowth >= 15) { totalPoints += 20; evidence.push(`Strong profit growth +${f.profitGrowth.toFixed(1)}%`); }
+    else if (f.profitGrowth >= 5) { totalPoints += 12; }
+    else if (f.profitGrowth >= 0) { totalPoints += 6; }
+    else { evidence.push(`Profit decline of ${f.profitGrowth.toFixed(1)}%`); }
+  }
+
+  if (f.debtToEquity != null) {
+    maxPoints += 20;
+    if (f.debtToEquity <= 0.5) { totalPoints += 20; evidence.push(`Low debt-to-equity ratio (${f.debtToEquity.toFixed(2)})`); }
+    else if (f.debtToEquity <= 1.2) { totalPoints += 12; evidence.push(`Manageable debt-to-equity (${f.debtToEquity.toFixed(2)})`); }
+    else { evidence.push(`High debt-to-equity ratio (${f.debtToEquity.toFixed(2)})`); }
+  }
+
+  if (f.freeCashFlow != null) {
+    maxPoints += 20;
+    if (f.freeCashFlow > 0) { totalPoints += 20; evidence.push("Positive free cash flow generation"); }
+    else { evidence.push("Negative free cash flow"); }
+  }
+
+  if (maxPoints === 0) {
+    return { key: "fundamentals", label: "Fundamentals", score: 50, weight: SCORING_WEIGHTS.fundamentals, evidence: ["Insufficient fundamental metrics"], available: false };
+  }
+
+  const score = clamp0to100((totalPoints / maxPoints) * 100);
+  return { key: "fundamentals", label: "Fundamentals", score, weight: SCORING_WEIGHTS.fundamentals, evidence, available: true };
+}
+
+// 5. SENTIMENT PILLAR (0-100)
+function computeSentimentPillar(newsArticles?: DecisionInput["newsArticles"]): PillarScore {
+  if (!newsArticles || newsArticles.length === 0) {
+    return { key: "sentiment", label: "News Sentiment", score: 50, weight: SCORING_WEIGHTS.sentiment, evidence: ["No recent news headlines found"], available: false };
+  }
+
+  const posCount = newsArticles.filter(a => a.sentiment === "POSITIVE").length;
+  const negCount = newsArticles.filter(a => a.sentiment === "NEGATIVE").length;
+  const total = newsArticles.length;
+
+  const score = clamp0to100(50 + ((posCount - negCount) / total) * 40);
+  const evidence = [
+    `News sentiment breakdown: ${posCount} positive, ${total - posCount - negCount} neutral, ${negCount} negative out of ${total} articles`
+  ];
+
+  return { key: "sentiment", label: "News Sentiment", score, weight: SCORING_WEIGHTS.sentiment, evidence, available: true };
+}
+
+// 6. STOCK RISK PILLAR (0-100) — IMPORTANT: 100 = LOW RISK / FAVORABLE, 0 = VERY HIGH RISK
+function computeStockRiskPillar(volatility30d: number | null, fundamentals: FundamentalsData | null): PillarScore {
+  const evidence: string[] = [];
+  let score = 50;
+  let availableCount = 0;
+
+  if (volatility30d != null) {
+    availableCount++;
+    evidence.push(`30-day annualized volatility: ${volatility30d.toFixed(1)}%`);
+    if (volatility30d < 25) score += 25;
+    else if (volatility30d < 40) score += 5;
+    else if (volatility30d < 60) score -= 15;
+    else score -= 30;
+  }
+
+  if (fundamentals?.beta != null) {
+    availableCount++;
+    const beta = fundamentals.beta;
+    evidence.push(`Stock beta: ${beta.toFixed(2)}`);
+    if (beta <= 0.8) score += 20;
+    else if (beta <= 1.2) score += 10;
+    else if (beta <= 1.8) score -= 10;
+    else score -= 25;
+  }
+
+  if (fundamentals?.debtToEquity != null) {
+    availableCount++;
+    if (fundamentals.debtToEquity < 0.5) score += 10;
+    else if (fundamentals.debtToEquity > 2.0) score -= 20;
+  }
+
+  if (availableCount === 0) {
+    return { key: "risk", label: "Stock Risk", score: 50, weight: SCORING_WEIGHTS.risk, evidence: ["Risk metrics (volatility, beta, debt) unavailable"], available: false };
+  }
+
+  const finalScore = clamp0to100(score);
+  evidence.unshift(finalScore >= 70 ? "Stock risk profile is LOW / favorable" : finalScore >= 45 ? "Stock risk profile is MODERATE" : "Stock risk profile is HIGH / unfavorable");
+
+  return { key: "risk", label: "Stock Risk", score: finalScore, weight: SCORING_WEIGHTS.risk, evidence, available: true };
+}
+
+// 7. MARKET + SECTOR PILLAR (0-100)
+function computeMarketSectorPillar(marketRiskScore: number | null, sectorChangePct: number | null): PillarScore {
+  const evidence: string[] = [];
+  let marketScore = 50;
+  let sectorScore = 50;
+
+  if (marketRiskScore != null) {
+    marketScore = clamp0to100(100 - marketRiskScore);
+    evidence.push(`Market risk score is ${marketRiskScore}/100 (${marketRiskScore < 40 ? "favorable market" : marketRiskScore > 70 ? "high market risk" : "neutral market"})`);
+  } else {
+    evidence.push("Broad market risk score unavailable");
+  }
+
+  if (sectorChangePct != null) {
+    sectorScore = clamp0to100(50 + sectorChangePct * 15);
+    evidence.push(`Sector index performance: ${sectorChangePct >= 0 ? "+" : ""}${sectorChangePct.toFixed(2)}% today`);
+  } else {
+    evidence.push("Sector index data unavailable");
+  }
+
+  const combined = clamp0to100(0.6 * marketScore + 0.4 * sectorScore);
+  return { key: "marketSector", label: "Market & Sector", score: combined, weight: SCORING_WEIGHTS.marketSector, evidence, available: true };
 }
 
 export function computeDecision(input: DecisionInput): DecisionResult {
-  const pillars = [
-    fundamentalsPillar(input.fundamentals),
-    valuationPillar(input.fundamentals),
-    technicalPillar(input.indicators, input.priceChangePct),
-    marketPillar(input.marketRiskScore),
-    sectorPillar(input.sectorChangePct),
-    newsPillar(input.newsSentimentScore),
-    volatilityLiquidityPillar(input.volatility30d, input.volume, input.avgVolume),
-    exposurePillar(input.portfolioWeightPct, input.riskTolerance),
-  ];
+  const trend = computeTrendPillar(input.indicators, input.priceChangePct);
+  const momentum = computeMomentumPillar(input.indicators);
+  const volume = computeVolumePillar(input.indicators, input.volume, input.avgVolume, input.priceChangePct);
+  const fundamentals = computeFundamentalsPillar(input.fundamentals);
+  const sentiment = computeSentimentPillar(input.newsArticles);
+  const risk = computeStockRiskPillar(input.volatility30d, input.fundamentals);
+  const marketSector = computeMarketSectorPillar(input.marketRiskScore, input.sectorChangePct);
 
-  const usable = pillars.filter((p) => p.available);
-  const totalWeight = usable.reduce((a, p) => a + p.weight, 0);
-  const totalScore = totalWeight > 0 ? Math.round(usable.reduce((a, p) => a + p.score * p.weight, 0) / totalWeight) : 0;
+  const pillars = [trend, momentum, volume, fundamentals, sentiment, risk, marketSector];
 
-  const dataCompleteness = usable.length / pillars.length;
-  // Confidence blends how decisive the score is with how much evidence backed it.
-  const confidence = Math.round(Math.min(95, Math.max(30, Math.abs(totalScore) * 0.6 + dataCompleteness * 40)));
+  const usable = pillars.filter(p => p.available);
 
-  const horizonBoost = input.horizonYears >= 5 ? 5 : input.horizonYears <= 1 ? -5 : 0;
-  const adjusted = clampScore(totalScore + horizonBoost);
+  // Data Quality Assessment
+  let dataQualityScore = 100;
+  const warnings: string[] = [];
 
-  let decision: Decision;
-  const overExposed = pillars.find((p) => p.key === "exposure")!.score <= -30;
-  const risky = input.marketRiskScore != null && input.marketRiskScore >= 70;
+  if (!input.indicators) {
+    dataQualityScore -= 30;
+    warnings.push("Technical indicators history missing or incomplete.");
+  }
+  if (!input.fundamentals) {
+    dataQualityScore -= 20;
+    warnings.push("Fundamental financial data missing.");
+  }
+  if (input.candlesCount != null && input.candlesCount < 30) {
+    dataQualityScore -= 40;
+    warnings.push("Insufficient price candle history (<30 days).");
+  }
+  if (!input.newsArticles || input.newsArticles.length === 0) {
+    dataQualityScore -= 10;
+  }
 
-  if (input.ownedQuantity > 0 && overExposed) decision = "REDUCE";
-  else if (adjusted >= 45 && !risky) decision = "BUY";
-  else if (adjusted >= 45 && risky) decision = "WAIT";
-  else if (adjusted <= -45) decision = "AVOID";
-  else if (adjusted <= -20) decision = input.ownedQuantity > 0 ? "REDUCE" : "AVOID";
-  else if (adjusted >= 15) decision = "WATCH";
-  else decision = "HOLD";
+  let dataQualityLabel: DecisionResult["dataQuality"] = "GOOD";
+  if (dataQualityScore >= 85) dataQualityLabel = "EXCELLENT";
+  else if (dataQualityScore >= 70) dataQualityLabel = "GOOD";
+  else if (dataQualityScore >= 50) dataQualityLabel = "MODERATE";
+  else if (dataQualityScore >= 30) dataQualityLabel = "POOR";
+  else dataQualityLabel = "INSUFFICIENT";
 
-  const reasons = [...usable]
-    .sort((a, b) => Math.abs(b.score * b.weight) - Math.abs(a.score * a.weight))
-    .slice(0, 4)
-    .map((p) => `${p.label}: ${p.evidence[0]}`);
+  // Compute final score formula
+  const finalScoreRaw =
+    trend.score * SCORING_WEIGHTS.trend +
+    momentum.score * SCORING_WEIGHTS.momentum +
+    volume.score * SCORING_WEIGHTS.volume +
+    fundamentals.score * SCORING_WEIGHTS.fundamentals +
+    sentiment.score * SCORING_WEIGHTS.sentiment +
+    risk.score * SCORING_WEIGHTS.risk +
+    marketSector.score * SCORING_WEIGHTS.marketSector;
 
-  const worstPillar = [...usable].sort((a, b) => a.score - b.score)[0];
-  const mainRisk = worstPillar && worstPillar.score < 0
-    ? `${worstPillar.label} is the biggest drag: ${worstPillar.evidence[0]}`
-    : risky
-    ? "Overall market risk is elevated, which can override otherwise-strong signals"
-    : "No single dominant risk identified in the available data";
+  const finalScore = clamp0to100(finalScoreRaw);
+
+  const scores: DecisionScores = {
+    trend: trend.score,
+    momentum: momentum.score,
+    volume: volume.score,
+    fundamentals: fundamentals.score,
+    sentiment: sentiment.score,
+    risk: risk.score,
+    marketSector: marketSector.score,
+    final: finalScore,
+  };
+
+  // Signal Classification (0-100)
+  let signal: SignalAction;
+  if (finalScore >= 80) signal = "STRONG BUY";
+  else if (finalScore >= 65) signal = "BUY";
+  else if (finalScore >= 55) signal = "HOLD";
+  else if (finalScore >= 45) signal = "REDUCE";
+  else if (finalScore >= 30) signal = "SELL";
+  else signal = "STRONG SELL";
+
+  // Safety Overrides & Validation Rules
+  const reasons: string[] = [];
+
+  // Add top positive & negative reasons from pillars
+  usable.forEach(p => {
+    if (p.evidence.length > 0) {
+      reasons.push(p.evidence[0]);
+    }
+  });
+
+  // Rule A: Insufficient Data Quality -> WAIT
+  if (dataQualityLabel === "INSUFFICIENT" || (input.candlesCount != null && input.candlesCount < 30)) {
+    signal = "WAIT";
+    reasons.unshift("Data coverage is insufficient to generate a reliable signal");
+  }
+
+  // Rule B: Elevated Market Risk (>75) overrides BUY to WAIT
+  if ((signal === "BUY" || signal === "STRONG BUY") && input.marketRiskScore != null && input.marketRiskScore >= 75) {
+    signal = "WAIT";
+    warnings.push("BUY signal overridden to WAIT due to elevated broad market volatility (Market Risk >= 75)");
+    reasons.unshift("Elevated market risk overrides BUY signal into WAIT");
+  }
+
+  // Rule C: Technical Downtrend overrides BUY to WAIT
+  if ((signal === "BUY" || signal === "STRONG BUY") && input.indicators?.trend === "DOWNTREND") {
+    signal = "WAIT";
+    warnings.push("BUY signal overridden to WAIT because technical price trend is in a downtrend");
+    reasons.unshift("Downtrend setup caps action to WAIT to avoid catching falling price momentum");
+  }
+
+  // Confidence Calculation (0-100)
+  const scoreDeviations = usable.map(p => Math.abs(p.score - finalScore));
+  const avgDeviation = scoreDeviations.length > 0 ? scoreDeviations.reduce((a, b) => a + b, 0) / scoreDeviations.length : 25;
+  const agreementFactor = Math.max(0, 100 - avgDeviation * 1.8);
+  const confidence = clamp0to100(0.6 * agreementFactor + 0.4 * (dataQualityScore));
+
+  // Main Risk summary
+  const lowestPillar = [...usable].sort((a, b) => a.score - b.score)[0];
+  const mainRisk = lowestPillar && lowestPillar.score < 45
+    ? `${lowestPillar.label} is the primary drag (${lowestPillar.score}/100): ${lowestPillar.evidence[0]}`
+    : input.marketRiskScore != null && input.marketRiskScore >= 60
+    ? `Broad market risk is elevated (${input.marketRiskScore}/100)`
+    : "No major isolated risk identified in current data";
 
   const wouldChange: string[] = [];
-  if (decision === "WAIT") wouldChange.push("Market Risk Radar cooling to a lower band");
-  if (decision === "AVOID" || decision === "REDUCE") wouldChange.push("Valuation compressing or fundamentals improving");
-  if (decision === "BUY" || decision === "WATCH") wouldChange.push("A clear deterioration in fundamentals or a spike in market risk");
-  if (!input.fundamentals) wouldChange.push("Fundamentals data becoming available for this symbol");
-  if (wouldChange.length === 0) wouldChange.push("A material change in any of the pillars above");
+  if (signal === "WAIT") wouldChange.push("Sufficient historical candle data becoming available");
+  if (signal === "WAIT" && input.marketRiskScore != null && input.marketRiskScore >= 75) wouldChange.push("Broad market volatility cooling down below 75");
+  if (signal === "BUY" || signal === "STRONG BUY") wouldChange.push("Deterioration in fundamental growth metrics or trend breakdown below SMA50");
+  if (signal === "REDUCE" || signal === "SELL" || signal === "STRONG SELL") wouldChange.push("Trend reversal above EMA20 with volume confirmation or earnings recovery");
+  if (wouldChange.length === 0) wouldChange.push("Material shift in technical momentum or fundamental ratios");
 
-  return { decision, confidence, totalScore: adjusted, pillars, reasons, mainRisk, wouldChange };
+  return {
+    symbol: input.symbol,
+    signal,
+    confidence,
+    scores,
+    pillars,
+    reasons: reasons.slice(0, 5),
+    warnings: warnings.slice(0, 4),
+    mainRisk,
+    wouldChange,
+    dataQuality: dataQualityLabel,
+    dataQualityScore,
+    horizon: computeSignalHorizon(pillars, signal),
+  };
 }

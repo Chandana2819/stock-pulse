@@ -99,7 +99,7 @@ export default function SupportDeskPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch font-mono text-xs">
           {/* Left: Queue List */}
           <div className="lg:col-span-5 border border-border-custom bg-bg-1 p-4 rounded flex flex-col gap-4 max-h-[600px] overflow-hidden">
-            <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Active Tickets</h3>
+            <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Active Tickets</h3>
             <div className="flex-1 overflow-y-auto flex flex-col gap-2 pr-1">
               {tickets.length === 0 ? (
                 <div className="text-center text-text-4 py-8">No tickets logged in system</div>

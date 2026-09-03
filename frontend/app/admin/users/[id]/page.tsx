@@ -210,7 +210,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
         <div className="lg:col-span-8 flex flex-col gap-6">
           {/* Profile Overview */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Profile & KYC Status</h3>
+            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Profile & KYC Status</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 font-mono text-xs">
               <div className="flex flex-col gap-0.5">
                 <span className="text-text-3 uppercase text-[0.62rem]">Full Name:</span>
@@ -233,7 +233,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Holdings List */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
-            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Active Asset Holdings</h3>
+            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Active Asset Holdings</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left font-mono text-[0.7rem] border-collapse">
                 <thead>
@@ -269,7 +269,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Alert Configs */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
-            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// User Trigger Limits</h3>
+            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">User Trigger Limits</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left font-mono text-[0.7rem] border-collapse">
                 <thead>
@@ -309,7 +309,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
         <div className="lg:col-span-4 flex flex-col gap-6">
           {/* Wallet adjust console */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Adjustment Console</h3>
+            <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Adjustment Console</h3>
             <div className="font-mono text-xs flex flex-col gap-1 mb-2 bg-bg-2/40 p-3 border border-border-custom">
               <div className="flex justify-between text-text-3 uppercase text-[0.65rem]">
                 <span>INR Balance:</span>
@@ -371,7 +371,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           {/* Admin Role Promoters (SUPER_ADMIN ONLY) */}
           {adminUser?.role === "SUPER_ADMIN" && (
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-              <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Promote/Demote Role</h3>
+              <h3 className="font-mono text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Promote/Demote Role</h3>
               <div className="flex flex-col gap-3 font-mono text-xs">
                 <div className="flex flex-col gap-1">
                   <label className="text-text-3 uppercase text-[0.62rem]">Target Access Role:</label>

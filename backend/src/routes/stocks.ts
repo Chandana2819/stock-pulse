@@ -69,6 +69,124 @@ router.get(
   })
 );
 
+// GET /api/stocks/:symbol/analysis - Clean, standardized analysis route according to ChatGPT spec
+router.get(
+  "/:symbol/analysis",
+  asyncHandler(async (req, res) => {
+    const symbolRaw = req.params.symbol;
+    const marketRiskScore = await currentMarketRiskScore();
+
+    let ownedQuantity = 0;
+    let averagePrice: number | null = null;
+    let portfolioWeightPct: number | null = null;
+    let riskTolerance: "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE" = "MODERATE";
+    let horizonYears = 5;
+
+    if (req.user) {
+      const profile = await ensureProfile(req.user.id).catch(() => null);
+      if (profile) {
+        riskTolerance = profile.riskTolerance as typeof riskTolerance;
+        horizonYears = profile.horizonYears;
+      }
+      const holdings = await prisma.holding.findMany({ where: { userId: req.user.id } });
+      const resolved = await resolveStockQuote(symbolRaw);
+      const holding = holdings.find((h) => h.stock === resolved.resolved.providerSymbol);
+      if (holding) {
+        ownedQuantity = holding.quantity;
+        averagePrice = holding.avgPrice;
+        const quotes = await marketDataProvider.getQuotes(holdings.map((h) => h.stock));
+        const totalValue = holdings.reduce((sum, h) => sum + (quotes[h.stock]?.price ?? h.avgPrice) * h.quantity, 0);
+        const thisValue = (quotes[holding.stock]?.price ?? holding.avgPrice) * holding.quantity;
+        portfolioWeightPct = totalValue > 0 ? (thisValue / totalValue) * 100 : null;
+      }
+    }
+
+    const analysis = await buildStockAnalysis(symbolRaw, {
+      ownedQuantity,
+      portfolioWeightPct: portfolioWeightPct ?? undefined,
+      riskTolerance,
+      horizonYears,
+      marketRiskScore,
+    });
+
+    if (!analysis.found) {
+      return res.status(404).json({ error: "Stock not found on NSE, BSE, or global markets", resolved: analysis.resolved });
+    }
+
+    const currentPrice = analysis.quote.price;
+    const pnl = averagePrice && ownedQuantity > 0 ? (currentPrice - averagePrice) * ownedQuantity : 0;
+    const pnlPercentage = averagePrice && averagePrice > 0 ? ((currentPrice - averagePrice) / averagePrice) * 100 : 0;
+
+    return res.json({
+      symbol: analysis.resolved.displaySymbol,
+      providerSymbol: analysis.symbol,
+      price: currentPrice,
+      averagePrice,
+      quantity: ownedQuantity,
+      pnl: Number(pnl.toFixed(2)),
+      pnlPercentage: Number(pnlPercentage.toFixed(2)),
+      scores: analysis.decision.scores,
+      signal: analysis.decision.signal,
+      confidence: analysis.decision.confidence,
+      reasons: analysis.decision.reasons,
+      warnings: analysis.decision.warnings,
+      indicators: {
+        rsi: analysis.indicators?.rsi14 ?? null,
+        ema20: analysis.indicators?.ema20 ?? null,
+        sma50: analysis.indicators?.sma50 ?? null,
+        sma200: analysis.indicators?.sma200 ?? null,
+        macd: analysis.indicators?.macd?.macdLine ?? null,
+        macdSignal: analysis.indicators?.macd?.signalLine ?? null,
+        macdHistogram: analysis.indicators?.macd?.histogram ?? null,
+        volumeRatio: analysis.indicators?.volumeTrendRatio ?? null,
+        volatility30d: analysis.indicators?.volatility30d ?? null,
+        atr14: analysis.indicators?.atr14 ?? null,
+      },
+      fundamentals: analysis.fundamentals,
+      dataQuality: analysis.decision.dataQuality,
+      dataQualityScore: analysis.decision.dataQualityScore,
+      dataTimestamp: analysis.decision.dataTimestamp,
+    });
+  })
+);
+
+// GET /api/stocks/:symbol/technical
+router.get(
+  "/:symbol/technical",
+  asyncHandler(async (req, res) => {
+    const analysis = await buildStockAnalysis(req.params.symbol);
+    if (!analysis.found) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+    return res.json({
+      symbol: analysis.resolved.displaySymbol,
+      providerSymbol: analysis.symbol,
+      price: analysis.quote.price,
+      indicators: analysis.indicators,
+      candlesCount: analysis.candles.length,
+      dataTimestamp: analysis.decision.dataTimestamp,
+    });
+  })
+);
+
+// GET /api/stocks/:symbol/fundamentals
+router.get(
+  "/:symbol/fundamentals",
+  asyncHandler(async (req, res) => {
+    const analysis = await buildStockAnalysis(req.params.symbol);
+    if (!analysis.found) {
+      return res.status(404).json({ error: "Stock not found" });
+    }
+    return res.json({
+      symbol: analysis.resolved.displaySymbol,
+      providerSymbol: analysis.symbol,
+      fundamentals: analysis.fundamentals,
+      meta: analysis.fundamentalsMeta,
+    });
+  })
+);
+
+// GET /api/stocks/:symbol - General analysis endpoint
 router.get(
   "/:symbol",
   asyncHandler(async (req, res) => {
@@ -129,7 +247,18 @@ router.get(
     const entry = lookupUniverse(req.params.symbol);
     const limit = Math.min(30, Number(req.query.limit) || 15);
     const news = await newsProvider.getNews(`${entry?.display ?? req.params.symbol} stock`, limit);
-    return res.json({ news, meta: sourceMeta(newsProvider.id) });
+
+    const posCount = news.filter((n: any) => n.sentiment === "POSITIVE" || n.sentimentScore > 0.1).length;
+    const negCount = news.filter((n: any) => n.sentiment === "NEGATIVE" || n.sentimentScore < -0.1).length;
+    const neuCount = news.length - posCount - negCount;
+
+    return res.json({
+      news,
+      positiveNewsCount: posCount,
+      negativeNewsCount: negCount,
+      neutralNewsCount: neuCount,
+      meta: sourceMeta(newsProvider.id)
+    });
   })
 );
 

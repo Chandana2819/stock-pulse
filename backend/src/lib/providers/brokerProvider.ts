@@ -34,7 +34,10 @@ export class ZerodhaKiteProvider implements BrokerProvider {
   }
 
   async exchangeCode(requestToken: string) {
-    if (requestToken === "mock_code_123") {
+    // Demo/dev shortcut only — in production this string is treated like any
+    // other (invalid) request token and rejected by Zerodha's real API below,
+    // so it can't be used to fabricate a "connected" broker in a live deploy.
+    if (requestToken === "mock_code_123" && !env.isProd) {
       const expiresAt = new Date();
       expiresAt.setHours(23, 59, 59, 0);
       return {
@@ -68,7 +71,7 @@ export class ZerodhaKiteProvider implements BrokerProvider {
   }
 
   async getHoldings(accessToken: string): Promise<BrokerHolding[]> {
-    if (accessToken === "mock_access_token_123") {
+    if (accessToken === "mock_access_token_123" && !env.isProd) {
       return [
         { symbol: "TCS.NS", quantity: 5, avgPrice: 3420.00, exchange: "NSE" },
         { symbol: "INFY.NS", quantity: 10, avgPrice: 1450.00, exchange: "NSE" },
@@ -90,7 +93,7 @@ export class ZerodhaKiteProvider implements BrokerProvider {
   }
 
   async getOrders(accessToken: string): Promise<BrokerOrder[]> {
-    if (accessToken === "mock_access_token_123") {
+    if (accessToken === "mock_access_token_123" && !env.isProd) {
       return [
         { id: "z1", symbol: "TCS.NS", side: "BUY", quantity: 60, price: 3420, status: "COMPLETE", placedAt: new Date().toISOString() },
         { id: "z2", symbol: "INFY.NS", side: "BUY", quantity: 120, price: 1450, status: "COMPLETE", placedAt: new Date().toISOString() },
@@ -114,7 +117,7 @@ export class ZerodhaKiteProvider implements BrokerProvider {
   }
 
   async getPositions(accessToken: string): Promise<any[]> {
-    if (accessToken === "mock_access_token_123") {
+    if (accessToken === "mock_access_token_123" && !env.isProd) {
       return [
         {
           symbol: "TCS.NS",

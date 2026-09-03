@@ -1,15 +1,13 @@
 import express from "express";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, ApiError } from "../lib/http";
-import { runMarketScan, backfillStock } from "../lib/services/scanner";
+import { runMarketScan } from "../lib/services/scanner";
 import { runBacktest } from "../lib/services/backtest";
 import { UNIVERSE, lookupUniverse, type UniverseEntry } from "../lib/universe";
 import { getEnrichedHoldings } from "../lib/services/portfolio";
-import { marketDataProvider, newsProvider } from "../lib/providers";
-import { getSectorChangeForKey } from "../lib/services/market";
-import { computeIndicators } from "../lib/indicators";
-import { RecommendationEngine } from "../lib/services/recommendationEngine";
 import { syncUserBroker } from "../lib/services/brokerSync";
+import { buildStockAnalysis } from "../lib/services/stockAnalysis";
+import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
 
 const router = express.Router();
 
@@ -82,7 +80,7 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
   }
 
   // Detect broker connection status
-  let brokerConnection = { connected: false, broker: null as string | null, expired: false, lastSyncAt: null as Date | null, lastError: null as string | null };
+  let brokerConnection = { connected: false, broker: null as string | null, expired: false, everConnected: false, lastSyncAt: null as Date | null, lastError: null as string | null };
   let portfolioSignals: any[] = [];
 
   if (userId) {
@@ -95,14 +93,29 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
         connected: conn.status === "CONNECTED" && !isExpired,
         broker: conn.broker,
         expired: isExpired,
+        // Has this account ever completed a real connection before? If so,
+        // an expired daily token isn't a fresh problem to alarm about — the
+        // app already keeps working from holdings on record either way.
+        everConnected: conn.connectedAt != null,
         lastSyncAt: conn.lastSyncAt,
         lastError: conn.lastError
       };
+    }
 
-      if (brokerConnection.connected) {
-        const enrichedHoldings = await getEnrichedHoldings(userId);
-        const recsMap = new Map<string, any>(recommendations.map(r => [r.symbol.toUpperCase().trim(), r]));
-
+    // Portfolio signals depend only on holdings already on record (from a
+    // past broker sync, CSV import, or demo trade) plus live market quotes —
+    // neither needs the broker OAuth session to be fresh *right now*. A
+    // stale/expired token only blocks pulling in *new* trades from the
+    // broker; it shouldn't hide AI signals for holdings the app already
+    // knows about, which is all "connected" used to gate here.
+    {
+      const enrichedHoldings = await getEnrichedHoldings(userId);
+      if (enrichedHoldings.length > 0) {
+        // Use the same canonical live analysis the Portfolio page calls
+        // (buildStockAnalysis, GET /api/portfolio/signals) so a holding never
+        // shows one action here and a different one there — a stale
+        // pre-scanned StockRecommendation row can drift from the live score
+        // by the time a user actually looks at it.
         for (const h of enrichedHoldings) {
           let symbol = h.stock.toUpperCase().trim();
           if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
@@ -110,123 +123,64 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
           } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
             symbol = `${symbol}.BO`;
           }
-          let rec = recsMap.get(symbol);
 
-          if (!rec) {
-            // Generate dynamically if not in local universe
-            try {
-              let prices = await prisma.stockPrice.findMany({
-                where: { symbol },
-                orderBy: { date: "asc" },
-              });
-
-              let candles = prices.map((p) => ({
-                time: Math.floor(p.date.getTime() / 1000),
-                open: p.open,
-                high: p.high,
-                low: p.low,
-                close: p.close,
-                volume: p.volume,
-              }));
-
-              if (candles.length < 30) {
-                const ok = await backfillStock(symbol);
-                if (ok) {
-                  const freshPrices = await prisma.stockPrice.findMany({
-                    where: { symbol },
-                    orderBy: { date: "asc" },
-                  });
-                  candles = freshPrices.map((p) => ({
-                    time: Math.floor(p.date.getTime() / 1000),
-                    open: p.open,
-                    high: p.high,
-                    low: p.low,
-                    close: p.close,
-                    volume: p.volume,
-                  }));
-                }
-              }
-
-              const [fundamentals, newsRaw] = await Promise.all([
-                marketDataProvider.getFundamentals(symbol).catch(() => null),
-                newsProvider.getNews(`${h.displaySym} stock`, 5).catch(() => []),
-              ]);
-
-              const uItem = lookupUniverse(symbol);
-              const sectorChange = uItem ? await getSectorChangeForKey(uItem.sectorKey).catch(() => null) : null;
-
-              const riskSnapshot = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
-              const riskScore = riskSnapshot ? riskSnapshot.score : 50;
-
-              const indicators = candles.length >= 30 ? computeIndicators(candles) : null;
-              const sentimentScore = newsRaw.length > 0 ? 0.1 : 0.0;
-
-              const generatedRec = RecommendationEngine.generate({
-                symbol,
-                price: h.currentPrice || h.avgPrice,
-                prevClose: h.currentPrice || h.avgPrice,
-                indicators,
-                fundamentals,
-                sectorChangePct: sectorChange,
-                marketRiskScore: riskScore,
-                candlesCount: candles.length,
-                newsSentimentScore: sentimentScore,
-              });
-
-              rec = {
-                action: generatedRec.action,
-                score: generatedRec.score,
-                confidence: generatedRec.confidence,
-                risk: generatedRec.risk,
-                reasons: JSON.stringify(generatedRec.reasons),
-                warnings: JSON.stringify(generatedRec.warnings),
-                entryZoneMin: generatedRec.entryZone?.min ?? null,
-                entryZoneMax: generatedRec.entryZone?.max ?? null,
-                stopLoss: generatedRec.stopLoss ?? null,
-                targetRangeMin: generatedRec.targetRange?.min ?? null,
-                targetRangeMax: generatedRec.targetRange?.max ?? null,
-                dataQuality: generatedRec.dataQuality,
-              };
-            } catch (err) {
-              console.error(`[signals] Failed to calculate dynamic signals for ${symbol}:`, err);
-              rec = {
-                action: "WAIT",
-                score: 50,
-                confidence: 50,
-                risk: "MODERATE",
-                reasons: JSON.stringify(["Insufficient pricing or fundamentals history."]),
-                warnings: JSON.stringify(["No technical data."]),
-                entryZoneMin: null, entryZoneMax: null, stopLoss: null, targetRangeMin: null, targetRangeMax: null,
-                dataQuality: 0
-              };
-            }
-          }
-
+          const analysis = await buildStockAnalysis(symbol, { ownedQuantity: h.quantity }).catch(() => null);
           const uItem = lookupUniverse(symbol);
-          portfolioSignals.push({
-            id: rec.id || `portfolio-${symbol}`,
-            symbol,
-            displaySymbol: h.displaySym,
-            name: h.displaySym,
-            sector: uItem?.sector || "Other",
-            exchange: h.exchange,
-            action: rec.action,
-            score: rec.score,
-            confidence: rec.confidence,
-            risk: rec.risk,
-            reasons: typeof rec.reasons === "string" ? JSON.parse(rec.reasons) : rec.reasons,
-            warnings: typeof rec.warnings === "string" ? JSON.parse(rec.warnings) : rec.warnings,
-            entryZone: rec.entryZoneMin && rec.entryZoneMax ? { min: rec.entryZoneMin, max: rec.entryZoneMax } : null,
-            stopLoss: rec.stopLoss,
-            targetRange: rec.targetRangeMin && rec.targetRangeMax ? { min: rec.targetRangeMin, max: rec.targetRangeMax } : null,
-            dataQuality: rec.dataQuality,
-            quantity: h.quantity,
-            avgPrice: h.avgPrice,
-            currentPrice: h.currentPrice,
-            unrealizedPnl: h.pl,
-            investedValue: h.cost,
-            currentValue: h.value,
-          });
+
+          if (analysis && analysis.found) {
+            const d = analysis.decision;
+            portfolioSignals.push({
+              id: `portfolio-${symbol}`,
+              symbol,
+              displaySymbol: h.displaySym,
+              name: h.displaySym,
+              sector: uItem?.sector || "Other",
+              exchange: h.exchange,
+              action: d.signal,
+              score: d.scores.final,
+              confidence: d.confidence,
+              risk: d.riskLevel,
+              reasons: d.reasons,
+              warnings: d.warnings,
+              entryZone: d.entryZone,
+              stopLoss: d.stopLoss,
+              targetRange: d.targetRange,
+              dataQuality: d.dataQuality,
+              horizon: d.horizon,
+              activeSince: d.activeSince,
+              quantity: h.quantity,
+              avgPrice: h.avgPrice,
+              currentPrice: h.currentPrice,
+              unrealizedPnl: h.pl,
+              investedValue: h.cost,
+              currentValue: h.value,
+            });
+          } else {
+            portfolioSignals.push({
+              id: `portfolio-${symbol}`,
+              symbol,
+              displaySymbol: h.displaySym,
+              name: h.displaySym,
+              sector: uItem?.sector || "Other",
+              exchange: h.exchange,
+              action: "WAIT",
+              score: 50,
+              confidence: 30,
+              risk: "MODERATE",
+              reasons: ["Market data currently unavailable for portfolio evaluation"],
+              warnings: ["Insufficient live data"],
+              entryZone: null,
+              stopLoss: null,
+              targetRange: null,
+              dataQuality: "INSUFFICIENT",
+              quantity: h.quantity,
+              avgPrice: h.avgPrice,
+              currentPrice: h.currentPrice,
+              unrealizedPnl: h.pl,
+              investedValue: h.cost,
+              currentValue: h.value,
+            });
+          }
         }
       }
     }
@@ -344,6 +298,23 @@ router.post(
     });
 
     return res.json(results);
+  })
+);
+
+router.get(
+  "/track-record",
+  asyncHandler(async (req, res) => {
+    const [backtested, live] = await Promise.all([getBacktestedTrackRecord(), getLiveTrackRecord()]);
+    return res.json({
+      backtested: backtested.value,
+      live: live.value,
+      meta: {
+        backtestedCacheHit: backtested.cacheHit,
+        backtestedStale: backtested.stale,
+        liveCacheHit: live.cacheHit,
+        liveStale: live.stale,
+      },
+    });
   })
 );
 

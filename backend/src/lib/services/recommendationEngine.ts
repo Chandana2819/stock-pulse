@@ -1,13 +1,14 @@
 import type { IndicatorSnapshot } from "../indicators";
 import type { FundamentalsData } from "../providers/types";
-import { SCORING_WEIGHTS } from "../../config/scoring";
+import { computeDecision, type SignalAction, type DecisionScores } from "../engine/decision";
 
-export type SignalAction = "STRONG BUY" | "BUY" | "HOLD" | "WAIT" | "REDUCE" | "SELL" | "STRONG SELL";
+export type { SignalAction };
 
 export type RecommendationResult = {
   symbol: string;
   action: SignalAction;
-  score: number; // 0-100
+  score: number; // 0-100 (final score)
+  scores: DecisionScores;
   confidence: number; // 0-100
   risk: "LOW" | "MODERATE" | "HIGH" | "VERY HIGH";
   reasons: string[];
@@ -15,7 +16,8 @@ export type RecommendationResult = {
   entryZone: { min: number; max: number } | null;
   stopLoss: number | null;
   targetRange: { min: number; max: number } | null;
-  dataQuality: number; // 0-100
+  dataQuality: number; // 0-100 score
+  dataQualityLabel: "EXCELLENT" | "GOOD" | "MODERATE" | "POOR" | "INSUFFICIENT";
   generatedAt: Date;
 };
 
@@ -29,221 +31,36 @@ export class RecommendationEngine {
     sectorChangePct: number | null;
     marketRiskScore: number; // 0-100
     candlesCount: number;
-    newsSentimentScore: number | null; // -1 to +1
+    newsSentimentScore?: number | null;
+    newsArticles?: Array<{ title: string; sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" }>;
+    ownedQuantity?: number;
   }): RecommendationResult {
-    const reasons: string[] = [];
-    const warnings: string[] = [];
-    
-    // 1. Data Quality Evaluation
-    let dataQuality = 100;
-    if (input.candlesCount < 30) {
-      dataQuality -= 50;
-      warnings.push("Insufficient historical price candles (requires 30+ days).");
-    } else if (input.candlesCount < 90) {
-      dataQuality -= 15;
-    }
-    if (!input.fundamentals) {
-      dataQuality -= 15;
-      warnings.push("Fundamentals data coverage missing.");
-    }
-    if (!input.indicators) {
-      dataQuality -= 25;
-    }
+    const priceChangePct = input.prevClose && input.prevClose > 0 
+      ? ((input.price - input.prevClose) / input.prevClose) * 100 
+      : null;
 
-    // 2. Score calculations for each pillar
-    let technicalScore = 50; // default neutral
-    let momentumScore = 50;
-    let volumeScore = 50;
-    let volatilityScore = 50;
-    let marketScore = 100 - input.marketRiskScore; // 0 -> 100, 100 -> 0
-    let sectorScore = 50;
-    let fundamentalsScore = 50;
-    let valuationScore = 50;
-    let relativeStrengthScore = 50;
+    const decision = computeDecision({
+      symbol: input.symbol,
+      price: input.price,
+      fundamentals: input.fundamentals,
+      indicators: input.indicators,
+      priceChangePct,
+      marketRiskScore: input.marketRiskScore,
+      sectorChangePct: input.sectorChangePct,
+      newsArticles: input.newsArticles,
+      volatility30d: input.indicators?.volatility30d ?? null,
+      avgVolume: input.indicators?.avgVolume20d ?? null,
+      volume: input.indicators?.currentVolume ?? null,
+      ownedQuantity: input.ownedQuantity,
+      candlesCount: input.candlesCount,
+    });
 
-    // A. Technical Trend Pillar
-    if (input.indicators) {
-      const ind = input.indicators;
-      if (ind.trend === "UPTREND") {
-        technicalScore = 90;
-        reasons.push("30-day technical trend is bullish (uptrend).");
-      } else if (ind.trend === "DOWNTREND") {
-        technicalScore = 15;
-        warnings.push("Technical trend is bearish (downtrend).");
-      } else {
-        technicalScore = 50;
-      }
-    }
-
-    // B. Momentum Pillar
-    if (input.indicators?.rsi14 != null) {
-      const rsi = input.indicators.rsi14;
-      if (rsi >= 70) {
-        momentumScore = 40; // overbought
-        warnings.push("RSI indicates overbought conditions.");
-      } else if (rsi >= 55) {
-        momentumScore = 85;
-        reasons.push("Strong positive momentum (RSI > 55).");
-      } else if (rsi <= 30) {
-        momentumScore = 20;
-        warnings.push("RSI indicates oversold momentum.");
-      } else {
-        momentumScore = 50;
-      }
-    }
-
-    // C. Volume Pillar
-    if (input.indicators?.volumeTrendRatio != null) {
-      const volRatio = input.indicators.volumeTrendRatio;
-      if (volRatio > 1.3) {
-        volumeScore = 85;
-        reasons.push("Trading volume confirms bullish momentum (above average).");
-      } else if (volRatio < 0.6) {
-        volumeScore = 30;
-        warnings.push("Dull trading volumes (below average).");
-      }
-    }
-
-    // D. Volatility/Risk Pillar
-    if (input.indicators?.volatility30d != null) {
-      const vol = input.indicators.volatility30d;
-      if (vol > 55) {
-        volatilityScore = 25;
-        warnings.push("Extremely high 30-day volatility.");
-      } else if (vol < 25) {
-        volatilityScore = 80;
-        reasons.push("Stable volatility profile.");
-      }
-    }
-
-    // E. Sector Strength
-    if (input.sectorChangePct != null) {
-      if (input.sectorChangePct > 0.01) {
-        sectorScore = 80;
-        reasons.push("Sector index showing strong positive performance.");
-      } else if (input.sectorChangePct < -0.01) {
-        sectorScore = 25;
-        warnings.push("Underlying sector index is declining.");
-      }
-    }
-
-    // F. Fundamentals
-    if (input.fundamentals) {
-      const f = input.fundamentals;
-      let scoreAcc = 50;
-      let count = 0;
-      if (f.roe != null) {
-        scoreAcc += f.roe >= 18 ? 20 : f.roe >= 10 ? 5 : -15;
-        count++;
-      }
-      if (f.revenueGrowth != null) {
-        scoreAcc += f.revenueGrowth >= 12 ? 15 : f.revenueGrowth >= 5 ? 5 : -10;
-        count++;
-      }
-      if (f.debtToEquity != null) {
-        scoreAcc += f.debtToEquity < 0.5 ? 15 : f.debtToEquity > 1.5 ? -20 : 0;
-        count++;
-      }
-      if (count > 0) {
-        fundamentalsScore = Math.max(0, Math.min(100, scoreAcc));
-        if (fundamentalsScore > 75) reasons.push("Core company fundamentals are strong.");
-      }
-    }
-
-    // G. Valuation
-    if (input.fundamentals?.peRatio != null) {
-      const pe = input.fundamentals.peRatio;
-      if (pe <= 0) {
-        valuationScore = 35;
-      } else if (pe < 15) {
-        valuationScore = 85;
-        reasons.push("Valuation is attractive (PE < 15).");
-      } else if (pe > 40) {
-        valuationScore = 20;
-        warnings.push("High valuation multiple (PE > 40).");
-      }
-    }
-
-    // H. Relative Strength (55-day lookback)
-    if (input.indicators?.relativeStrength55 != null) {
-      const rs = input.indicators.relativeStrength55;
-      if (rs > 0.05) {
-        relativeStrengthScore = 85;
-        reasons.push("Outperforming benchmark market indexes.");
-      } else if (rs < -0.05) {
-        relativeStrengthScore = 20;
-        warnings.push("Underperforming the broader market.");
-      }
-    }
-
-    // 3. Compute weighted score
-    const score = Math.round(
-      technicalScore * SCORING_WEIGHTS.technicalTrend +
-      momentumScore * SCORING_WEIGHTS.momentum +
-      volumeScore * SCORING_WEIGHTS.volume +
-      volatilityScore * SCORING_WEIGHTS.volatilityRisk +
-      marketScore * SCORING_WEIGHTS.marketCondition +
-      sectorScore * SCORING_WEIGHTS.sectorStrength +
-      fundamentalsScore * SCORING_WEIGHTS.fundamentals +
-      valuationScore * SCORING_WEIGHTS.valuation +
-      relativeStrengthScore * SCORING_WEIGHTS.relativeStrength
-    );
-
-    // 4. Calculate Market Condition Adjusted Confidence
-    // If market risk is high, reduce the final confidence
-    let baseConfidence = 50 + (score > 50 ? score - 50 : 50 - score) * 0.5;
-    const marketRiskPenalty = (input.marketRiskScore / 100) * 20; // up to 20% penalty
-    const confidence = Math.round(Math.max(30, Math.min(95, baseConfidence - marketRiskPenalty)));
-
-    // 5. Calculate overall stock risk level
-    const vol = input.indicators?.volatility30d ?? 30;
-    const beta = input.fundamentals?.beta ?? 1.0;
-    const riskFactor = vol * 0.4 + beta * 25 + input.marketRiskScore * 0.2;
-    let risk: RecommendationResult["risk"] = "MODERATE";
-    if (riskFactor > 70) risk = "VERY HIGH";
-    else if (riskFactor > 48) risk = "HIGH";
-    else if (riskFactor > 25) risk = "MODERATE";
-    else risk = "LOW";
-
-    // 6. Action selection logic
-    let action: SignalAction = "HOLD";
-    const marketTooRisky = input.marketRiskScore >= 75;
-
-    if (score >= 80) {
-      action = marketTooRisky ? "WAIT" : "STRONG BUY";
-      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into WAIT.");
-    } else if (score >= 68) {
-      action = marketTooRisky ? "WAIT" : "BUY";
-      if (marketTooRisky) reasons.push("Elevated market risk overrides BUY signal into WAIT.");
-    } else if (score <= 25) {
-      action = "STRONG SELL";
-    } else if (score <= 38) {
-      action = "SELL";
-    } else if (score <= 46) {
-      action = "REDUCE";
-    } else if (score >= 58 && score < 68) {
-      action = "WAIT";
-      reasons.push("Short-term momentum or volume setup is incomplete; waiting for confirmation.");
-    }
-
-    if (dataQuality < 60) {
-      action = "WAIT";
-      reasons.push("WAIT: Data quality checks are low. Recommendation engine requires additional data.");
-    }
-
-    // Override: If technical trend is BEARISH (downtrend), we must NOT recommend BUY or STRONG BUY.
-    // We should cap the action to WAIT or HOLD to prevent catching a falling knife.
-    if ((action === "BUY" || action === "STRONG BUY") && input.indicators?.trend === "DOWNTREND") {
-      action = "WAIT";
-      warnings.push("BUY setup overridden: Technical trend is bearish (downtrend).");
-    }
-
-    // 7. Calculate Entry Zone, Stop-Loss, and Target (Only for BUY/STRONG BUY)
+    // Compute Entry Zone, Stop Loss, and Target Range for BUY/STRONG BUY signals
     let entryZone: RecommendationResult["entryZone"] = null;
     let stopLoss: RecommendationResult["stopLoss"] = null;
     let targetRange: RecommendationResult["targetRange"] = null;
 
-    if (action === "BUY" || action === "STRONG BUY") {
+    if (decision.signal === "BUY" || decision.signal === "STRONG BUY") {
       const price = input.price;
       const atrVal = input.indicators?.atr14 ?? (price * 0.025);
       
@@ -258,18 +75,27 @@ export class RecommendationEngine {
       };
     }
 
+    // Map risk sub-score to risk label
+    let riskLabel: RecommendationResult["risk"] = "MODERATE";
+    if (decision.scores.risk >= 70) riskLabel = "LOW";
+    else if (decision.scores.risk >= 50) riskLabel = "MODERATE";
+    else if (decision.scores.risk >= 30) riskLabel = "HIGH";
+    else riskLabel = "VERY HIGH";
+
     return {
       symbol: input.symbol,
-      action,
-      score,
-      confidence,
-      risk,
-      reasons: reasons.slice(0, 6),
-      warnings: warnings.slice(0, 5),
+      action: decision.signal,
+      score: decision.scores.final,
+      scores: decision.scores,
+      confidence: decision.confidence,
+      risk: riskLabel,
+      reasons: decision.reasons,
+      warnings: decision.warnings,
       entryZone,
       stopLoss,
       targetRange,
-      dataQuality,
+      dataQuality: decision.dataQualityScore,
+      dataQualityLabel: decision.dataQuality,
       generatedAt: new Date(),
     };
   }

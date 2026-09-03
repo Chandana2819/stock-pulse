@@ -17,29 +17,17 @@ export default function BrokerLoginPage() {
   const type = searchParams.get("type") || "";
   const status = searchParams.get("status") || "";
 
-  const [userId, setUserId] = useState(broker === "upstox" ? "9876543210" : "AB1234");
-  const [password, setPassword] = useState("password123");
-  const [pin, setPin] = useState(broker === "upstox" ? "1995" : "123456");
+  // Left blank on purpose — this form is a simulation (see noticeMsg below):
+  // nothing typed here is transmitted or checked. Pre-filling with
+  // realistic-looking credentials would make it look like a real saved
+  // login, not a demo.
+  const [userId, setUserId] = useState("");
+  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [configured, setConfigured] = useState<boolean | null>(null);
 
   const hasCalledCallback = useRef(false);
-
-  useEffect(() => {
-    const fetchConfig = async () => {
-      try {
-        const data = await apiFetch<{ available: any[] }>("/api/brokers");
-        const match = data.available?.find(b => b.id.toLowerCase() === broker);
-        if (match) {
-          setConfigured(match.configured);
-        }
-      } catch (err) {
-        console.error("Failed to load broker config:", err);
-      }
-    };
-    fetchConfig();
-  }, [broker]);
 
   // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
   useEffect(() => {
@@ -127,9 +115,7 @@ export default function BrokerLoginPage() {
   const pinFieldLabel = isUpstox ? "Year of Birth (YYYY)" : "6-Digit PIN";
   const brandColor = isUpstox ? "#5e35b1" : "#ff5722";
   const brandColorHover = isUpstox ? "#4527a0" : "#e64a19";
-  const noticeMsg = isUpstox 
-    ? "Notice: Developer keys not configured. Running in secure demo connection mode to Upstox API."
-    : "Notice: Developer keys not configured. Running in secure demo connection mode to Zerodha Kite API.";
+  const noticeMsg = "Simulated connection: this form doesn't check or transmit what you type — submitting it (with any values, or none) links a demo holdings set to your account so you can try the portfolio features. It never contacts your real broker.";
 
   if (loading && !error) {
     return (
@@ -210,7 +196,6 @@ export default function BrokerLoginPage() {
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
-              required
             />
           </div>
 
@@ -221,7 +206,6 @@ export default function BrokerLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
-              required
             />
           </div>
 
@@ -232,18 +216,15 @@ export default function BrokerLoginPage() {
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               className="w-full bg-[#111111] border border-border-custom rounded p-2.5 text-text-custom font-mono text-xs outline-none focus:border-border-bright"
-              required
             />
           </div>
 
-          {configured === false && (
-            <div 
-              className="p-3 font-mono text-[0.55rem] leading-relaxed mt-2 rounded border"
-              style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}33`, color: brandColor }}
-            >
-              {noticeMsg}
-            </div>
-          )}
+          <div
+            className="p-3 font-mono text-[0.55rem] leading-relaxed mt-2 rounded border"
+            style={{ backgroundColor: `${brandColor}0d`, borderColor: `${brandColor}33`, color: brandColor }}
+          >
+            {noticeMsg}
+          </div>
 
           <button
             type="submit"

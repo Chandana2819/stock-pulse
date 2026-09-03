@@ -10,7 +10,7 @@ const RANGE_MAP: Record<Range, { range: string; interval: string }> = {
   "3M": { range: "3mo", interval: "1d" },
   "6M": { range: "6mo", interval: "1d" },
   "1Y": { range: "1y", interval: "1d" },
-  "5Y": { range: "5y", interval: "1wk" },
+  "5Y": { range: "5y", interval: "1d" },
   MAX: { range: "max", interval: "1mo" },
 };
 

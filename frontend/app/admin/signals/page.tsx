@@ -91,7 +91,7 @@ export default function SignalsConsolePage() {
 
             {/* Recent Signals List */}
             <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
-              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Recent Generated Recommendations</h3>
+              <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Recent Generated Recommendations</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-[0.7rem] border-collapse">
                   <thead>

@@ -258,7 +258,7 @@ export default function AdminDashboardPage() {
           {/* Recent Registrations */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
-              <h3 className="font-mono text-xs font-bold text-text-custom uppercase">// Recent Registrations</h3>
+              <h3 className="font-mono text-xs font-bold text-text-custom uppercase">Recent Registrations</h3>
               <Link href="/admin/users" className="font-mono text-[0.62rem] text-red-custom uppercase font-bold no-underline hover:underline">
                 View All Users →
               </Link>
@@ -297,7 +297,7 @@ export default function AdminDashboardPage() {
           {/* KYC Review Queue */}
           <div className="border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3">
             <div className="flex justify-between items-center border-b border-border-custom pb-2">
-              <h3 className="font-mono text-xs font-bold text-text-custom uppercase">// KYC Verification Queue</h3>
+              <h3 className="font-mono text-xs font-bold text-text-custom uppercase">KYC Verification Queue</h3>
               <Link href="/admin/kyc" className="font-mono text-[0.62rem] text-red-custom uppercase font-bold no-underline hover:underline">
                 Open Review Desk →
               </Link>
@@ -336,7 +336,7 @@ export default function AdminDashboardPage() {
         {/* Right Side: Recent Admin Logs */}
         <div className="lg:col-span-4 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-3 h-full">
           <div className="flex justify-between items-center border-b border-border-custom pb-2">
-            <h3 className="font-mono text-xs font-bold text-text-custom uppercase">// Recent Security Audits</h3>
+            <h3 className="font-mono text-xs font-bold text-text-custom uppercase">Recent Security Audits</h3>
             <Link href="/admin/settings" className="font-mono text-[0.62rem] text-red-custom uppercase font-bold no-underline hover:underline">
               Audit Logs →
             </Link>

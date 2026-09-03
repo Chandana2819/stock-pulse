@@ -43,7 +43,7 @@ export default function AdminSettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start font-mono text-xs">
         {/* Navigation panel */}
         <div className="lg:col-span-4 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Operational Logs</h3>
+          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Operational Logs</h3>
           <p className="text-text-3 leading-relaxed">
             Every administrative wallet adjustment, role changes, KYC status adjustments, and post deletion actions are audited and recorded in the append-only logs.
           </p>
@@ -57,7 +57,7 @@ export default function AdminSettingsPage() {
 
         {/* Roles Details Card */}
         <div className="lg:col-span-8 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4">
-          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">// Defined Access Role Ranks</h3>
+          <h3 className="text-xs font-bold text-text-custom uppercase border-b border-border-custom pb-2">Defined Access Role Ranks</h3>
           <div className="flex flex-col gap-3">
             {ROLE_PERMISSIONS_DETAILS.map((r, idx) => (
               <div key={idx} className="bg-bg-2/30 p-3.5 border border-border-custom rounded flex flex-col gap-1.5">

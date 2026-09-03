@@ -2,8 +2,10 @@ import express from "express";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, ApiError } from "../lib/http";
 import { parse, v, SYMBOL_RE, sanitizeText } from "../lib/validate";
+import { requireAuth } from "../middleware/auth";
 
 const router = express.Router();
+router.use(requireAuth);
 
 router.get(
   "/",

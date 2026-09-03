@@ -22,7 +22,15 @@ const NAV_LINKS = [
   { href: "/kyc", label: "KYC" },
 ];
 
-export default function TopNav() {
+type SearchHit = { symbol: string; display: string; name: string; exchange: string };
+
+export default function TopNav({
+  sidebarOpen,
+  onToggleSidebar,
+}: {
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 1000000, usd: 10000 });
@@ -30,8 +38,11 @@ export default function TopNav() {
   const [username, setUsername] = useState<string | null>(null);
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifItems, setNotifItems] = useState<Array<{ id: string; title: string; body: string; category: string; readAt: string | null; createdAt: string }>>([]);
+  const [notifItems, setNotifItems] = useState<Array<{ id: string; title: string; body: string; category: string; link: string | null; readAt: string | null; createdAt: string }>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchHit[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
@@ -105,6 +116,28 @@ export default function TopNav() {
   }, [fetchWallet, fetchNotifications]);
 
   useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get<{ stocks: SearchHit[] }>(`/api/search?q=${encodeURIComponent(searchQuery)}`);
+        setSearchResults(res.stocks || []);
+      } catch {
+        setSearchResults([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const goToStock = (symbol: string) => {
+    setShowSearchResults(false);
+    setSearchQuery("");
+    router.push(`/stock/${encodeURIComponent(symbol)}`);
+  };
+
+  useEffect(() => {
     const tick = () => {
       const now = new Date();
       const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
@@ -121,6 +154,16 @@ export default function TopNav() {
       setUnread(0);
       setNotifItems((prev) => prev.map((n) => ({ ...n, readAt: new Date().toISOString() })));
     } catch {}
+  };
+
+  const openNotification = async (n: { id: string; link: string | null; readAt: string | null }) => {
+    setNotifOpen(false);
+    if (!n.readAt) {
+      setNotifItems((prev) => prev.map((item) => (item.id === n.id ? { ...item, readAt: new Date().toISOString() } : item)));
+      setUnread((prev) => Math.max(0, prev - 1));
+      api.post(`/api/notifications/${n.id}/read`).catch(() => {});
+    }
+    if (n.link) router.push(n.link);
   };
 
   return (
@@ -140,15 +183,66 @@ export default function TopNav() {
         </h1>
       </Link>
 
+      {/* Desktop: sidebar expand trigger — only rendered when the sidebar is collapsed, so it never overlaps the search bar */}
+      {onToggleSidebar && !sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Expand sidebar"
+          onClick={onToggleSidebar}
+          className="hidden md:flex flex-col justify-center gap-[3px] w-5 h-5 bg-transparent border-none p-0 cursor-pointer opacity-60 hover:opacity-100 transition-opacity shrink-0 mr-3"
+        >
+          <span className="h-[1.5px] w-full bg-text-2 rounded-full" />
+          <span className="h-[1.5px] w-full bg-text-2 rounded-full" />
+          <span className="h-[1.5px] w-full bg-text-2 rounded-full" />
+        </button>
+      )}
+
       {/* Desktop Search Terminal Bar (Aligned Left) */}
-      <div className="hidden md:flex items-center bg-bg-2 border border-border-custom rounded px-2.5 py-1.5 w-56 gap-2 hover:border-border-bright transition-all">
-        <span className="opacity-55 text-[0.65rem]">🔍</span>
-        <input 
-          type="text" 
-          placeholder="Search stocks, indices..." 
-          className="bg-transparent border-none outline-none w-full text-text-custom placeholder:text-text-4/40 text-[0.82rem] uppercase tracking-wider font-mono"
-          style={{ fontSize: '0.82rem' }}
-        />
+      <div className="hidden md:block relative w-56">
+        <div className="flex items-center bg-bg-2 border border-border-custom rounded px-2.5 py-1.5 gap-2 hover:border-border-bright transition-all">
+          <svg className="w-3.5 h-3.5 opacity-55 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.2-5.2m1.7-5.3a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setShowSearchResults(true)}
+            onBlur={() => setTimeout(() => setShowSearchResults(false), 200)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && searchQuery.trim()) {
+                goToStock(searchResults[0]?.display ?? searchQuery.trim().toUpperCase());
+              }
+            }}
+            placeholder="Search stocks, indices..."
+            className="bg-transparent border-none outline-none w-full text-text-custom placeholder:text-text-4/40 text-[0.82rem] uppercase tracking-wider font-mono"
+            style={{ fontSize: '0.82rem' }}
+          />
+        </div>
+
+        {showSearchResults && searchResults.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-1 bg-bg-1 border border-border-custom shadow-2xl rounded overflow-hidden z-50 max-h-72 overflow-y-auto">
+            {searchResults.map((s) => (
+              <div
+                key={s.symbol}
+                // onMouseDown + preventDefault, not onClick: mousedown fires
+                // before the input's onBlur, so selecting a result can't lose
+                // the race against the 200ms blur-hide timer below.
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  goToStock(s.display);
+                }}
+                className="flex items-center justify-between p-2.5 cursor-pointer hover:bg-bg-3 border-b border-border-custom/30 last:border-b-0 transition-colors"
+              >
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="font-mono text-xs font-bold text-text-custom tracking-wider uppercase">{s.display}</span>
+                  <span className="font-mono text-[0.6rem] text-text-3 truncate max-w-[160px]">{s.name}</span>
+                </div>
+                <span className="font-mono text-[0.55rem] text-green-custom px-1.5 py-0.5 border border-green-custom/30 rounded bg-green-dim/10 shrink-0 uppercase">{s.exchange}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Right side: Desktop Wallets + Notification + Profile Actions */}
@@ -175,9 +269,15 @@ export default function TopNav() {
           onClick={toggleTheme}
           title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
         >
-          <span className="font-mono text-[0.8rem] md:text-[0.95rem]">
-            {theme === "dark" ? "☀️" : "🌙"}
-          </span>
+          {theme === "dark" ? (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1.5m0 15V21m9-9h-1.5M4.5 12H3m15.36-6.36l-1.06 1.06M6.7 17.3l-1.06 1.06m12.72 0l-1.06-1.06M6.7 6.7L5.64 5.64M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+            </svg>
+          )}
         </button>
 
         {/* Notifications (Always visible, clean, compact) */}
@@ -187,7 +287,9 @@ export default function TopNav() {
             onClick={() => setNotifOpen((v) => !v)}
             title="Notifications"
           >
-            <span className="font-mono text-[0.8rem] md:text-[0.95rem]">🔔</span>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
             {unread > 0 && (
               <span className="absolute -top-1 -right-1 bg-red-custom text-bg text-[0.52rem] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center">
                 {unread > 9 ? "9+" : unread}
@@ -208,7 +310,11 @@ export default function TopNav() {
                 <div className="p-4 text-center font-mono text-[0.65rem] text-text-3">No notifications yet</div>
               ) : (
                 notifItems.map((n) => (
-                  <div key={n.id} className={`px-3 py-2 border-b border-border-custom last:border-b-0 ${!n.readAt ? "bg-bg-3" : ""}`}>
+                  <div
+                    key={n.id}
+                    onClick={() => openNotification(n)}
+                    className={`px-3 py-2 border-b border-border-custom last:border-b-0 ${!n.readAt ? "bg-bg-3" : ""} ${n.link ? "cursor-pointer hover:bg-bg-4" : ""}`}
+                  >
                     <div className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider">{n.category}</div>
                     <div className="text-xs font-bold text-text-custom">{n.title}</div>
                     <div className="text-[0.68rem] text-text-2 leading-snug">{n.body}</div>

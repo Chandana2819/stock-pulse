@@ -357,6 +357,7 @@ model Goal {
   expectedReturn      Float    @default(12)
   inflationRate       Float    @default(6)
   priority            String   @default("MEDIUM")
+  linkedToPortfolio   Boolean  @default(false)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
