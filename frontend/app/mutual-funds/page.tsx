@@ -25,6 +25,16 @@ type RankedFund = {
 
 const CATEGORY_ORDER = ["INDEX", "LARGE_CAP", "FLEXI_CAP", "MID_CAP", "SMALL_CAP", "ELSS", "DEBT"];
 
+type GoalSuggestion = {
+  category: string;
+  categoryLabel: string;
+  reason: string;
+  feasibility: { classification: string; explanation: string };
+  funds: RankedFund[];
+};
+
+type GoalOption = { id: string; name: string; targetDate: string; expectedReturn: number };
+
 function Ret({ label, val }: { label: string; val: number | null }) {
   return (
     <div className="p-2.5 border border-border-custom bg-bg-2 text-center">
@@ -46,6 +56,52 @@ export default function MutualFundsPage() {
   const [categoryLabels, setCategoryLabels] = useState<Record<string, string>>({});
   const [activeCategory, setActiveCategory] = useState<string>("INDEX");
   const [recoLoading, setRecoLoading] = useState(true);
+
+  // Goal-first flow: before showing generic "top of category" tabs, find out
+  // the visitor's own timeline + return assumption (from an existing Goal if
+  // they have one, or asked directly) and lead with a suggestion tailored to
+  // that — the flat category list stays below for browsing everything else.
+  const [existingGoals, setExistingGoals] = useState<GoalOption[] | null>(null);
+  const [goalYears, setGoalYears] = useState("10");
+  const [goalReturn, setGoalReturn] = useState("12");
+  const [goalSuggestion, setGoalSuggestion] = useState<GoalSuggestion | null>(null);
+  const [goalSuggestLoading, setGoalSuggestLoading] = useState(false);
+  const [goalPromptDismissed, setGoalPromptDismissed] = useState(false);
+
+  const fetchGoalSuggestion = useCallback(async (years: number, expectedReturnPct: number) => {
+    setGoalSuggestLoading(true);
+    try {
+      const res = await api.get<GoalSuggestion>(`/api/mutual-funds/suggest-for-goal?years=${years}&expectedReturnPct=${expectedReturnPct}`);
+      setGoalSuggestion(res);
+    } catch {
+      setGoalSuggestion(null);
+    } finally {
+      setGoalSuggestLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const goals = await api.get<GoalOption[]>("/api/goals");
+        setExistingGoals(goals);
+        if (goals.length > 0) {
+          const nearest = goals.reduce((a, b) => (new Date(a.targetDate).getTime() < new Date(b.targetDate).getTime() ? a : b));
+          const years = Math.max(0.1, (new Date(nearest.targetDate).getTime() - Date.now()) / (365 * 24 * 3600 * 1000));
+          fetchGoalSuggestion(years, nearest.expectedReturn);
+        }
+      } catch {
+        setExistingGoals([]);
+      }
+    })();
+  }, [fetchGoalSuggestion]);
+
+  const submitGoalPrompt = () => {
+    const years = Number(goalYears);
+    const ret = Number(goalReturn);
+    if (!years || years <= 0 || !Number.isFinite(ret)) return;
+    fetchGoalSuggestion(years, ret);
+  };
 
   const loadRecommendations = useCallback(async () => {
     setRecoLoading(true);
@@ -106,6 +162,94 @@ export default function MutualFundsPage() {
         <h1 className="font-display text-2xl tracking-[0.1em] text-text-custom">MUTUAL FUNDS</h1>
         <p className="font-mono text-[0.65rem] text-text-3 mt-1">NAV & returns sourced from the public AMFI feed — search any scheme.</p>
       </div>
+
+      {/* Goal-first suggestion — asked before the generic category list so the
+          first thing shown reflects the visitor's own timeline and return
+          assumption, not just "top of category" for everyone. Skipped
+          automatically when they already have a Goal on record. */}
+      {!selected && existingGoals !== null && !goalSuggestLoading && !goalSuggestion && !goalPromptDismissed && (
+        <div className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
+          <div>
+            <h2 className="font-display text-lg text-text-custom">WHAT ARE YOU INVESTING FOR?</h2>
+            <p className="font-mono text-[0.6rem] text-text-3 mt-0.5">
+              Tell us your timeline and expected return, and we'll suggest a fund category that actually fits — not just a generic top-of-category list.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="block font-mono text-[0.55rem] text-text-3 mb-1">Timeline (years)</label>
+              <input
+                value={goalYears}
+                onChange={(e) => setGoalYears(e.target.value)}
+                type="number"
+                className="bg-bg-2 border border-border-custom p-2.5 text-sm font-mono text-text-custom outline-none w-28 focus:border-green-custom"
+              />
+            </div>
+            <div>
+              <label className="block font-mono text-[0.55rem] text-text-3 mb-1">Expected return % p.a.</label>
+              <input
+                value={goalReturn}
+                onChange={(e) => setGoalReturn(e.target.value)}
+                type="number"
+                className="bg-bg-2 border border-border-custom p-2.5 text-sm font-mono text-text-custom outline-none w-28 focus:border-green-custom"
+              />
+            </div>
+            <button onClick={submitGoalPrompt} disabled={goalSuggestLoading} className="font-mono text-xs font-bold px-5 py-2.5 bg-green-custom text-bg border-none cursor-pointer disabled:opacity-50">
+              {goalSuggestLoading ? "..." : "GET SUGGESTION"}
+            </button>
+            <button onClick={() => setGoalPromptDismissed(true)} className="font-mono text-[0.6rem] text-text-3 underline bg-transparent border-none cursor-pointer px-2">
+              Skip, just show me everything
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!selected && goalSuggestion && (
+        <div className="border border-green-custom bg-green-dim p-5 flex flex-col gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg text-green-custom">
+                SUGGESTED FOR YOUR GOAL: {goalSuggestion.categoryLabel.toUpperCase()}
+              </h2>
+              <p className="text-xs text-text-2 leading-relaxed mt-1">{goalSuggestion.reason}</p>
+              <p className="font-mono text-[0.58rem] text-text-3 mt-2">{goalSuggestion.feasibility.explanation}</p>
+            </div>
+            <button
+              onClick={() => { setGoalSuggestion(null); setGoalPromptDismissed(false); }}
+              className="font-mono text-[0.6rem] text-text-3 underline bg-transparent border-none cursor-pointer shrink-0"
+            >
+              Change answers
+            </button>
+          </div>
+          {goalSuggestion.funds.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {goalSuggestion.funds.slice(0, 3).map((f, i) => (
+                <button
+                  key={f.schemeCode}
+                  onClick={() => select({ schemeCode: f.schemeCode, schemeName: f.schemeName })}
+                  className="text-left border border-border-custom bg-bg-1 p-3 flex items-center justify-between gap-3 hover:border-green-custom transition-colors"
+                >
+                  <div className="min-w-0">
+                    <div className="font-mono text-[0.5rem] text-text-4">#{i + 1}</div>
+                    <div className="text-xs text-text-custom font-bold truncate">{f.schemeName}</div>
+                    <div className="font-mono text-[0.58rem] text-text-3">{f.fundHouse}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-mono text-[0.5rem] text-text-3 uppercase">3Y (ann.)</div>
+                    <div className={`font-mono text-sm font-bold ${(f.returns.threeYear ?? f.returns.fiveYear ?? 0) >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                      {f.returns.threeYear != null
+                        ? `${f.returns.threeYear >= 0 ? "+" : ""}${f.returns.threeYear.toFixed(1)}%`
+                        : f.returns.fiveYear != null
+                        ? `${f.returns.fiveYear >= 0 ? "+" : ""}${f.returns.fiveYear.toFixed(1)}% (5Y)`
+                        : "—"}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recommended Funds — hidden while viewing a fund's detail so selecting
           one doesn't feel like a no-op (the detail panel renders below the

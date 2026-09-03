@@ -14,7 +14,7 @@ router.use(requireAuth);
 
 const BACKTEST_WINDOW_YEARS = 2; // must match BACKTEST_WINDOW_DAYS in trackRecord.ts (730 days)
 
-type GoalFeasibility = {
+export type GoalFeasibility = {
   expectedReturnPct: number;
   niftyAnnualizedPct: number | null;
   benchmarkWindowLabel: string;
@@ -33,7 +33,7 @@ type GoalFeasibility = {
 // to rule out a loss — no honest system can do that — it's to say plainly
 // when a target implies real, historically-unsupported risk, so the user can
 // choose to extend the timeline or lower the target instead of chasing it.
-async function assessGoalFeasibility(expectedReturnPct: number, realPortfolioXirrPct: number | null = null): Promise<GoalFeasibility> {
+export async function assessGoalFeasibility(expectedReturnPct: number, realPortfolioXirrPct: number | null = null): Promise<GoalFeasibility> {
   let niftyAnnualizedPct: number | null = null;
   let benchmarkWindowLabel = `Last ${BACKTEST_WINDOW_YEARS} years`;
   try {

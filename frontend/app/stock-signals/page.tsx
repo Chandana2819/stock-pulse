@@ -277,6 +277,55 @@ export default function StockSignalsPage() {
   const holdSignals = marketItems.filter((item) => item.action === "HOLD");
   const waitSignals = marketItems.filter((item) => item.action === "WAIT");
 
+  const escapeCsvField = (value: string) => {
+    if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+      return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+  };
+
+  const handleExportSignals = () => {
+    const header = ["Category", "Symbol", "Name", "Sector", "Exchange", "Action", "Score", "Confidence %", "Risk", "Entry Zone", "Stop Loss", "Target Range", "Reasons", "Warnings", "Generated At"];
+    const groups: Array<[string, SignalItem[]]> = [
+      ["BUY", buySignals],
+      ["SELL / REDUCE", sellSignals],
+      ["HOLD", holdSignals],
+      ["WAIT", waitSignals],
+    ];
+    const rows = [header];
+    for (const [label, list] of groups) {
+      for (const item of list) {
+        rows.push([
+          label,
+          item.displaySymbol,
+          item.name ?? "",
+          item.sector,
+          item.exchange,
+          item.action,
+          String(item.score),
+          String(item.confidence),
+          item.risk,
+          item.entryZone ? `${item.entryZone.min}-${item.entryZone.max}` : "",
+          item.stopLoss != null ? String(item.stopLoss) : "",
+          item.targetRange ? `${item.targetRange.min}-${item.targetRange.max}` : "",
+          item.reasons.join("; "),
+          item.warnings.join("; "),
+          item.generatedAt,
+        ]);
+      }
+    }
+    const csv = rows.map((row) => row.map((cell) => escapeCsvField(String(cell))).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `stockpulse-signals-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const scanDate = scanTime ? new Date(scanTime) : null;
   const formattedScanTime = scanDate ? scanDate.toLocaleString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true, day: "numeric", month: "short", year: "numeric" }) + " IST" : "Pending";
   const isStale = scanDate ? (Date.now() - scanDate.getTime() > 4 * 3600 * 1000) : false;
@@ -304,12 +353,19 @@ export default function StockSignalsPage() {
             </div>
             <div>SCAN RUN TIME: {formattedScanTime}</div>
           </div>
-          <button 
-            onClick={handleRefreshScan} 
+          <button
+            onClick={handleRefreshScan}
             disabled={scanning}
             className="font-mono text-[0.65rem] tracking-[0.12em] bg-bg-3 border border-border-bright text-text-custom px-4 py-2 hover:bg-bg-4 disabled:opacity-50"
           >
             {scanning ? "SCANNING..." : "RUN LIVE SCAN NOW"}
+          </button>
+          <button
+            onClick={handleExportSignals}
+            disabled={marketItems.length === 0}
+            className="font-mono text-[0.65rem] tracking-[0.12em] bg-bg-3 border border-border-bright text-green-custom px-4 py-2 hover:bg-bg-4 disabled:opacity-50"
+          >
+            ⬇ EXPORT CSV
           </button>
         </div>
       </div>
