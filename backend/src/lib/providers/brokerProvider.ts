@@ -86,7 +86,11 @@ export class ZerodhaKiteProvider implements BrokerProvider {
     const rows: Array<Record<string, unknown>> = res.data?.data ?? [];
     return rows.map((r) => ({
       symbol: String(r.tradingsymbol ?? ""),
-      quantity: Number(r.quantity ?? 0),
+      // Kite splits a holding into `quantity` (settled, in demat) and
+      // `t1_quantity` (bought within the last day, still in T+1 settlement —
+      // not yet in demat, but genuinely owned). Reading only `quantity`
+      // under-counted anything bought very recently.
+      quantity: Number(r.quantity ?? 0) + Number(r.t1_quantity ?? 0),
       avgPrice: Number(r.average_price ?? 0),
       exchange: String(r.exchange ?? "NSE"),
     }));
@@ -207,7 +211,9 @@ export class UpstoxProvider implements BrokerProvider {
     const rows: Array<Record<string, unknown>> = res.data?.data ?? [];
     return rows.map((r) => ({
       symbol: String(r.tradingsymbol ?? ""),
-      quantity: Number(r.quantity ?? 0),
+      // Same T+1 settlement split as Kite: a share bought very recently
+      // shows up in `t1_quantity`, not yet in the settled `quantity`.
+      quantity: Number(r.quantity ?? 0) + Number(r.t1_quantity ?? 0),
       avgPrice: Number(r.average_price ?? 0),
       exchange: String(r.exchange ?? "NSE"),
     }));

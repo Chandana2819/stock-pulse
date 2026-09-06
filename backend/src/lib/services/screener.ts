@@ -72,9 +72,22 @@ export async function runScreener(filters: ScreenerFilters, limit = 500): Promis
     : UNIVERSE;
   const symbols = candidates.map((u) => u.symbol);
 
-  const [quotes, fundamentalsList] = await Promise.all([
+  // Fundamentals hits a heavier per-symbol endpoint than a quote, and on a
+  // cold cache (e.g. right after a server restart) firing one unbounded
+  // Promise.all across the whole universe opens 100+ concurrent requests at
+  // once — the actual cause of a slow first screener load. Batch it the same
+  // bounded way YahooProvider.getQuotes already batches quotes.
+  const FUNDAMENTALS_BATCH_SIZE = 12;
+  const fundamentalsList: (Awaited<ReturnType<typeof marketDataProvider.getFundamentals>>)[] = [];
+  const [quotes] = await Promise.all([
     marketDataProvider.getQuotes(symbols),
-    Promise.all(symbols.map((s) => marketDataProvider.getFundamentals(s).catch(() => null))),
+    (async () => {
+      for (let i = 0; i < symbols.length; i += FUNDAMENTALS_BATCH_SIZE) {
+        const batch = symbols.slice(i, i + FUNDAMENTALS_BATCH_SIZE);
+        const results = await Promise.all(batch.map((s) => marketDataProvider.getFundamentals(s).catch(() => null)));
+        fundamentalsList.push(...results);
+      }
+    })(),
   ]);
 
   const rows: ScreenerRow[] = candidates.map((u, i) => {

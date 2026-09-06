@@ -43,74 +43,86 @@ router.get(
       holdings = await getEnrichedHoldings(req.user.id);
     }
 
+    // Each holding's analysis (quote + 5Y candles + fundamentals + news) is
+    // independent of the others, but was previously awaited one holding at a
+    // time — N holdings meant N times the per-symbol latency stacked up
+    // sequentially. Bounded-concurrency batching (matching the pattern
+    // already used for bulk quotes) gets the same data without opening one
+    // socket per holding at once.
+    const ANALYSIS_BATCH_SIZE = 6;
     const portfolioSignals: any[] = [];
 
-    for (const h of holdings) {
-      const symbol = h.stock;
-      const analysis = await buildStockAnalysis(symbol, {
-        ownedQuantity: h.quantity,
-      }).catch(() => null);
+    for (let i = 0; i < holdings.length; i += ANALYSIS_BATCH_SIZE) {
+      const batch = holdings.slice(i, i + ANALYSIS_BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (h) => {
+          const symbol = h.stock;
+          const analysis = await buildStockAnalysis(symbol, {
+            ownedQuantity: h.quantity,
+          }).catch(() => null);
 
-      const ltp = analysis?.quote?.price ?? h.currentPrice ?? h.avgPrice;
-      const avgPrice = h.avgPrice;
-      const quantity = h.quantity;
+          const ltp = analysis?.quote?.price ?? h.currentPrice ?? h.avgPrice;
+          const avgPrice = h.avgPrice;
+          const quantity = h.quantity;
 
-      const pnl = Number(((ltp - avgPrice) * quantity).toFixed(2));
-      const pnlPercentage = avgPrice > 0 ? Number((((ltp - avgPrice) / avgPrice) * 100).toFixed(2)) : 0;
+          const pnl = Number(((ltp - avgPrice) * quantity).toFixed(2));
+          const pnlPercentage = avgPrice > 0 ? Number((((ltp - avgPrice) / avgPrice) * 100).toFixed(2)) : 0;
 
-      if (analysis && analysis.found) {
-        portfolioSignals.push({
-          symbol: analysis.resolved.displaySymbol,
-          providerSymbol: symbol,
-          quantity,
-          averagePrice: avgPrice,
-          currentPrice: ltp,
-          pnl,
-          pnlPercentage,
-          scores: analysis.decision.scores,
-          pillars: analysis.decision.pillars,
-          finalScore: analysis.decision.scores.final,
-          signal: analysis.decision.signal,
-          action: analysis.decision.signal,
-          confidence: analysis.decision.confidence,
-          reasons: analysis.decision.reasons,
-          warnings: analysis.decision.warnings,
-          mainRisk: analysis.decision.mainRisk,
-          stopLoss: analysis.decision.stopLoss,
-          targetRange: analysis.decision.targetRange,
-          entryZone: analysis.decision.entryZone,
-          riskLevel: analysis.decision.riskLevel,
-          dataQuality: analysis.decision.dataQuality,
-          dataTimestamp: analysis.decision.dataTimestamp,
-          horizon: analysis.decision.horizon,
-          activeSince: analysis.decision.activeSince,
-        });
-      } else {
-        portfolioSignals.push({
-          symbol: h.displaySym,
-          providerSymbol: symbol,
-          quantity,
-          averagePrice: avgPrice,
-          currentPrice: ltp,
-          pnl,
-          pnlPercentage,
-          scores: { trend: 50, momentum: 50, volume: 50, fundamentals: 50, sentiment: 50, risk: 50, marketSector: 50, final: 50 },
-          pillars: [],
-          finalScore: 50,
-          signal: "WAIT",
-          action: "WAIT",
-          confidence: 30,
-          reasons: ["Market data currently unavailable for portfolio evaluation"],
-          warnings: ["Insufficient live data"],
-          mainRisk: "Insufficient live data to compute risk factors",
-          stopLoss: null,
-          targetRange: null,
-          entryZone: null,
-          riskLevel: "MODERATE",
-          dataQuality: "INSUFFICIENT",
-          dataTimestamp: new Date().toISOString(),
-        });
-      }
+          if (analysis && analysis.found) {
+            return {
+              symbol: analysis.resolved.displaySymbol,
+              providerSymbol: symbol,
+              quantity,
+              averagePrice: avgPrice,
+              currentPrice: ltp,
+              pnl,
+              pnlPercentage,
+              scores: analysis.decision.scores,
+              pillars: analysis.decision.pillars,
+              finalScore: analysis.decision.scores.final,
+              signal: analysis.decision.signal,
+              action: analysis.decision.signal,
+              confidence: analysis.decision.confidence,
+              reasons: analysis.decision.reasons,
+              warnings: analysis.decision.warnings,
+              mainRisk: analysis.decision.mainRisk,
+              stopLoss: analysis.decision.stopLoss,
+              targetRange: analysis.decision.targetRange,
+              entryZone: analysis.decision.entryZone,
+              riskLevel: analysis.decision.riskLevel,
+              dataQuality: analysis.decision.dataQuality,
+              dataTimestamp: analysis.decision.dataTimestamp,
+              horizon: analysis.decision.horizon,
+              activeSince: analysis.decision.activeSince,
+            };
+          }
+          return {
+            symbol: h.displaySym,
+            providerSymbol: symbol,
+            quantity,
+            averagePrice: avgPrice,
+            currentPrice: ltp,
+            pnl,
+            pnlPercentage,
+            scores: { trend: 50, momentum: 50, volume: 50, fundamentals: 50, sentiment: 50, risk: 50, marketSector: 50, final: 50 },
+            pillars: [],
+            finalScore: 50,
+            signal: "WAIT",
+            action: "WAIT",
+            confidence: 30,
+            reasons: ["Market data currently unavailable for portfolio evaluation"],
+            warnings: ["Insufficient live data"],
+            mainRisk: "Insufficient live data to compute risk factors",
+            stopLoss: null,
+            targetRange: null,
+            entryZone: null,
+            riskLevel: "MODERATE",
+            dataQuality: "INSUFFICIENT",
+            dataTimestamp: new Date().toISOString(),
+          };
+        })
+      );
+      portfolioSignals.push(...batchResults);
     }
 
     const buyCount = portfolioSignals.filter((s) => s.signal === "BUY" || s.signal === "STRONG BUY").length;
