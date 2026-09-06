@@ -156,7 +156,12 @@ export const cache = createCache();
 
 export const TTL = {
   quote: 15_000,
-  candles: 60_000,
+  // 60s was too aggressive for this key given it also covers 5Y daily
+  // history (~1250 bars) fetched on every stock analysis / portfolio signal
+  // — the live price already comes from the separate `quote` TTL above, so
+  // a 5-minute candle cache doesn't affect price freshness, only how often
+  // the (expensive, rarely-actually-changed) historical bars get re-fetched.
+  candles: 5 * 60 * 1000,
   fundamentals: 6 * 60 * 60 * 1000,
   news: 5 * 60 * 1000,
   sector: 60_000,

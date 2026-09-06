@@ -23,9 +23,9 @@ const ICONS = {
 };
 
 const LABELS = {
-  danger: "SELL ALERT",
+  danger: "ERROR",
   warning: "CAUTION",
-  success: "BUY SIGNAL",
+  success: "SUCCESS",
   info: "INFO",
 };
 

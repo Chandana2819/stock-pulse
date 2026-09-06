@@ -10,6 +10,7 @@ import { evaluateAllActiveUsers } from "../lib/services/alerts";
 import { startScannerBackgroundJob } from "../lib/services/scanner";
 import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
 import { getFundRecommendations } from "../lib/services/fundRecommendations";
+import { runScreener } from "../lib/services/screener";
 
 export function startBackgroundJobs() {
   if (!env.enableJobs) {
@@ -36,6 +37,15 @@ export function startBackgroundJobs() {
   getFundRecommendations()
     .then(() => console.log("[jobs] Fund recommendations cache pre-warmed"))
     .catch((err) => console.error("[jobs] Fund recommendations pre-warm failed:", err));
+
+  // Fundamentals are cached per-symbol for 6 hours (see TTL.fundamentals),
+  // but the Screener fetches the whole reference universe in one request —
+  // without this, whoever opens Screener first after a restart pays for
+  // ~150 uncached fundamentals fetches inline (the actual cause of a slow
+  // first screener load).
+  runScreener({})
+    .then(() => console.log("[jobs] Screener fundamentals cache pre-warmed"))
+    .catch((err) => console.error("[jobs] Screener pre-warm failed:", err));
 
   const alertTimer = setInterval(async () => {
     try {

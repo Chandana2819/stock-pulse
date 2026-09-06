@@ -2,6 +2,7 @@ import { prisma } from "../prisma";
 import { marketDataProvider } from "../providers";
 import { ApiError } from "../http";
 import { xirr, type CashFlow } from "../finance";
+import { lookupUniverse } from "../universe";
 
 export async function getUserByDeviceId(deviceId: string) {
   if (!deviceId) throw ApiError.badRequest("Device ID is required");
@@ -29,9 +30,19 @@ export async function executeTransaction(
   isVirtual = false
 ) {
   const stock = stockSymbol.toUpperCase();
-  const isGlobal = !stock.endsWith(".NS") && !stock.endsWith(".BO");
+  // A bare symbol typed without its exchange suffix (e.g. "RELIANCE" instead
+  // of "RELIANCE.NS" — the natural thing to type in the manual transaction
+  // form) used to fall through to the GLOBAL/USD branch below, crediting or
+  // debiting the wrong wallet for a real NSE stock. Check the reference
+  // universe by display name first — it knows the real exchange regardless
+  // of whether a suffix was typed — and only fall back to the suffix
+  // heuristic for symbols outside that universe (genuine global tickers).
+  const universeEntry = lookupUniverse(stock);
+  const isBse = stock.endsWith(".BO");
+  const isNse = !isBse && (stock.endsWith(".NS") || universeEntry?.exchange === "NSE");
+  const isGlobal = !isBse && !isNse;
   const currency = isGlobal ? "USD" : "INR";
-  const exchange = stock.endsWith(".NS") ? "NSE" : stock.endsWith(".BO") ? "BSE" : "GLOBAL";
+  const exchange = isBse ? "BSE" : isNse ? "NSE" : "GLOBAL";
   const displaySym = stock.replace(/^\^/, "").replace(/\.(NS|BO)$/, "");
 
   const subtotal = price * quantity;
