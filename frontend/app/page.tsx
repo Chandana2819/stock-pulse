@@ -271,10 +271,12 @@ export default function Home() {
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 1000000, usd: 10000 });
   const [holdings, setHoldings] = useState<Holding[]>([]);
 
-  // Dashboard always reflects market-wide signals (all scanned stocks), never just
-  // the user's portfolio — /api/signals' `summary` field is portfolio-scoped once a
-  // broker is connected, so counts are derived directly from the market-wide `items`.
+  // Dashboard signals summary: BUY and WAIT reflect market-wide scanner, while
+  // SELL/REDUCE and HOLD fetch from the user's active portfolio holdings.
   const displaySummary = useMemo(() => {
+    if (signalsSummary) {
+      return signalsSummary;
+    }
     const counts = { buy: 0, sell: 0, hold: 0, wait: 0 };
     for (const item of recommendations) {
       const action = String(item.action || "").toUpperCase();
@@ -284,7 +286,7 @@ export default function Home() {
       else counts.wait++;
     }
     return counts;
-  }, [recommendations]);
+  }, [signalsSummary, recommendations]);
 
   const topMarketPicks = useMemo(() => {
     return [...recommendations]
@@ -912,27 +914,27 @@ export default function Home() {
                 <div
                   className="bg-red-dim/10 border border-red-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-red-custom transition-all"
                   onClick={() => setKpiModal({
-                    title: "SELL Signals",
-                    value: `${displaySummary?.sell ?? 29}`,
+                    title: "SELL / REDUCE Signals (Portfolio)",
+                    value: `${displaySummary?.sell ?? 0}`,
                     valueColor: "text-red-custom",
-                    description: "Stocks currently rated SELL or REDUCE — weakening trend, negative momentum, or fundamentals deteriorating relative to peers.",
+                    description: "Portfolio holdings currently rated SELL or REDUCE — weakening trend, negative momentum, or fundamentals deteriorating relative to peers.",
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
-                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary?.sell ?? 29}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-red-custom">{displaySummary?.sell ?? 0}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">SELL ⓘ</span>
                 </div>
                 <div
                   className="bg-amber-dim/10 border border-amber-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-amber-custom transition-all"
                   onClick={() => setKpiModal({
-                    title: "HOLD Signals",
-                    value: `${displaySummary?.hold ?? 55}`,
+                    title: "HOLD Signals (Portfolio)",
+                    value: `${displaySummary?.hold ?? 0}`,
                     valueColor: "text-amber-custom",
-                    description: "Stocks currently rated HOLD — mixed pillar scores where the model doesn't see a strong enough edge to add or exit.",
+                    description: "Portfolio holdings currently rated HOLD — balanced metrics where maintaining your existing position is recommended.",
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
-                  <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{displaySummary?.hold ?? 55}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-amber-custom">{displaySummary?.hold ?? 0}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">HOLD ⓘ</span>
                 </div>
                 <div

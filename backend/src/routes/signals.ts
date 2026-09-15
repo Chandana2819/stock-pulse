@@ -48,12 +48,111 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     };
   });
 
-  // Apply filters
+  // Detect broker connection status and compute portfolio signals
+  let brokerConnection = { connected: false, broker: null as string | null, expired: false, everConnected: false, lastSyncAt: null as Date | null, lastError: null as string | null };
+  let portfolioSignals: any[] = [];
+
+  if (userId) {
+    const conn = await prisma.brokerConnection.findUnique({
+      where: { userId_broker: { userId, broker: "ZERODHA" } }
+    });
+    if (conn) {
+      const isExpired = conn.expiresAt ? conn.expiresAt < new Date() : false;
+      brokerConnection = {
+        connected: conn.status === "CONNECTED" && !isExpired,
+        broker: conn.broker,
+        expired: isExpired,
+        everConnected: conn.connectedAt != null,
+        lastSyncAt: conn.lastSyncAt,
+        lastError: conn.lastError
+      };
+    }
+
+    const enrichedHoldings = await getEnrichedHoldings(userId);
+    if (enrichedHoldings.length > 0) {
+      for (const h of enrichedHoldings) {
+        let symbol = h.stock.toUpperCase().trim();
+        if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
+          symbol = `${symbol}.NS`;
+        } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
+          symbol = `${symbol}.BO`;
+        }
+
+        const analysis = await buildStockAnalysis(symbol, { ownedQuantity: h.quantity }).catch(() => null);
+        const uItem = lookupUniverse(symbol);
+
+        if (analysis && analysis.found) {
+          const d = analysis.decision;
+          portfolioSignals.push({
+            id: `portfolio-${symbol}`,
+            symbol,
+            displaySymbol: h.displaySym,
+            name: h.displaySym,
+            sector: uItem?.sector || "Other",
+            sectorKey: uItem?.sectorKey || "OTHER",
+            exchange: h.exchange,
+            action: d.signal,
+            score: d.scores.final,
+            confidence: d.confidence,
+            risk: d.riskLevel,
+            reasons: d.reasons,
+            warnings: d.warnings,
+            entryZone: d.entryZone,
+            stopLoss: d.stopLoss,
+            targetRange: d.targetRange,
+            dataQuality: d.dataQuality,
+            horizon: d.horizon,
+            activeSince: d.activeSince,
+            quantity: h.quantity,
+            avgPrice: h.avgPrice,
+            currentPrice: h.currentPrice,
+            unrealizedPnl: h.pl,
+            investedValue: h.cost,
+            currentValue: h.value,
+          });
+        } else {
+          portfolioSignals.push({
+            id: `portfolio-${symbol}`,
+            symbol,
+            displaySymbol: h.displaySym,
+            name: h.displaySym,
+            sector: uItem?.sector || "Other",
+            sectorKey: uItem?.sectorKey || "OTHER",
+            exchange: h.exchange,
+            action: "WAIT",
+            score: 50,
+            confidence: 30,
+            risk: "MODERATE",
+            reasons: ["Market data currently unavailable for portfolio evaluation"],
+            warnings: ["Insufficient live data"],
+            entryZone: null,
+            stopLoss: null,
+            targetRange: null,
+            dataQuality: "INSUFFICIENT",
+            quantity: h.quantity,
+            avgPrice: h.avgPrice,
+            currentPrice: h.currentPrice,
+            unrealizedPnl: h.pl,
+            investedValue: h.cost,
+            currentValue: h.value,
+          });
+        }
+      }
+    }
+  }
+
+  // Apply filters - SELL/REDUCE and HOLD fetch from portfolio when userId is present
   if (actionFilter) {
     if (actionFilter === "BUY") {
       items = items.filter((item: any) => item.action.includes("BUY"));
     } else if (actionFilter === "SELL" || actionFilter === "REDUCE") {
-      items = items.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE");
+      items = userId && portfolioSignals.length > 0
+        ? portfolioSignals.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE")
+        : items.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE");
+    } else if (actionFilter === "HOLD") {
+      items = userId && portfolioSignals.length > 0
+        ? portfolioSignals.filter((item: any) => item.action === "HOLD")
+        : items.filter((item: any) => item.action === "HOLD");
     } else {
       items = items.filter((item: any) => item.action === actionFilter);
     }
@@ -79,128 +178,19 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     items.sort((a: any, b: any) => b.score - a.score);
   }
 
-  // Detect broker connection status
-  let brokerConnection = { connected: false, broker: null as string | null, expired: false, everConnected: false, lastSyncAt: null as Date | null, lastError: null as string | null };
-  let portfolioSignals: any[] = [];
-
-  if (userId) {
-    const conn = await prisma.brokerConnection.findUnique({
-      where: { userId_broker: { userId, broker: "ZERODHA" } }
-    });
-    if (conn) {
-      const isExpired = conn.expiresAt ? conn.expiresAt < new Date() : false;
-      brokerConnection = {
-        connected: conn.status === "CONNECTED" && !isExpired,
-        broker: conn.broker,
-        expired: isExpired,
-        // Has this account ever completed a real connection before? If so,
-        // an expired daily token isn't a fresh problem to alarm about — the
-        // app already keeps working from holdings on record either way.
-        everConnected: conn.connectedAt != null,
-        lastSyncAt: conn.lastSyncAt,
-        lastError: conn.lastError
-      };
-    }
-
-    // Portfolio signals depend only on holdings already on record (from a
-    // past broker sync, CSV import, or demo trade) plus live market quotes —
-    // neither needs the broker OAuth session to be fresh *right now*. A
-    // stale/expired token only blocks pulling in *new* trades from the
-    // broker; it shouldn't hide AI signals for holdings the app already
-    // knows about, which is all "connected" used to gate here.
-    {
-      const enrichedHoldings = await getEnrichedHoldings(userId);
-      if (enrichedHoldings.length > 0) {
-        // Use the same canonical live analysis the Portfolio page calls
-        // (buildStockAnalysis, GET /api/portfolio/signals) so a holding never
-        // shows one action here and a different one there — a stale
-        // pre-scanned StockRecommendation row can drift from the live score
-        // by the time a user actually looks at it.
-        for (const h of enrichedHoldings) {
-          let symbol = h.stock.toUpperCase().trim();
-          if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
-            symbol = `${symbol}.NS`;
-          } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
-            symbol = `${symbol}.BO`;
-          }
-
-          const analysis = await buildStockAnalysis(symbol, { ownedQuantity: h.quantity }).catch(() => null);
-          const uItem = lookupUniverse(symbol);
-
-          if (analysis && analysis.found) {
-            const d = analysis.decision;
-            portfolioSignals.push({
-              id: `portfolio-${symbol}`,
-              symbol,
-              displaySymbol: h.displaySym,
-              name: h.displaySym,
-              sector: uItem?.sector || "Other",
-              exchange: h.exchange,
-              action: d.signal,
-              score: d.scores.final,
-              confidence: d.confidence,
-              risk: d.riskLevel,
-              reasons: d.reasons,
-              warnings: d.warnings,
-              entryZone: d.entryZone,
-              stopLoss: d.stopLoss,
-              targetRange: d.targetRange,
-              dataQuality: d.dataQuality,
-              horizon: d.horizon,
-              activeSince: d.activeSince,
-              quantity: h.quantity,
-              avgPrice: h.avgPrice,
-              currentPrice: h.currentPrice,
-              unrealizedPnl: h.pl,
-              investedValue: h.cost,
-              currentValue: h.value,
-            });
-          } else {
-            portfolioSignals.push({
-              id: `portfolio-${symbol}`,
-              symbol,
-              displaySymbol: h.displaySym,
-              name: h.displaySym,
-              sector: uItem?.sector || "Other",
-              exchange: h.exchange,
-              action: "WAIT",
-              score: 50,
-              confidence: 30,
-              risk: "MODERATE",
-              reasons: ["Market data currently unavailable for portfolio evaluation"],
-              warnings: ["Insufficient live data"],
-              entryZone: null,
-              stopLoss: null,
-              targetRange: null,
-              dataQuality: "INSUFFICIENT",
-              quantity: h.quantity,
-              avgPrice: h.avgPrice,
-              currentPrice: h.currentPrice,
-              unrealizedPnl: h.pl,
-              investedValue: h.cost,
-              currentValue: h.value,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  // Calculate signals overview counts
+  // Calculate signals overview counts: SELL and HOLD fetch from portfolio whenever userId is present
   const buyCount = recommendations.filter((r: any) => r.action.includes("BUY")).length;
+  const waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
   
   let sellCount = 0;
   let holdCount = 0;
-  let waitCount = 0;
 
-  if (userId && brokerConnection.connected) {
+  if (userId) {
     sellCount = portfolioSignals.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
     holdCount = portfolioSignals.filter((r: any) => r.action === "HOLD").length;
-    waitCount = portfolioSignals.filter((r: any) => r.action === "WAIT").length;
   } else {
     sellCount = recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
     holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
-    waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
   }
 
   const latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });

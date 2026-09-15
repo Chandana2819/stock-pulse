@@ -265,17 +265,30 @@ export default function StockSignalsPage() {
 
   const riskEmoji = riskData?.classification.includes("HIGH") ? "🔴" : riskData?.classification.includes("MODERATE") ? "🟡" : "🟢";
 
-  // Filter market list: exclude portfolio assets so they don't show up twice
-  const portfolioSymbols = new Set(portfolioSignals.map((s) => s.symbol.toUpperCase().trim()));
-  const marketItems = items.filter((item) => !portfolioSymbols.has(item.symbol.toUpperCase().trim()));
+  // BUY and WAIT signals represent market screener opportunities
+  const buySignals = items.filter((item) => item.action.includes("BUY"));
+  const waitSignals = items.filter((item) => item.action === "WAIT");
 
-  // These four tabs are the market-wide screener — every scanned stock, not just
-  // holdings — so counts here match the Dashboard's "Today's Market Signals" tile.
-  // Portfolio holdings get their own dedicated signals section further up the page.
-  const buySignals = marketItems.filter((item) => item.action.includes("BUY"));
-  const sellSignals = marketItems.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
-  const holdSignals = marketItems.filter((item) => item.action === "HOLD");
-  const waitSignals = marketItems.filter((item) => item.action === "WAIT");
+  // SELL / REDUCE and HOLD signals fetch directly from user's portfolio holdings
+  const filteredPortfolio = [...portfolioSignals].filter((item) => {
+    if (sectorFilter && item.sectorKey !== sectorFilter && item.sector !== sectorFilter) return false;
+    if (exchangeFilter && item.exchange !== exchangeFilter) return false;
+    return true;
+  });
+
+  if (sortBy === "confidence") {
+    filteredPortfolio.sort((a, b) => b.confidence - a.confidence);
+  } else if (sortBy === "symbol") {
+    filteredPortfolio.sort((a, b) => a.displaySymbol.localeCompare(b.displaySymbol));
+  } else if (sortBy === "risk") {
+    const riskMap: Record<string, number> = { LOW: 1, MODERATE: 2, HIGH: 3, "VERY HIGH": 4 };
+    filteredPortfolio.sort((a, b) => (riskMap[b.risk] || 0) - (riskMap[a.risk] || 0));
+  } else {
+    filteredPortfolio.sort((a, b) => b.score - a.score);
+  }
+
+  const sellSignals = filteredPortfolio.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const holdSignals = filteredPortfolio.filter((item) => item.action === "HOLD");
 
   const escapeCsvField = (value: string) => {
     if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -362,7 +375,7 @@ export default function StockSignalsPage() {
           </button>
           <button
             onClick={handleExportSignals}
-            disabled={marketItems.length === 0}
+            disabled={items.length === 0 && portfolioSignals.length === 0}
             className="font-mono text-[0.65rem] tracking-[0.12em] bg-bg-3 border border-border-bright text-green-custom px-4 py-2 hover:bg-bg-4 disabled:opacity-50"
           >
             ⬇ EXPORT CSV
@@ -515,14 +528,14 @@ export default function StockSignalsPage() {
             onClick={() => scrollToSection("sell-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-red-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🔴 SELL / REDUCE</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🔴 SELL / REDUCE (PORTFOLIO)</span>
             <span className="font-mono text-2xl font-bold text-red-custom">{sellSignals.length}</span>
           </button>
           <button 
             onClick={() => scrollToSection("hold-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-blue-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟡 HOLD</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟡 HOLD (PORTFOLIO)</span>
             <span className="font-mono text-2xl font-bold text-blue-custom">{holdSignals.length}</span>
           </button>
           <button 
@@ -639,11 +652,24 @@ export default function StockSignalsPage() {
 
         {/* 🔴 SELL / REDUCE */}
         <div id="sell-section" className="border border-red-custom bg-bg-1 p-6 flex flex-col gap-4">
-          <h2 className="font-display text-2xl tracking-[0.1em] text-red-custom border-b border-border-custom pb-2">🔴 SELL / REDUCE SIGNALS</h2>
+          <div className="flex items-center justify-between border-b border-border-custom pb-2 flex-wrap gap-2">
+            <h2 className="font-display text-2xl tracking-[0.1em] text-red-custom">🔴 SELL / REDUCE SIGNALS</h2>
+            <span className="font-mono text-[0.62rem] text-red-custom border border-red-custom/40 bg-red-dim/20 px-2 py-0.5">PORTFOLIO HOLDINGS</span>
+          </div>
           <div className="flex flex-col gap-4">
             {sellSignals.length === 0 ? (
-              <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
-                No active SELL or REDUCE signals currently calculated.
+              <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono flex flex-col items-center gap-2">
+                <span>
+                  {portfolioSignals.length === 0
+                    ? "No holdings found in portfolio. Connect your broker or trade assets to monitor SELL / REDUCE signals."
+                    : "No active SELL or REDUCE signals for your portfolio holdings. All positions maintain HOLD or BUY ratings."}
+                </span>
+                <button
+                  onClick={() => router.push("/portfolio")}
+                  className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
+                >
+                  VIEW PORTFOLIO →
+                </button>
               </div>
             ) : (
               sellSignals.map((item) => (
@@ -655,11 +681,24 @@ export default function StockSignalsPage() {
 
         {/* 🟡 HOLD */}
         <div id="hold-section" className="border border-blue-custom bg-bg-1 p-6 flex flex-col gap-4">
-          <h2 className="font-display text-2xl tracking-[0.1em] text-blue-custom border-b border-border-custom pb-2">🟡 HOLD SIGNALS</h2>
+          <div className="flex items-center justify-between border-b border-border-custom pb-2 flex-wrap gap-2">
+            <h2 className="font-display text-2xl tracking-[0.1em] text-blue-custom">🟡 HOLD SIGNALS</h2>
+            <span className="font-mono text-[0.62rem] text-blue-custom border border-blue-custom/40 bg-blue-dim/20 px-2 py-0.5">PORTFOLIO HOLDINGS</span>
+          </div>
           <div className="flex flex-col gap-4">
             {holdSignals.length === 0 ? (
-              <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
-                No active HOLD signals currently calculated.
+              <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono flex flex-col items-center gap-2">
+                <span>
+                  {portfolioSignals.length === 0
+                    ? "No holdings found in portfolio. Connect your broker or trade assets to monitor HOLD signals."
+                    : "No active HOLD signals for your portfolio holdings."}
+                </span>
+                <button
+                  onClick={() => router.push("/portfolio")}
+                  className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
+                >
+                  VIEW PORTFOLIO →
+                </button>
               </div>
             ) : (
               holdSignals.map((item) => (
@@ -961,6 +1000,34 @@ function SignalCard({ item }: { item: SignalItem }) {
           </button>
         </div>
       </div>
+
+      {/* Portfolio holding context banner */}
+      {(item as any).quantity != null && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border border-border-custom bg-bg-1 p-3 rounded text-xs font-mono">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-text-3 uppercase text-[0.6rem] tracking-wider font-bold">PORTFOLIO HOLDING:</span>
+            <span className="text-text-custom font-bold">{(item as any).quantity} shares</span>
+            <span className="text-text-3">Avg: <span className="text-text-2 font-bold">{currency}{(item as any).avgPrice?.toFixed(2)}</span></span>
+            {(item as any).currentPrice != null && (
+              <span className="text-text-3">LTP: <span className="text-text-2 font-bold">{currency}{(item as any).currentPrice?.toFixed(2)}</span></span>
+            )}
+            {(item as any).unrealizedPnl != null && (
+              <span className="text-text-3">
+                P&L:{" "}
+                <span className={`font-bold ${(item as any).unrealizedPnl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                  {(item as any).unrealizedPnl >= 0 ? "+" : ""}{currency}{(item as any).unrealizedPnl?.toFixed(2)}
+                </span>
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => router.push("/portfolio")}
+            className="font-mono text-[0.58rem] tracking-wider border border-border-bright text-text-custom px-2.5 py-1 hover:bg-bg-3"
+          >
+            MANAGE IN PORTFOLIO →
+          </button>
+        </div>
+      )}
 
       {/* Levels display for BUY */}
       {item.action.includes("BUY") && item.entryZone && item.stopLoss && item.targetRange && (
