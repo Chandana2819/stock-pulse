@@ -152,6 +152,7 @@ export default function Home() {
 
   const [signalsSummary, setSignalsSummary] = useState<any>(null);
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [portfolioSignals, setPortfolioSignals] = useState<any[]>([]);
   const [marketRisk, setMarketRisk] = useState<any>(null);
   const [indices, setIndices] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -206,6 +207,7 @@ export default function Home() {
         const json = await res.json();
         setRecommendations(json.items || []);
         setSignalsSummary(json.summary);
+        setPortfolioSignals(json.portfolioSignals || []);
       }
       const riskRes = await fetch(`${API_BASE}/api/signals/market-risk`, { headers });
       if (riskRes.ok) {
@@ -294,6 +296,23 @@ export default function Home() {
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
       .slice(0, 5);
   }, [recommendations]);
+
+  const topSellPicks = useMemo(() => {
+    return [...portfolioSignals]
+      .filter((item) => {
+        const action = String(item.action || "").toUpperCase();
+        return action.includes("SELL") || action === "REDUCE";
+      })
+      .sort((a, b) => (a.score ?? 0) - (b.score ?? 0))
+      .slice(0, 5);
+  }, [portfolioSignals]);
+
+  const topHoldPicks = useMemo(() => {
+    return [...portfolioSignals]
+      .filter((item) => String(item.action || "").toUpperCase() === "HOLD")
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .slice(0, 5);
+  }, [portfolioSignals]);
 
   const [isTradeModalOpen, setIsTradeModalOpen] = useState(false);
   const [tradeType, setTradeType] = useState<"BUY" | "SELL">("BUY");
@@ -536,7 +555,7 @@ export default function Home() {
   const isWatched = watchlist.includes(stock.toUpperCase());
 
   return (
-    <div className="grid grid-rows-[1fr_auto] min-h-screen">
+    <div className="grid grid-cols-1 grid-rows-[1fr_auto] min-h-screen">
       {/* ── Main Dashboard Layout ── */}
       <main className="max-w-[1450px] mx-auto w-full p-4 md:p-8 flex flex-col gap-6 md:gap-8">
         
@@ -799,13 +818,13 @@ export default function Home() {
             </div>
 
             {/* Market Risk strip banner */}
-            <div className="bg-bg-1 border border-border-custom p-4 rounded flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
+            <div className="bg-bg-1 border border-border-custom p-4 rounded flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
                 <div className="w-8 h-8 bg-amber-dim rounded-full flex items-center justify-center text-xs shrink-0 select-none">⚠️</div>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5 min-w-0">
                   <div className="font-mono text-[0.72rem] text-text-custom font-bold uppercase tracking-wider">
-                    MARKET RISK <span className="text-amber-custom">{marketRisk?.score || 45} / 100</span>{" "}
-                    <span className="text-text-4 font-normal text-[0.62rem] lowercase ml-2">
+                    <span className="whitespace-nowrap">MARKET RISK <span className="text-amber-custom">{marketRisk?.score || 45} / 100</span></span>{" "}
+                    <span className="text-text-4 font-normal text-[0.62rem] lowercase block sm:inline sm:ml-2 mt-0.5 sm:mt-0">
                       {marketRisk?.factors?.length ? `${marketRisk.factors.filter((f: any) => f.available).length} / ${marketRisk.factors.length} risk factors available` : "Scanning…"}
                     </span>
                   </div>
@@ -815,7 +834,7 @@ export default function Home() {
                 </div>
               </div>
               <button
-                className="font-mono text-[0.62rem] tracking-[0.1em] border border-border-bright hover:border-green-custom text-text-custom hover:text-green-custom p-[0.35rem_0.8rem] rounded bg-transparent cursor-pointer transition-all whitespace-nowrap"
+                className="font-mono text-[0.62rem] tracking-[0.1em] border border-border-bright hover:border-green-custom text-text-custom hover:text-green-custom p-[0.35rem_0.8rem] rounded bg-transparent cursor-pointer transition-all whitespace-nowrap self-center sm:self-auto shrink-0"
                 onClick={() => {
                   const factors = marketRisk?.factors ?? [];
                   setKpiModal({
@@ -918,6 +937,9 @@ export default function Home() {
                     value: `${displaySummary?.sell ?? 0}`,
                     valueColor: "text-red-custom",
                     description: "Portfolio holdings currently rated SELL or REDUCE — weakening trend, negative momentum, or fundamentals deteriorating relative to peers.",
+                    rows: topSellPicks.length > 0
+                      ? topSellPicks.map((p) => ({ label: p.displaySymbol || p.symbol, value: `${p.score}/100`, color: "text-red-custom" }))
+                      : undefined,
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
@@ -931,6 +953,9 @@ export default function Home() {
                     value: `${displaySummary?.hold ?? 0}`,
                     valueColor: "text-amber-custom",
                     description: "Portfolio holdings currently rated HOLD — balanced metrics where maintaining your existing position is recommended.",
+                    rows: topHoldPicks.length > 0
+                      ? topHoldPicks.map((p) => ({ label: p.displaySymbol || p.symbol, value: `${p.score}/100`, color: "text-amber-custom" }))
+                      : undefined,
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
@@ -1202,7 +1227,7 @@ export default function Home() {
       {/* ── Footer ── */}
       <footer className="flex items-center justify-between p-[0.95rem_2rem] border-t border-border-custom bg-bg-1 select-none">
         <div className="font-mono text-[0.6rem] text-text-3 tracking-[0.05em]">
-          © 2024 STOCKPULSE - DATA TANGO FINANCE &amp; GOOGLE NEWS - NOT FINANCIAL ADVICE
+          © 2024 BULLHAWK - DATA TANGO FINANCE &amp; GOOGLE NEWS - NOT FINANCIAL ADVICE
         </div>
         <div className="flex items-center gap-4 font-mono text-[0.6rem] text-text-4">
           <span className="hover:text-text-custom cursor-pointer">Privacy Policy</span>

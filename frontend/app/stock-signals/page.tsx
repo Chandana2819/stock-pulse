@@ -332,7 +332,7 @@ export default function StockSignalsPage() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `stockpulse-signals-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `bullhawk-signals-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

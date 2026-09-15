@@ -100,13 +100,33 @@ const MOCK_IPO_LISTINGS: IpoListing[] = [
   },
 ];
 
+// The mock data's `status` field is a fixed snapshot from whenever these
+// entries were written — it goes stale the moment real time crosses an
+// open/close date (an IPO that closed days ago would keep showing "OPEN"
+// forever). Deriving status from the dates on every read means it's always
+// consistent with "today", the one thing static mock data can't be.
+// LISTED is left as-is: nothing about open/close dates alone can tell us
+// whether trading has actually started, so that's the one status this mock
+// data must still assert directly.
+function withComputedStatus(listing: IpoListing): IpoListing {
+  if (listing.status === "LISTED" || !listing.openDate || !listing.closeDate) return listing;
+
+  const now = new Date();
+  const open = new Date(listing.openDate);
+  const close = new Date(listing.closeDate);
+  close.setHours(23, 59, 59, 999); // closes at end of day, not midnight
+
+  const status: IpoListing["status"] = now < open ? "UPCOMING" : now <= close ? "OPEN" : "CLOSED";
+  return { ...listing, status };
+}
+
 export class LicensedIpoProvider implements IpoProvider {
   readonly id = "licensed-nse-ipo";
   readonly configured = true; // Set to true so the platform recognizes it as active
 
   async list(status?: IpoListing["status"]): Promise<IpoListing[]> {
     // Cache the listings in Redis or Memory
-    const cacheKey = `ipo_listings_${status || "all"}`;
+    const cacheKey = "ipo_listings_all";
     const result = await cache.wrap(cacheKey, TTL.ipo, async () => {
       // If we had a licensed provider URL / key (e.g. env.ipoFeedUrl), we would query it here:
       // const response = await axios.get(env.ipoFeedUrl);
@@ -116,7 +136,7 @@ export class LicensedIpoProvider implements IpoProvider {
       return MOCK_IPO_LISTINGS;
     });
 
-    const listings = result.value;
+    const listings = result.value.map(withComputedStatus);
     if (status) {
       return listings.filter((l) => l.status === status);
     }

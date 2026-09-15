@@ -922,7 +922,7 @@ export default function PortfolioPage() {
       {/* ── Footer ── */}
       <footer className="flex items-center justify-between p-[0.75rem_2rem] border-t border-border-custom bg-bg-1">
         <div className="font-mono text-[0.62rem] text-text-3 tracking-[0.05em]">
-          STOCKPULSE · DATABASE STORAGE LOGS ACTIVE · SECURE LOCAL PERSISTENCE
+          BULLHAWK · DATABASE STORAGE LOGS ACTIVE · SECURE LOCAL PERSISTENCE
         </div>
         <div className="flex items-center gap-3 font-mono text-[0.6rem] text-text-4">
           <span>© 2026</span>

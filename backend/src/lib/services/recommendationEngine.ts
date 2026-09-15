@@ -33,7 +33,6 @@ export class RecommendationEngine {
     candlesCount: number;
     newsSentimentScore?: number | null;
     newsArticles?: Array<{ title: string; sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" }>;
-    ownedQuantity?: number;
     avgVolume?: number | null;
     volume?: number | null;
   }): RecommendationResult {
@@ -53,7 +52,6 @@ export class RecommendationEngine {
       volatility30d: input.indicators?.volatility30d ?? null,
       avgVolume: input.avgVolume ?? null,
       volume: input.volume ?? null,
-      ownedQuantity: input.ownedQuantity,
       candlesCount: input.candlesCount,
     });
 

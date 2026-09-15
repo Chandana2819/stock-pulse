@@ -14,7 +14,7 @@ const RANGE_MAP: Record<Range, { range: string; interval: string }> = {
   MAX: { range: "max", interval: "1mo" },
 };
 
-const UA = "Mozilla/5.0 (compatible; StockPulse/1.0)";
+const UA = "Mozilla/5.0 (compatible; BullHawk/1.0)";
 
 type YahooChartResult = {
   meta?: Record<string, number | string | undefined>;

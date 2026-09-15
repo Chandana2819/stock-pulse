@@ -8,10 +8,10 @@ const router = express.Router();
 
 const FAQ = [
   { q: "How do I add money to my simulated wallet?", a: "Go to Payments > Deposit. If payments are not configured in this environment, the wallet starts with a simulated balance for practice trading." },
-  { q: "Is trading on StockPulse real?", a: "By default, trades are simulated using a virtual wallet so you can practice without risk. Connecting a real broker under Settings > Brokers is required for real order placement." },
+  { q: "Is trading on BullHawk real?", a: "By default, trades are simulated using a virtual wallet so you can practice without risk. Connecting a real broker under Settings > Brokers is required for real order placement." },
   { q: "How is the Market Risk score calculated?", a: "It combines index trend, volatility (India VIX), global markets and a sector-divergence proxy — see the breakdown on the dashboard by clicking 'show factors'." },
   { q: "Why can't I see IPO GMP data?", a: "This environment does not have a licensed IPO/GMP data feed connected, so that section is intentionally empty rather than showing fabricated numbers." },
-  { q: "How do I connect my broker?", a: "Go to Settings > Brokers and choose a supported broker. You will be redirected to the broker's own login page — StockPulse never asks for your broker password." },
+  { q: "How do I connect my broker?", a: "Go to Settings > Brokers and choose a supported broker. You will be redirected to the broker's own login page — BullHawk never asks for your broker password." },
   { q: "Are the tax numbers official?", a: "No — the Tax & P&L section provides an estimate using simplified rules. Always confirm with a qualified tax professional before filing." },
 ];
 

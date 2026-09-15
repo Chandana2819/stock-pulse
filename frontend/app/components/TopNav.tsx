@@ -173,14 +173,11 @@ export default function TopNav({
       
       {/* Left side: Logo (hidden on desktop sidebar layout) */}
       <Link href="/" className="flex md:hidden items-center gap-2 no-underline z-50">
-        <div className="w-6 h-6 relative flex items-center justify-center shrink-0">
-          <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <polyline points="2,22 7,14 11,18 16,8 20,12 26,4" stroke="#00e5a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            <circle cx="26" cy="4" r="2.5" fill="#00e5a0" />
-          </svg>
+        <div className="w-10 h-10 relative flex items-center justify-center shrink-0">
+          <img src="/brand/logo-mark.png" alt="BullHawk" className="w-full h-full object-contain" />
         </div>
-        <h1 className="font-display text-[1.25rem] md:text-[1.5rem] tracking-[0.1em] text-text-custom leading-none select-none">
-          STOCK<span className="text-green-custom">PULSE</span>
+        <h1 className="font-display text-[1rem] md:text-[1.15rem] tracking-[0.1em] text-text-custom leading-none select-none">
+          <span className="text-green-custom">BULL</span>HAWK
         </h1>
       </Link>
 

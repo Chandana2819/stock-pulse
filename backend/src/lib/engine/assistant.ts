@@ -172,7 +172,7 @@ export async function smoothWithLlm(structuredAnswer: string, question: string):
           {
             role: "system",
             content:
-              "You are StockPulse's investment assistant. Rewrite the given factual answer in clear, concise prose for a retail investor. Do NOT add any numbers, facts, or claims that are not already present in the input. Keep all figures exactly as given. Keep it under 120 words.",
+              "You are BullHawk's investment assistant. Rewrite the given factual answer in clear, concise prose for a retail investor. Do NOT add any numbers, facts, or claims that are not already present in the input. Keep all figures exactly as given. Keep it under 120 words.",
           },
           { role: "user", content: `Question: ${question}\n\nFactual answer to rewrite:\n${structuredAnswer}` },
         ],

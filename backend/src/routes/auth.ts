@@ -70,7 +70,7 @@ router.post(
 
     const token = await issueSession(user.id, req);
     await audit(req, "auth.register", { userId: user.id });
-    await pushNotification({ userId: user.id, category: "SECURITY", title: "Welcome to StockPulse", body: "Your account was created successfully." });
+    await pushNotification({ userId: user.id, category: "SECURITY", title: "Welcome to BullHawk", body: "Your account was created successfully." });
 
     // Generate email verification OTP and welcome messages on registration
     try {
@@ -78,8 +78,11 @@ router.post(
       await EmailService.sendEmailVerificationOTP(email, code);
       await EmailService.sendWelcomeEmail(email, username);
       
-      // If Brevo key is absent, print verification code in terminal for developer fallback
-      if (!process.env.BREVO_API_KEY) {
+      // If Brevo key is absent, print verification code in terminal for developer
+      // fallback — but only outside production, so a missing BREVO_API_KEY in a
+      // real deployment fails safe (no email sent, no code logged) instead of
+      // leaking live users' verification codes into server logs.
+      if (!env.isProd && !process.env.BREVO_API_KEY) {
         console.log(`[otp] VERIFY_EMAIL code for ${email}: ${code} (dev-mode, not actually sent)`);
       }
     } catch (e) {
@@ -149,8 +152,8 @@ router.post(
       }
     }
 
-    // Dev mode fallback logging
-    if (!process.env.BREVO_API_KEY) {
+    // Dev mode fallback logging — never in production, see VERIFY_EMAIL case above.
+    if (!env.isProd && !process.env.BREVO_API_KEY) {
       console.log(`[otp] ${purpose} code for ${target} via ${channel}: ${code} (dev-mode, not actually sent)`);
     }
 
@@ -203,8 +206,8 @@ router.post(
         const code = await OtpService.generateOTP(email, "RESET_PASSWORD", "EMAIL", user.id);
         await EmailService.sendPasswordResetOTP(email, code);
 
-        // Dev mode fallback logging
-        if (!process.env.BREVO_API_KEY) {
+        // Dev mode fallback logging — never in production, see VERIFY_EMAIL case above.
+        if (!env.isProd && !process.env.BREVO_API_KEY) {
           console.log(`[otp] RESET_PASSWORD code for ${email}: ${code} (dev-mode, not actually sent)`);
         }
       } catch (err) {
@@ -282,7 +285,7 @@ router.post(
     await pushNotification({ userId: user.id, category: "SECURITY", priority: "HIGH", title: "Password changed", body: "Your password was reset. All other sessions were signed out." });
     
     // Security alert email
-    await EmailService.sendSecurityAlert(user.email || "", "Password Changed", "Your StockPulse password was successfully updated recently.");
+    await EmailService.sendSecurityAlert(user.email || "", "Password Changed", "Your BullHawk password was successfully updated recently.");
 
     return res.json({ success: true });
   })
@@ -354,8 +357,8 @@ router.post(
   asyncHandler(async (req, res) => {
     const secret = generateTotpSecret();
     await prisma.user.update({ where: { id: req.user!.id }, data: { twoFactorSecret: secret, twoFactorEnabled: false } });
-    const label = req.user!.email ?? req.user!.username ?? "StockPulse";
-    const otpauth = `otpauth://totp/StockPulse:${encodeURIComponent(label)}?secret=${secret}&issuer=StockPulse`;
+    const label = req.user!.email ?? req.user!.username ?? "BullHawk";
+    const otpauth = `otpauth://totp/BullHawk:${encodeURIComponent(label)}?secret=${secret}&issuer=BullHawk`;
     return res.json({ secret, otpauth });
   })
 );

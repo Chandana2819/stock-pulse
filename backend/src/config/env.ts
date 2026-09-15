@@ -66,6 +66,11 @@ export const env = {
 
   enableJobs: bool("ENABLE_BACKGROUND_JOBS", true),
   alertIntervalMs: num("ALERT_INTERVAL_MS", 120_000),
+  // Portfolio holdings hitting STRONG BUY/STRONG SELL run full live analysis
+  // (quote + candles + fundamentals + news) per symbol — too expensive to
+  // check on the same 2-minute cadence as simple price alerts, so this gets
+  // its own, longer interval.
+  signalAlertIntervalMs: num("SIGNAL_ALERT_INTERVAL_MS", 30 * 60_000),
 
   adminEmails: str("ADMIN_EMAILS", "")
     .split(",")

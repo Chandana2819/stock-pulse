@@ -210,21 +210,11 @@ export default function LoginPage() {
         
         {/* Brand Header */}
         <div className="flex flex-col items-center gap-2 text-center">
-          <div className="w-9 h-9 relative flex items-center justify-center">
-            <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <polyline
-                points="2,22 7,14 11,18 16,8 20,12 26,4"
-                stroke="#00e5a0"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                fill="none"
-              />
-              <circle cx="26" cy="4" r="2" fill="#00e5a0" />
-            </svg>
+          <div className="w-16 h-16 relative flex items-center justify-center">
+            <img src="/brand/logo-mark.png" alt="BullHawk" className="w-full h-full object-contain" />
           </div>
-          <h1 className="font-display text-[2.2rem] tracking-[0.15em] text-text-custom leading-none">
-            STOCK<span className="text-green-custom">PULSE</span>
+          <h1 className="font-display text-[1.7rem] tracking-[0.15em] text-text-custom leading-none">
+            <span className="text-green-custom">BULL</span>HAWK
           </h1>
           <p className="font-mono text-[0.6rem] text-text-3 tracking-[0.15em] uppercase">
             {"VIRTUAL PORTFOLIO & THESIS LOG"}
@@ -451,7 +441,7 @@ export default function LoginPage() {
 
         <div className="font-mono text-[0.55rem] text-text-3 text-center tracking-[0.05em] leading-normal border-t border-border-custom pt-4">
           {isLogin
-            ? "DEMO AUTHENTICATION · NEW ACCOUNTS GET ₹10,00,000 & $10,000 PLAY FUNDS"
+            ? "DEMO AUTHENTICATION · ADD FUNDS TO START SIMULATED TRADING"
             : "CREDENTIALS REMAIN SECURE ON LOCAL MIGRATED EXPRESS SQLITE ENGINE"}
         </div>
 

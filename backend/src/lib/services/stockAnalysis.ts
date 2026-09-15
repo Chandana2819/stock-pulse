@@ -88,7 +88,6 @@ export async function getRecentSignalTrend(symbol: string, currentScore: number)
 }
 
 export type StockAnalysisOptions = {
-  ownedQuantity?: number;
   portfolioWeightPct?: number;
   riskTolerance?: "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE";
   horizonYears?: number;
@@ -185,7 +184,6 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     volatility30d: indicators?.volatility30d ?? null,
     avgVolume: quote.avgVolume,
     volume: quote.volume,
-    ownedQuantity: opts.ownedQuantity ?? 0,
     candlesCount: candles.length,
   };
 

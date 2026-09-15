@@ -9,7 +9,7 @@ export async function getUserByDeviceId(deviceId: string) {
 
   let user = await prisma.user.findUnique({ where: { deviceId } });
   if (!user) {
-    user = await prisma.user.create({ data: { deviceId, walletInr: 1000000.0, walletUsd: 10000.0 } });
+    user = await prisma.user.create({ data: { deviceId } });
     await prisma.userProfile.create({ data: { userId: user.id } });
   }
   return user;

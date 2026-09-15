@@ -48,7 +48,7 @@ router.get(
       likes: post.likes,
       createdAt: post.createdAt,
       username: post.user?.username || "Anonymous",
-      fullName: post.user?.fullName || "StockPulse User",
+      fullName: post.user?.fullName || "BullHawk User",
       commentCount: post.comments.length,
       likedByMe: post.postLikes.length > 0,
       authorId: post.userId,
@@ -79,6 +79,7 @@ router.post(
         user: {
           select: {
             username: true,
+            fullName: true,
           },
         },
       },
@@ -90,11 +91,22 @@ router.post(
       entityId: post.id,
     });
 
+    // Same shape as GET /posts (see the `enriched` mapping above) — the
+    // frontend's Post type requires fullName/authorId, and a response
+    // missing them meant a freshly-published post rendered without its own
+    // Delete button until the next refetch.
     return res.json({
-      ...post,
+      id: post.id,
+      title: post.title,
+      content: post.content,
+      symbol: post.symbol,
+      likes: post.likes,
+      createdAt: post.createdAt,
       username: post.user?.username || "Anonymous",
+      fullName: post.user?.fullName || "BullHawk User",
       commentCount: 0,
       likedByMe: false,
+      authorId: post.userId,
     });
   })
 );
@@ -193,7 +205,7 @@ router.get(
       content: c.content,
       createdAt: c.createdAt,
       username: c.user?.username || "Anonymous",
-      fullName: c.user?.fullName || "StockPulse User",
+      fullName: c.user?.fullName || "BullHawk User",
       authorId: c.userId,
     }));
 
@@ -236,7 +248,7 @@ router.post(
       content: comment.content,
       createdAt: comment.createdAt,
       username: comment.user?.username || "Anonymous",
-      fullName: comment.user?.fullName || "StockPulse User",
+      fullName: comment.user?.fullName || "BullHawk User",
       authorId: comment.userId,
     });
   })
@@ -322,7 +334,7 @@ router.get(
       user: {
         id: targetUser.id,
         username: targetUser.username || "Anonymous",
-        fullName: targetUser.fullName || "StockPulse User",
+        fullName: targetUser.fullName || "BullHawk User",
         createdAt: targetUser.createdAt,
         role: targetUser.role,
       },
@@ -375,7 +387,7 @@ router.get(
         views: wl.views,
         createdAt: wl.createdAt,
         username: wl.user?.username || "Anonymous",
-        fullName: wl.user?.fullName || "StockPulse User",
+        fullName: wl.user?.fullName || "BullHawk User",
         likedByMe: wl.watchlistLikes.length > 0,
         authorId: wl.userId,
       };
@@ -406,6 +418,7 @@ router.post(
         user: {
           select: {
             username: true,
+            fullName: true,
           },
         },
       },
@@ -417,11 +430,19 @@ router.post(
       entityId: wl.id,
     });
 
+    // Same shape as GET /watchlists (see the `enriched` mapping above).
     return res.json({
-      ...wl,
-      symbols,
+      id: wl.id,
+      title: wl.title,
+      description: wl.description,
+      symbols: symbols.map((s: string) => s.trim().toUpperCase()),
+      likes: wl.likes,
+      views: wl.views,
+      createdAt: wl.createdAt,
       username: wl.user?.username || "Anonymous",
+      fullName: wl.user?.fullName || "BullHawk User",
       likedByMe: false,
+      authorId: wl.userId,
     });
   })
 );

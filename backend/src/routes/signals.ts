@@ -70,48 +70,58 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
 
     const enrichedHoldings = await getEnrichedHoldings(userId);
     if (enrichedHoldings.length > 0) {
-      for (const h of enrichedHoldings) {
-        let symbol = h.stock.toUpperCase().trim();
-        if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
-          symbol = `${symbol}.NS`;
-        } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
-          symbol = `${symbol}.BO`;
-        }
+      // Bounded-concurrency batching, matching the pattern already used for
+      // this same per-holding analysis in routes/portfolio.ts: running every
+      // holding's analysis (quote + 5Y candles + fundamentals + news) at
+      // once would fan out N simultaneous calls to the same market-data/news
+      // providers for a large portfolio, risking their rate limits.
+      const ANALYSIS_BATCH_SIZE = 6;
+      portfolioSignals = [];
+      for (let i = 0; i < enrichedHoldings.length; i += ANALYSIS_BATCH_SIZE) {
+        const batch = enrichedHoldings.slice(i, i + ANALYSIS_BATCH_SIZE);
+        const batchResults = await Promise.all(batch.map(async (h) => {
+          let symbol = h.stock.toUpperCase().trim();
+          if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
+            symbol = `${symbol}.NS`;
+          } else if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
+            symbol = `${symbol}.BO`;
+          }
 
-        const analysis = await buildStockAnalysis(symbol, { ownedQuantity: h.quantity }).catch(() => null);
-        const uItem = lookupUniverse(symbol);
+          const analysis = await buildStockAnalysis(symbol).catch(() => null);
+          const uItem = lookupUniverse(symbol);
 
-        if (analysis && analysis.found) {
-          const d = analysis.decision;
-          portfolioSignals.push({
-            id: `portfolio-${symbol}`,
-            symbol,
-            displaySymbol: h.displaySym,
-            name: h.displaySym,
-            sector: uItem?.sector || "Other",
-            sectorKey: uItem?.sectorKey || "OTHER",
-            exchange: h.exchange,
-            action: d.signal,
-            score: d.scores.final,
-            confidence: d.confidence,
-            risk: d.riskLevel,
-            reasons: d.reasons,
-            warnings: d.warnings,
-            entryZone: d.entryZone,
-            stopLoss: d.stopLoss,
-            targetRange: d.targetRange,
-            dataQuality: d.dataQuality,
-            horizon: d.horizon,
-            activeSince: d.activeSince,
-            quantity: h.quantity,
-            avgPrice: h.avgPrice,
-            currentPrice: h.currentPrice,
-            unrealizedPnl: h.pl,
-            investedValue: h.cost,
-            currentValue: h.value,
-          });
-        } else {
-          portfolioSignals.push({
+          if (analysis && analysis.found) {
+            const d = analysis.decision;
+            return {
+              id: `portfolio-${symbol}`,
+              symbol,
+              displaySymbol: h.displaySym,
+              name: h.displaySym,
+              sector: uItem?.sector || "Other",
+              sectorKey: uItem?.sectorKey || "OTHER",
+              exchange: h.exchange,
+              action: d.signal,
+              score: d.scores.final,
+              confidence: d.confidence,
+              risk: d.riskLevel,
+              reasons: d.reasons,
+              warnings: d.warnings,
+              entryZone: d.entryZone,
+              stopLoss: d.stopLoss,
+              targetRange: d.targetRange,
+              dataQuality: d.dataQuality,
+              horizon: d.horizon,
+              activeSince: d.activeSince,
+              quantity: h.quantity,
+              avgPrice: h.avgPrice,
+              currentPrice: h.currentPrice,
+              unrealizedPnl: h.pl,
+              investedValue: h.cost,
+              currentValue: h.value,
+            };
+          }
+
+          return {
             id: `portfolio-${symbol}`,
             symbol,
             displaySymbol: h.displaySym,
@@ -135,22 +145,29 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
             unrealizedPnl: h.pl,
             investedValue: h.cost,
             currentValue: h.value,
-          });
-        }
+          };
+        }));
+        portfolioSignals.push(...batchResults);
       }
     }
   }
 
-  // Apply filters - SELL/REDUCE and HOLD fetch from portfolio when userId is present
+  // Portfolio-based SELL/REDUCE/HOLD data is only usable when the user is
+  // logged in AND actually holds something; otherwise every count/filter
+  // below must consistently fall back to the market-scan table, or the
+  // summary tiles and the item list disagree about what's on screen.
+  const usePortfolioForSellHold = Boolean(userId) && portfolioSignals.length > 0;
+
+  // Apply filters - SELL/REDUCE and HOLD fetch from portfolio when the user has holdings
   if (actionFilter) {
     if (actionFilter === "BUY") {
       items = items.filter((item: any) => item.action.includes("BUY"));
     } else if (actionFilter === "SELL" || actionFilter === "REDUCE") {
-      items = userId && portfolioSignals.length > 0
+      items = usePortfolioForSellHold
         ? portfolioSignals.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE")
         : items.filter((item: any) => item.action.includes("SELL") || item.action === "REDUCE");
     } else if (actionFilter === "HOLD") {
-      items = userId && portfolioSignals.length > 0
+      items = usePortfolioForSellHold
         ? portfolioSignals.filter((item: any) => item.action === "HOLD")
         : items.filter((item: any) => item.action === "HOLD");
     } else {
@@ -178,20 +195,18 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     items.sort((a: any, b: any) => b.score - a.score);
   }
 
-  // Calculate signals overview counts: SELL and HOLD fetch from portfolio whenever userId is present
+  // Calculate signals overview counts: SELL and HOLD fetch from portfolio
+  // under the exact same condition used to build `items` above, so the
+  // summary tiles never disagree with what the list actually shows.
   const buyCount = recommendations.filter((r: any) => r.action.includes("BUY")).length;
   const waitCount = recommendations.filter((r: any) => r.action === "WAIT").length;
-  
-  let sellCount = 0;
-  let holdCount = 0;
 
-  if (userId) {
-    sellCount = portfolioSignals.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
-    holdCount = portfolioSignals.filter((r: any) => r.action === "HOLD").length;
-  } else {
-    sellCount = recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
-    holdCount = recommendations.filter((r: any) => r.action === "HOLD").length;
-  }
+  const sellCount = usePortfolioForSellHold
+    ? portfolioSignals.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length
+    : recommendations.filter((r: any) => r.action.includes("SELL") || r.action === "REDUCE").length;
+  const holdCount = usePortfolioForSellHold
+    ? portfolioSignals.filter((r: any) => r.action === "HOLD").length
+    : recommendations.filter((r: any) => r.action === "HOLD").length;
 
   const latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
   const scanTime = latestRisk ? latestRisk.createdAt : new Date();

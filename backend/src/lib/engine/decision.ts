@@ -1,4 +1,4 @@
-// Explainable decision engine for EQUistiq / StockPulse.
+// Explainable decision engine for EQUistiq / BullHawk.
 //
 // Calculates normalized 0-100 scores across 7 pillars:
 // 1. Trend (20%)
@@ -56,8 +56,6 @@ export type DecisionResult = {
 export type DecisionInput = {
   symbol: string;
   price: number;
-  averagePrice?: number | null;
-  quantity?: number;
   fundamentals: FundamentalsData | null;
   indicators: IndicatorSnapshot | null;
   priceChangePct: number | null;
@@ -67,7 +65,6 @@ export type DecisionInput = {
   volatility30d: number | null;
   avgVolume: number | null;
   volume: number | null;
-  ownedQuantity?: number;
   candlesCount?: number;
 };
 

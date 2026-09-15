@@ -34,7 +34,7 @@ router.post(
       if (!bank) throw ApiError.badRequest("Add and verify a primary bank account before requesting a withdrawal");
     }
 
-    const intent = await paymentProvider.createIntent({ amount, currency: "INR", userRef: req.user!.id, note: `StockPulse ${type.toLowerCase()}` });
+    const intent = await paymentProvider.createIntent({ amount, currency: "INR", userRef: req.user!.id, note: `BullHawk ${type.toLowerCase()}` });
     const payment = await prisma.payment.create({
       data: { userId: req.user!.id, provider: paymentProvider.id, providerRef: intent.providerRef, type, amount, currency: "INR", status: "CREATED", meta: JSON.stringify(intent.checkout) },
     });

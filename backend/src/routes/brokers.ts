@@ -78,7 +78,7 @@ router.get(
     
     if (provider.id === "ZERODHA") {
       console.log(`request_token received: ${rawToken ? "yes" : "no"}`);
-      console.log(`StockPulse user authenticated: ${req.user ? "yes" : "no"}`);
+      console.log(`BullHawk user authenticated: ${req.user ? "yes" : "no"}`);
     } else if (provider.id === "UPSTOX") {
       console.log(`[UPSTOX] Code present: ${rawToken ? "true" : "false"}`);
       console.log(`[UPSTOX] State present: ${query.state ? "true" : "false"}`);
@@ -90,19 +90,24 @@ router.get(
     
     const userId = req.user!.id;
 
-    // State validation — CSRF protection for the OAuth callback. Applies to
-    // every broker, not just the one that happened to get it originally:
-    // the state embedded at /:broker/connect (line 54, `${userId}:${state}`)
-    // is worthless as a CSRF defense if the callback never checks it came
-    // back unmodified for the same user. Skipped only for the unconfigured-
-    // provider demo redirect, which never issues a real state to check.
-    if (provider.configured) {
+    // State validation — CSRF protection for OAuth callbacks where supported (e.g. Upstox).
+    // Zerodha Kite Connect does not return or support a state parameter in its redirect URL;
+    // user identity is authenticated via the session Bearer token, and request_token is
+    // a one-time secret token exchanged directly with Zerodha's backend.
+    if (provider.id === "UPSTOX" && provider.configured) {
       const state = query.state;
       if (typeof state !== "string" || !state) {
         throw ApiError.badRequest("Missing state parameter");
       }
       const stateParts = state.split(":");
       if (stateParts[0] !== userId) {
+        console.error(`[${provider.id}] State validation failed. Expected user: ${userId}, got state prefix: ${stateParts[0]}`);
+        throw ApiError.badRequest("State validation failed: user ID mismatch");
+      }
+    } else if (provider.configured && query.state) {
+      const state = String(query.state);
+      const stateParts = state.split(":");
+      if (stateParts[0] && stateParts[0] !== userId) {
         console.error(`[${provider.id}] State validation failed. Expected user: ${userId}, got state prefix: ${stateParts[0]}`);
         throw ApiError.badRequest("State validation failed: user ID mismatch");
       }
@@ -136,35 +141,13 @@ router.get(
     } catch (err: any) {
       if (provider.id === "ZERODHA") {
         console.log("Zerodha session generation failed");
-        throw err;
+        const msg = err.response?.data?.message || err.message || "Failed to exchange request token with Zerodha";
+        throw ApiError.badRequest(`Zerodha authentication failed: ${msg}`);
       } else if (provider.id === "UPSTOX") {
         const status = err.response?.status || 500;
         const data = err.response?.data;
         console.log(`[UPSTOX] Token exchange response: ${status}`);
         console.error(`[UPSTOX] Token exchange failed. Status: ${status}, Response:`, data || err.message);
-
-        try {
-          const fs = require("fs");
-          const path = require("path");
-          const pAny = provider as any;
-          fs.writeFileSync(
-            path.join(__dirname, "../../upstox_last_error.json"),
-            JSON.stringify({
-              status,
-              data,
-              time: new Date().toISOString(),
-              sentParams: {
-                codeLength: rawToken?.length || 0,
-                clientIdLength: pAny.apiKey?.length || 0,
-                clientIdPreview: pAny.apiKey ? `${pAny.apiKey.slice(0, 4)}...${pAny.apiKey.slice(-4)}` : null,
-                clientSecretLength: pAny.apiSecret?.length || 0,
-                redirectUri: pAny.getRedirectUri ? pAny.getRedirectUri() : null,
-              }
-            }, null, 2)
-          );
-        } catch (fsErr) {
-          console.error("Failed to write diagnostic file:", fsErr);
-        }
 
         const upstoxErrorCode = data?.errors?.[0]?.errorCode || data?.error_code;
         const upstoxMessage = data?.errors?.[0]?.message || data?.error_description || err.message;

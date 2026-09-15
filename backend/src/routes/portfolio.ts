@@ -57,9 +57,7 @@ router.get(
       const batchResults = await Promise.all(
         batch.map(async (h) => {
           const symbol = h.stock;
-          const analysis = await buildStockAnalysis(symbol, {
-            ownedQuantity: h.quantity,
-          }).catch(() => null);
+          const analysis = await buildStockAnalysis(symbol).catch(() => null);
 
           const ltp = analysis?.quote?.price ?? h.currentPrice ?? h.avgPrice;
           const avgPrice = h.avgPrice;

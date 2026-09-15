@@ -31,7 +31,7 @@ function buildEmailTemplate(title: string, contentHtml: string): string {
         <div style="font-size: 10px; color: #6b7280; text-align: center; border-top: 1px solid #1c1c2e; padding-top: 20px; margin-top: 28px;">
           This is an automated security transmission. Please do not reply directly to this message.
           <br />
-          &copy; 2026 StockPulse Inc. All rights reserved.
+          &copy; 2026 BullHawk Inc. All rights reserved.
         </div>
       </div>
     </div>
@@ -52,8 +52,8 @@ export class EmailService {
 
   private static getSender() {
     return {
-      name: process.env.EMAIL_FROM_NAME || "StockPulse",
-      email: process.env.EMAIL_FROM || "no-reply@stockpulse.com",
+      name: process.env.EMAIL_FROM_NAME || "BullHawk",
+      email: process.env.EMAIL_FROM || "no-reply@bullhawk.com",
     };
   }
 
@@ -90,7 +90,7 @@ export class EmailService {
   public static async sendPasswordResetOTP(email: string, otp: string): Promise<boolean> {
     const title = "Password Reset Request";
     const content = `
-      We received a request to reset the password for your StockPulse account.
+      We received a request to reset the password for your BullHawk account.
       <br /><br />
       Your verification code is:
       <div style="font-family: monospace; font-size: 28px; font-weight: bold; color: #ff3b5c; letter-spacing: 0.15em; background-color: #181824; border: 1px dashed #ff3b5c; padding: 12px; margin: 20px 0; text-align: center; border-radius: 4px;">
@@ -100,14 +100,14 @@ export class EmailService {
       <br /><br />
       If you did not request this password reset, please change your password immediately or alert security if you suspect unauthorized access.
     `;
-    return this.sendEmail(email, "StockPulse password reset code", buildEmailTemplate(title, content));
+    return this.sendEmail(email, "BullHawk password reset code", buildEmailTemplate(title, content));
   }
 
   /** OTP Verification code to verify email address */
   public static async sendEmailVerificationOTP(email: string, otp: string): Promise<boolean> {
     const title = "Confirm Email Registration";
     const content = `
-      Thank you for registering at StockPulse. Please verify your email address to complete your account setup.
+      Thank you for registering at BullHawk. Please verify your email address to complete your account setup.
       <br /><br />
       Your email verification code is:
       <div style="font-family: monospace; font-size: 28px; font-weight: bold; color: #00e5a0; letter-spacing: 0.15em; background-color: #181824; border: 1px dashed #00e5a0; padding: 12px; margin: 20px 0; text-align: center; border-radius: 4px;">
@@ -117,16 +117,16 @@ export class EmailService {
       <br /><br />
       If you did not initiate this registration request, you can safely ignore this message.
     `;
-    return this.sendEmail(email, "Verify your StockPulse email", buildEmailTemplate(title, content));
+    return this.sendEmail(email, "Verify your BullHawk email", buildEmailTemplate(title, content));
   }
 
   /** Welcoming new users */
   public static async sendWelcomeEmail(email: string, name: string): Promise<boolean> {
-    const title = "Welcome to StockPulse";
+    const title = "Welcome to BullHawk";
     const content = `
       Welcome <strong>${name}</strong>,
       <br /><br />
-      We are excited to have you on board! StockPulse provides you with premium AI-backed investment signals, real-time watchlist monitoring, portfolio tracking, and comprehensive technical scanners.
+      We are excited to have you on board! BullHawk provides you with premium AI-backed investment signals, real-time watchlist monitoring, portfolio tracking, and comprehensive technical scanners.
       <br /><br />
       To get started:
       <ul>
@@ -136,14 +136,14 @@ export class EmailService {
       </ul>
       If you have any questions or need support, click the "Support" tab in your dashboard panel.
     `;
-    return this.sendEmail(email, "Welcome to StockPulse!", buildEmailTemplate(title, content));
+    return this.sendEmail(email, "Welcome to BullHawk!", buildEmailTemplate(title, content));
   }
 
   /** Security Alerts */
   public static async sendSecurityAlert(email: string, alertType: string, details: string): Promise<boolean> {
     const title = "Security Alert Triggered";
     const content = `
-      This is an important security notice regarding your StockPulse account.
+      This is an important security notice regarding your BullHawk account.
       <br /><br />
       <strong>Event Triggered</strong>: <span style="color: #ff3b5c; font-weight: bold;">${alertType}</span>
       <br />
@@ -153,7 +153,7 @@ export class EmailService {
       <br /><br />
       If you did not execute this action, please reset your password immediately or contact administration to lock your account.
     `;
-    return this.sendEmail(email, "StockPulse Security Alert", buildEmailTemplate(title, content));
+    return this.sendEmail(email, "BullHawk Security Alert", buildEmailTemplate(title, content));
   }
 
   /** KYC Verification Status Updates */
@@ -173,7 +173,7 @@ export class EmailService {
         : "Please review the rejection reason and re-submit your documents in the KYC tab."
       }
     `;
-    return this.sendEmail(email, `StockPulse KYC Status: ${status}`, buildEmailTemplate(title, content));
+    return this.sendEmail(email, `BullHawk KYC Status: ${status}`, buildEmailTemplate(title, content));
   }
 
   /** Stock Alert Triggers */

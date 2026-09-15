@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # prisma generate only needs the schema, not a live connection — the
+      # real connection string is only required at runtime via the adapter
+      # in lib/prisma.ts — but some tooling still expects the var to exist.
+      DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+
+      # Advisory only for now: the repo currently has ~120 pre-existing
+      # lint errors (mostly `no-explicit-any`) unrelated to any specific
+      # change. Blocking merges on those would make CI red on day one for
+      # reasons no single PR caused. Once that backlog is cleaned up,
+      # remove `continue-on-error` so lint becomes a real gate.
+      - run: npm run lint
+        continue-on-error: true

@@ -6,15 +6,24 @@ import { prisma } from "../prisma";
 import { marketDataProvider } from "../providers";
 import { pctChange, computeIndicators } from "../indicators";
 import { pushNotification } from "./notifications";
+import { resolveIndexSymbol } from "../symbols";
 
 const COOLDOWN_MS = 30 * 60 * 1000; // don't re-fire the same alert more than once per 30 minutes
+
+// A symbol-less alert is a market-wide one — the UI creates these under a
+// "MARKET" label (see alerts/page.tsx: `a.symbol ?? "MARKET"`), but nothing
+// here ever evaluated them: the old code only ever checked `if (alert.symbol)`,
+// so a market alert was accepted on creation and then silently never fired,
+// forever, with no error surfaced anywhere. NIFTY 50 is the natural proxy for
+// "the market" — the same index the dashboard's own Market Risk panel uses.
+const MARKET_PROXY_SYMBOL = resolveIndexSymbol("NIFTY 50").providerSymbol;
 
 export async function evaluateAlertsForUser(userId: string) {
   const alerts = await prisma.alert.findMany({ where: { userId, active: true } });
   if (alerts.length === 0) return { checked: 0, triggered: 0 };
 
-  const symbolAlerts = alerts.filter((a) => a.symbol);
-  const symbols = [...new Set(symbolAlerts.map((a) => a.symbol!))];
+  const targetSymbol = (alert: (typeof alerts)[number]) => alert.symbol ?? MARKET_PROXY_SYMBOL;
+  const symbols = [...new Set(alerts.map(targetSymbol))];
   const quotes = symbols.length ? await marketDataProvider.getQuotes(symbols) : {};
 
   let triggered = 0;
@@ -24,37 +33,37 @@ export async function evaluateAlertsForUser(userId: string) {
     let fireMessage: string | null = null;
     let value: number | null = null;
 
-    if (alert.symbol) {
-      const q = quotes[alert.symbol];
-      if (!q) continue;
-      const changePct = pctChange(q.price, q.prevClose);
+    const symbol = targetSymbol(alert);
+    const label = alert.symbol ?? "The market (NIFTY 50)";
+    const q = quotes[symbol];
+    if (!q) continue;
+    const changePct = pctChange(q.price, q.prevClose);
 
-      if (alert.type === "PRICE_ABOVE" && alert.threshold != null && q.price >= alert.threshold) {
-        fireMessage = `${alert.symbol} crossed above ${alert.threshold}`;
-        value = q.price;
-      } else if (alert.type === "PRICE_BELOW" && alert.threshold != null && q.price <= alert.threshold) {
-        fireMessage = `${alert.symbol} crossed below ${alert.threshold}`;
-        value = q.price;
-      } else if (alert.type === "PCT_MOVE" && alert.threshold != null && changePct != null && Math.abs(changePct) >= alert.threshold) {
-        fireMessage = `${alert.symbol} moved ${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}% today`;
-        value = changePct;
-      } else if (alert.type === "VOLUME_SPIKE" && alert.threshold != null && q.volume != null && q.avgVolume) {
-        const ratio = q.volume / q.avgVolume;
-        if (ratio >= alert.threshold) {
-          fireMessage = `${alert.symbol} volume is ${ratio.toFixed(1)}x its average`;
-          value = ratio;
-        }
-      } else if ((alert.type === "RSI_ABOVE" || alert.type === "RSI_BELOW") && alert.threshold != null) {
-        const candles = await marketDataProvider.getCandles(alert.symbol, "3M");
-        const rsi = candles.length > 20 ? computeIndicators(candles).rsi14 : null;
-        if (rsi != null) {
-          if (alert.type === "RSI_ABOVE" && rsi >= alert.threshold) {
-            fireMessage = `${alert.symbol} RSI(14) is ${rsi.toFixed(0)}, above your ${alert.threshold} threshold`;
-            value = rsi;
-          } else if (alert.type === "RSI_BELOW" && rsi <= alert.threshold) {
-            fireMessage = `${alert.symbol} RSI(14) is ${rsi.toFixed(0)}, below your ${alert.threshold} threshold`;
-            value = rsi;
-          }
+    if (alert.type === "PRICE_ABOVE" && alert.threshold != null && q.price >= alert.threshold) {
+      fireMessage = `${label} crossed above ${alert.threshold}`;
+      value = q.price;
+    } else if (alert.type === "PRICE_BELOW" && alert.threshold != null && q.price <= alert.threshold) {
+      fireMessage = `${label} crossed below ${alert.threshold}`;
+      value = q.price;
+    } else if (alert.type === "PCT_MOVE" && alert.threshold != null && changePct != null && Math.abs(changePct) >= alert.threshold) {
+      fireMessage = `${label} moved ${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}% today`;
+      value = changePct;
+    } else if (alert.type === "VOLUME_SPIKE" && alert.threshold != null && q.volume != null && q.avgVolume) {
+      const ratio = q.volume / q.avgVolume;
+      if (ratio >= alert.threshold) {
+        fireMessage = `${label} volume is ${ratio.toFixed(1)}x its average`;
+        value = ratio;
+      }
+    } else if ((alert.type === "RSI_ABOVE" || alert.type === "RSI_BELOW") && alert.threshold != null) {
+      const candles = await marketDataProvider.getCandles(symbol, "3M");
+      const rsi = candles.length > 20 ? computeIndicators(candles).rsi14 : null;
+      if (rsi != null) {
+        if (alert.type === "RSI_ABOVE" && rsi >= alert.threshold) {
+          fireMessage = `${label} RSI(14) is ${rsi.toFixed(0)}, above your ${alert.threshold} threshold`;
+          value = rsi;
+        } else if (alert.type === "RSI_BELOW" && rsi <= alert.threshold) {
+          fireMessage = `${label} RSI(14) is ${rsi.toFixed(0)}, below your ${alert.threshold} threshold`;
+          value = rsi;
         }
       }
     }

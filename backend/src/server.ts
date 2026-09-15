@@ -4,7 +4,9 @@ import { env, assertProductionConfig, reportUpstoxConfig } from "./config/env";
 import { attachUser } from "./middleware/auth";
 import { globalLimiter } from "./middleware/rateLimit";
 import { errorHandler, notFoundHandler } from "./middleware/error";
+import { requestLogger } from "./middleware/requestLogger";
 import { startBackgroundJobs } from "./jobs/scheduler";
+import { logger } from "./lib/logger";
 
 import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
@@ -56,6 +58,7 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: "1mb" }));
+app.use(requestLogger);
 
 // ─── Security headers ───
 app.use((req, res, next) => {
@@ -110,6 +113,6 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`[StockPulse Backend] Server running on http://localhost:${PORT}`);
+  logger.info(`BullHawk backend listening`, { port: PORT });
   startBackgroundJobs();
 });

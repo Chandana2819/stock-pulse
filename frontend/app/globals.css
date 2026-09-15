@@ -1,19 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  /* Default: Dark Theme */
-  --bg: #050508;
-  --bg-1: #0c0c12;
-  --bg-2: #111118;
-  --bg-3: #1a1a24;
-  --bg-4: #22222e;
-  --border-custom: rgba(255, 255, 255, 0.06);
-  --border-bright: rgba(255, 255, 255, 0.12);
+  /* Default: Dark Theme — warm ink, not the generic pure-black terminal look.
+     A faint brown/olive undertone (not a blue-grey undertone, which reads as
+     "standard dark-mode UI kit") makes the dark surfaces feel considered
+     rather than a default #000 canvas. */
+  --bg: #0b0a08;
+  --bg-1: #131110;
+  --bg-2: #1a1715;
+  --bg-3: #24201d;
+  --bg-4: #2f2a26;
+  --border-custom: rgba(255, 250, 240, 0.07);
+  --border-bright: rgba(255, 250, 240, 0.14);
 
-  --text-custom: #ffffff;
-  --text-2: #f3f4f6;
-  --text-3: #e5e7eb;
-  --text-4: #d1d5db;
+  --text-custom: #faf7f2;
+  --text-2: #ece6dc;
+  --text-3: #d8cfc0;
+  --text-4: #b7ab98;
 
   --green-custom: #00e5a0;
   --green-dim: rgba(0, 229, 160, 0.12);
@@ -32,19 +35,20 @@
 }
 
 .light {
-  /* Light Theme Override */
-  --bg: #f8fafc;
-  --bg-1: #ffffff;
-  --bg-2: #f1f5f9;
-  --bg-3: #e2e8f0;
-  --bg-4: #cbd5e1;
-  --border-custom: rgba(15, 23, 42, 0.08);
-  --border-bright: rgba(15, 23, 42, 0.14);
+  /* Light Theme Override — warm paper tone instead of clinical white, to
+     match the editorial-ledger direction rather than a generic light UI kit. */
+  --bg: #f7f3ea;
+  --bg-1: #fffdf8;
+  --bg-2: #efe9db;
+  --bg-3: #e2d9c4;
+  --bg-4: #cfc2a4;
+  --border-custom: rgba(41, 31, 16, 0.1);
+  --border-bright: rgba(41, 31, 16, 0.18);
 
-  --text-custom: #0f172a;
-  --text-2: #334155;
-  --text-3: #475569;
-  --text-4: #64748b;
+  --text-custom: #201a10;
+  --text-2: #3d3423;
+  --text-3: #5b4f3a;
+  --text-4: #7d715a;
 
   --green-custom: #10b981;
   --green-dim: rgba(16, 185, 129, 0.12);
@@ -94,11 +98,11 @@
   --color-purple-custom: var(--purple-custom);
 
   --font-mono: var(--font-jetbrains-mono), monospace;
-  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
   --font-body: var(--font-inter), sans-serif;
 
-  --radius-custom: 2px;
-  --radius-lg-custom: 4px;
+  --radius-custom: 5px;
+  --radius-lg-custom: 10px;
 
   /* Tailwind CSS v4 Theme Animations & Keyframes */
   --animate-ticker-scroll: ticker-scroll 30s linear infinite;

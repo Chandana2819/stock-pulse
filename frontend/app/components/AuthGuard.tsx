@@ -280,14 +280,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         {/* Logo Section */}
         <div className="flex items-center gap-3 py-5 px-6 border-b border-border-custom justify-between shrink-0">
           <Link href="/" className="flex items-center gap-3 no-underline">
-            <div className="w-6 h-6 relative flex items-center justify-center shrink-0">
-              <svg viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <polyline points="2,22 7,14 11,18 16,8 20,12 26,4" stroke="#00e5a0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-                <circle cx="26" cy="4" r="2.5" fill="#00e5a0" />
-              </svg>
+            <div className="w-12 h-12 relative flex items-center justify-center shrink-0">
+              <img src="/brand/logo-mark.png" alt="BullHawk" className="w-full h-full object-contain" />
             </div>
-            <h1 className="font-display text-[1.25rem] tracking-[0.1em] text-text-custom leading-none select-none">
-              STOCK<span className="text-green-custom">PULSE</span>
+            <h1 className="font-display text-[0.95rem] tracking-[0.1em] text-text-custom leading-none select-none">
+              <span className="text-green-custom">BULL</span>HAWK
             </h1>
           </Link>
           <button

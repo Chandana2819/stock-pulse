@@ -102,7 +102,6 @@ router.get(
     }
 
     const analysis = await buildStockAnalysis(symbolRaw, {
-      ownedQuantity,
       portfolioWeightPct: portfolioWeightPct ?? undefined,
       riskTolerance,
       horizonYears,
@@ -193,7 +192,6 @@ router.get(
     const symbolRaw = req.params.symbol;
     const marketRiskScore = await currentMarketRiskScore();
 
-    let ownedQuantity = 0;
     let portfolioWeightPct: number | null = null;
     let riskTolerance: "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE" = "MODERATE";
     let horizonYears = 5;
@@ -208,7 +206,6 @@ router.get(
       const resolved = await resolveStockQuote(symbolRaw);
       const holding = holdings.find((h) => h.stock === resolved.resolved.providerSymbol);
       if (holding) {
-        ownedQuantity = holding.quantity;
         const quotes = await marketDataProvider.getQuotes(holdings.map((h) => h.stock));
         const totalValue = holdings.reduce((sum, h) => sum + (quotes[h.stock]?.price ?? h.avgPrice) * h.quantity, 0);
         const thisValue = (quotes[holding.stock]?.price ?? holding.avgPrice) * holding.quantity;
@@ -217,7 +214,6 @@ router.get(
     }
 
     const analysis = await buildStockAnalysis(symbolRaw, {
-      ownedQuantity,
       portfolioWeightPct: portfolioWeightPct ?? undefined,
       riskTolerance,
       horizonYears,

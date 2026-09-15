@@ -31,6 +31,17 @@ export default function BrokerLoginPage() {
 
   // Auto-complete connection if request_token (Zerodha) or code (other OAuth) is in URL search parameters
   useEffect(() => {
+    // Checked before the code/token guard below — a cancelled login redirects
+    // back with no code or request_token at all, so requiring one here would
+    // make this branch unreachable in the exact case it exists to handle.
+    if (status === "cancelled") {
+      if (!hasCalledCallback.current) {
+        hasCalledCallback.current = true;
+        setError("Broker login was cancelled.");
+      }
+      return;
+    }
+
     const code = searchParams.get("code") || requestToken;
     if (!code || hasCalledCallback.current) return;
 
@@ -40,7 +51,13 @@ export default function BrokerLoginPage() {
       setLoading(true);
       setError(null);
       try {
-        await apiFetch(`/api/brokers/callback/${broker.toUpperCase()}?code=${code}&state=${state}`);
+        const query = new URLSearchParams();
+        query.set("code", code);
+        if (state) query.set("state", state);
+        if (action) query.set("action", action);
+        if (status) query.set("status", status);
+
+        await apiFetch(`/api/brokers/callback/${broker.toUpperCase()}?${query.toString()}`);
         
         // Trigger holdings sync with Bearer token authentication
         await apiFetch(`/api/brokers/${broker.toUpperCase()}/sync`, {
@@ -58,7 +75,7 @@ export default function BrokerLoginPage() {
           if (err && typeof err === "object" && "code" in err) {
             const code = (err as any).code;
             if (code === "UPSTOX_INVALID_CLIENT") {
-              errMsg = "Invalid Upstox application credentials. Please verify the StockPulse Upstox API Key and Secret.";
+              errMsg = "Invalid Upstox application credentials. Please verify the BullHawk Upstox API Key and Secret.";
             } else if (code === "UPSTOX_INVALID_REDIRECT_URI") {
               errMsg = "Redirect URI mismatch. Please verify the Upstox application configuration.";
             } else if (code === "UPSTOX_INVALID_AUTHORIZATION_CODE") {

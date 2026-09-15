@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, Fraunces, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import AuthGuard from "./components/AuthGuard";
 
@@ -9,10 +9,17 @@ const inter = Inter({
   weight: ["300", "400", "500", "600", "700", "800"],
 });
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+// Replaces the previous geometric-sans display font. A serif headline face is
+// the single biggest lever for not reading as "yet another dark-mode trading
+// terminal" — that look (monospace everywhere, geometric sans headlines,
+// pure-black background) is the default for nearly every crypto/trading
+// dashboard. An editorial serif borrows from financial print (FT, The
+// Economist) instead, while the brand green/mascot stay unchanged.
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["500", "600", "700", "900"],
+  style: ["normal", "italic"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
@@ -22,7 +29,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "StockPulse Stock Advisor",
+  title: "BullHawk Stock Advisor",
   description: "Analyze stocks, manage portfolios, and record trade theses.",
 };
 
@@ -34,7 +41,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${fraunces.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
       <body className="bg-bg text-text-custom min-h-full flex flex-col">
         <AuthGuard>{children}</AuthGuard>

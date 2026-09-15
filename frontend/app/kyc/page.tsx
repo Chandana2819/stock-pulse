@@ -288,7 +288,7 @@ export default function KycPage() {
           <div>
             <h1 className="font-display text-lg tracking-[0.1em] text-text-custom uppercase font-semibold">SIGN IN REQUIRED</h1>
             <p className="font-mono text-[0.65rem] text-text-3 mt-2 leading-relaxed uppercase">
-              Please sign in to your StockPulse account before completing KYC.
+              Please sign in to your BullHawk account before completing KYC.
             </p>
           </div>
           <div className="mt-2">
@@ -654,7 +654,7 @@ export default function KycPage() {
                 className="mt-0.5 border border-border-bright rounded bg-bg-2 accent-green-custom focus:ring-green-custom h-4 w-4 cursor-pointer"
               />
               <label htmlFor="kyc-consent" className="text-[0.68rem] font-mono text-text-3 leading-relaxed cursor-pointer select-none">
-                I consent to StockPulse using the information provided for identity verification and KYC purposes.
+                I consent to BullHawk using the information provided for identity verification and KYC purposes.
               </label>
             </div>
           </div>

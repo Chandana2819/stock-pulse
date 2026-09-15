@@ -32,7 +32,7 @@ export class RazorpayProvider implements PaymentProvider {
         amount: Math.round(input.amount * 100), // paise
         currency: input.currency,
         receipt: `sp_${input.userRef}_${Date.now()}`,
-        notes: { note: input.note ?? "StockPulse wallet deposit" },
+        notes: { note: input.note ?? "BullHawk wallet deposit" },
       },
       { auth: this.auth(), timeout: 12000 }
     );
