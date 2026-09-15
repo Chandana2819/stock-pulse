@@ -14,7 +14,7 @@ import HoldingsPortfolio, { Holding } from "./components/HoldingsPortfolio";
 import TradeModal from "./components/TradeModal";
 import KpiDetailModal, { KpiDetailData } from "./components/KpiDetailModal";
 import SectorExplorerModal, { SectorPerf } from "./components/SectorExplorerModal";
-import { API_BASE } from "./lib/api";
+import { api, API_BASE } from "./lib/api";
 
 const DEFAULT_PINNED_SECTORS = ["IT", "BANK", "AUTO", "PHARMA", "FMCG", "ENERGY", "REALTY", "FIN"];
 
@@ -379,33 +379,14 @@ export default function Home() {
 
   const handleExecuteTrade = async (type: "BUY" | "SELL", qty: number, price: number) => {
     if (!data) return;
-    const deviceId = localStorage.getItem("sp_device_id");
-    if (!deviceId) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/transactions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-device-id": deviceId,
-        },
-        body: JSON.stringify({
-          stock: data.stock,
-          type,
-          quantity: qty,
-          price,
-        }),
+      await api.post("/api/transactions", {
+        stock: data.stock,
+        type,
+        quantity: qty,
+        price,
       });
-
-      const json = await res.json();
-      if (!res.ok) {
-        addToast({
-          type: "danger",
-          title: "Order Failed",
-          message: json.error || "Trade execution failed.",
-        });
-        return;
-      }
 
       // Re-fetch database state
       await fetchWalletAndHoldings();

@@ -43,6 +43,10 @@ tmp/
 temp/
 **/tmp/
 **/temp/
+scratch/
+**/scratch/
+.claude/
+
 
 # Local databases
 *.db

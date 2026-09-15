@@ -245,12 +245,8 @@ export default function PortfolioPage() {
           
           if (isNaN(qty) || isNaN(price) || qty <= 0 || price <= 0) continue;
 
-          await fetch(`${API_BASE}/api/transactions`, {
+          await apiFetch("/api/transactions", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-device-id": deviceId,
-            },
             body: JSON.stringify({
               stock: sym.toUpperCase(),
               type: "BUY",
@@ -304,12 +300,8 @@ export default function PortfolioPage() {
         ];
 
         for (const trade of mockTrades) {
-          await fetch(`${API_BASE}/api/transactions`, {
+          await apiFetch("/api/transactions", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-device-id": deviceId,
-            },
             body: JSON.stringify(trade),
           });
         }

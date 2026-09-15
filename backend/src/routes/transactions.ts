@@ -28,19 +28,19 @@ router.post(
         stock: v.string({ min: 1, max: 24, pattern: SYMBOL_RE }), 
         type: v.enumOf(["BUY", "SELL"] as const), 
         quantity: v.number({ min: 0.0001 }), 
-        price: v.number({ min: 0.01 }),
+        price: v.optional(v.number({ min: 0.01 })),
         isVirtual: v.optional(v.boolean())
       },
       req.body
     );
 
     const transaction = await executeTransaction(req.user!.id, stock, type, quantity, price, !!isVirtual);
-    await audit(req, "portfolio.transaction", { entity: "Transaction", entityId: transaction.id, meta: { stock, type, quantity, price, isVirtual: !!isVirtual } });
+    await audit(req, "portfolio.transaction", { entity: "Transaction", entityId: transaction.id, meta: { stock: transaction.stock, type, quantity, price: transaction.price, isVirtual: !!isVirtual } });
     await pushNotification({
       userId: req.user!.id,
       category: "ORDER",
       title: `${type === "BUY" ? "Bought" : "Sold"} ${transaction.stock}`,
-      body: `${quantity} shares at ${price.toFixed(2)} (simulated order)`,
+      body: `${quantity} shares at ${transaction.price.toFixed(2)} (simulated order)`,
       link: `/stock/${transaction.stock}`,
     });
     return res.json(transaction);

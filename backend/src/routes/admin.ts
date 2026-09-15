@@ -270,6 +270,52 @@ router.patch(
   })
 );
 
+router.patch(
+  "/users/:id/kyc",
+  requirePermission("kyc"),
+  asyncHandler(async (req, res) => {
+    const { status, reason } = parse(
+      {
+        status: v.enumOf(["VERIFIED", "REJECTED", "PENDING"] as const),
+        reason: v.optional(v.string({ max: 500 })),
+      },
+      req.body
+    );
+    const targetId = req.params.id;
+
+    const user = await prisma.user.findUnique({ where: { id: targetId }, include: { kycRecord: true } });
+    if (!user) throw ApiError.notFound("User not found");
+
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      const u = await tx.user.update({
+        where: { id: targetId },
+        data: { kycStatus: status },
+      });
+
+      if (user.kycRecord) {
+        await tx.kycRecord.update({
+          where: { userId: targetId },
+          data: {
+            amlStatus: status === "VERIFIED" ? "CLEARED" : status === "REJECTED" ? "FLAGGED" : "PENDING",
+            verifiedAt: status === "VERIFIED" ? new Date() : null,
+            rejectedReason: status === "REJECTED" ? (reason || "Rejected by administrator") : null,
+          },
+        });
+      }
+
+      return u;
+    });
+
+    await audit(req, "KYC_STATUS_UPDATED", {
+      entity: "User",
+      entityId: targetId,
+      meta: { oldStatus: user.kycStatus, newStatus: status, reason },
+    });
+
+    return res.json({ id: updatedUser.id, kycStatus: updatedUser.kycStatus });
+  })
+);
+
 router.post(
   "/users/:id/adjust-wallet",
   requirePermission("users"),

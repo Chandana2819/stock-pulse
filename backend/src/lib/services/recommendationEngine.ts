@@ -34,6 +34,8 @@ export class RecommendationEngine {
     newsSentimentScore?: number | null;
     newsArticles?: Array<{ title: string; sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" }>;
     ownedQuantity?: number;
+    avgVolume?: number | null;
+    volume?: number | null;
   }): RecommendationResult {
     const priceChangePct = input.prevClose && input.prevClose > 0 
       ? ((input.price - input.prevClose) / input.prevClose) * 100 
@@ -49,8 +51,8 @@ export class RecommendationEngine {
       sectorChangePct: input.sectorChangePct,
       newsArticles: input.newsArticles,
       volatility30d: input.indicators?.volatility30d ?? null,
-      avgVolume: input.indicators?.avgVolume20d ?? null,
-      volume: input.indicators?.currentVolume ?? null,
+      avgVolume: input.avgVolume ?? null,
+      volume: input.volume ?? null,
       ownedQuantity: input.ownedQuantity,
       candlesCount: input.candlesCount,
     });

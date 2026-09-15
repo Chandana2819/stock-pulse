@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { getBroker } from "../providers";
+import { getBroker, marketDataProvider } from "../providers";
 import { decryptSecret } from "../crypto";
 
 export async function syncUserBroker(userId: string, brokerId: string) {

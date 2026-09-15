@@ -1,8 +1,8 @@
 import { prisma } from "../prisma";
-import { marketDataProvider } from "../providers";
+import { marketDataProvider, resolveStockQuote } from "../providers";
+import { lookupUniverse } from "../universe";
 import { ApiError } from "../http";
 import { xirr, type CashFlow } from "../finance";
-import { lookupUniverse } from "../universe";
 
 export async function getUserByDeviceId(deviceId: string) {
   if (!deviceId) throw ApiError.badRequest("Device ID is required");
@@ -26,26 +26,72 @@ export async function executeTransaction(
   stockSymbol: string,
   type: "BUY" | "SELL",
   quantity: number,
-  price: number,
+  price?: number,
   isVirtual = false
 ) {
-  const stock = stockSymbol.toUpperCase();
-  // A bare symbol typed without its exchange suffix (e.g. "RELIANCE" instead
-  // of "RELIANCE.NS" — the natural thing to type in the manual transaction
-  // form) used to fall through to the GLOBAL/USD branch below, crediting or
-  // debiting the wrong wallet for a real NSE stock. Check the reference
-  // universe by display name first — it knows the real exchange regardless
-  // of whether a suffix was typed — and only fall back to the suffix
-  // heuristic for symbols outside that universe (genuine global tickers).
-  const universeEntry = lookupUniverse(stock);
-  const isBse = stock.endsWith(".BO");
-  const isNse = !isBse && (stock.endsWith(".NS") || universeEntry?.exchange === "NSE");
-  const isGlobal = !isBse && !isNse;
-  const currency = isGlobal ? "USD" : "INR";
-  const exchange = isBse ? "BSE" : isNse ? "NSE" : "GLOBAL";
-  const displaySym = stock.replace(/^\^/, "").replace(/\.(NS|BO)$/, "");
+  const rawSymbol = stockSymbol.trim().toUpperCase();
 
-  const subtotal = price * quantity;
+  // 1. Resolve canonical symbol, exchange, currency, and display symbol
+  let stock = rawSymbol;
+  let displaySym = rawSymbol.replace(/^\^/, "").replace(/\.(NS|BO)$/, "");
+  let exchange: "NSE" | "BSE" | "GLOBAL" = "GLOBAL";
+  let currency: "INR" | "USD" = "USD";
+
+  const uni = lookupUniverse(rawSymbol);
+  if (uni) {
+    stock = uni.symbol;
+    displaySym = uni.display;
+    exchange = uni.exchange === "NSE" ? "NSE" : "GLOBAL";
+    currency = exchange === "NSE" ? "INR" : "USD";
+  } else if (rawSymbol.endsWith(".NS")) {
+    stock = rawSymbol;
+    exchange = "NSE";
+    currency = "INR";
+  } else if (rawSymbol.endsWith(".BO")) {
+    stock = rawSymbol;
+    exchange = "BSE";
+    currency = "INR";
+  } else {
+    // Attempt dynamic quote resolution to detect exchange/currency
+    try {
+      const res = await resolveStockQuote(rawSymbol);
+      if (res && res.resolved) {
+        stock = res.resolved.providerSymbol;
+        displaySym = res.resolved.displaySymbol;
+        exchange = res.resolved.exchange === "BSE" ? "BSE" : res.resolved.exchange === "NSE" ? "NSE" : "GLOBAL";
+        currency = exchange === "GLOBAL" ? "USD" : "INR";
+      }
+    } catch {
+      // Keep fallbacks
+    }
+  }
+
+  // 2. Fetch live quote to verify execution price
+  let livePrice: number | null = null;
+  try {
+    const q = await marketDataProvider.getQuote(stock);
+    if (q?.price && q.price > 0) {
+      livePrice = q.price;
+    }
+  } catch (err) {
+    console.warn(`[portfolio] Unable to fetch live quote for ${stock} during order execution:`, err);
+  }
+
+  let execPrice: number;
+  if (livePrice != null) {
+    // If client price is missing or deviates by > 5% from live market, enforce live market price
+    if (price == null || price <= 0 || Math.abs(price - livePrice) / livePrice > 0.05) {
+      execPrice = livePrice;
+    } else {
+      execPrice = price;
+    }
+  } else if (price != null && price > 0) {
+    execPrice = price;
+  } else {
+    throw ApiError.badRequest(`Cannot determine execution price for ${displaySym}. Market quote unavailable.`);
+  }
+
+  const subtotal = execPrice * quantity;
   const fee = subtotal * 0.001; // 0.1% simulated brokerage fee
   const totalCost = type === "BUY" ? subtotal + fee : subtotal - fee;
 
@@ -64,18 +110,38 @@ export async function executeTransaction(
         }
       }
 
-      const existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
+      // Check both exact canonical stock and rawSymbol to merge legacy holdings
+      let existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
+      if (!existing && rawSymbol !== stock) {
+        existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock: rawSymbol } } });
+      }
+
       if (existing) {
         const newQty = existing.quantity + quantity;
-        const newAvg = (existing.avgPrice * existing.quantity + price * quantity) / newQty;
-        await tx.holding.update({ where: { id: existing.id }, data: { quantity: newQty, avgPrice: newAvg, source: "MANUAL" } });
+        const newAvg = (existing.avgPrice * existing.quantity + execPrice * quantity) / newQty;
+        await tx.holding.update({
+          where: { id: existing.id },
+          data: {
+            stock, // ensure updated to canonical
+            displaySym,
+            exchange,
+            currency,
+            quantity: newQty,
+            avgPrice: newAvg,
+            source: "MANUAL",
+          },
+        });
       } else {
         await tx.holding.create({
-          data: { userId: user.id, stock, displaySym, exchange, avgPrice: price, quantity, currency, source: "MANUAL" },
+          data: { userId: user.id, stock, displaySym, exchange, avgPrice: execPrice, quantity, currency, source: "MANUAL" },
         });
       }
     } else {
-      const existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
+      let existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock } } });
+      if (!existing && rawSymbol !== stock) {
+        existing = await tx.holding.findUnique({ where: { userId_stock: { userId: user.id, stock: rawSymbol } } });
+      }
+
       if (!existing || existing.quantity < quantity) throw ApiError.badRequest("Insufficient stock shares to execute sell");
 
       if (!isVirtual) {
@@ -94,7 +160,7 @@ export async function executeTransaction(
     }
 
     return tx.transaction.create({
-      data: { userId: user.id, stock, type, price, quantity, fee, totalCost, currency },
+      data: { userId: user.id, stock, type, price: execPrice, quantity, fee, totalCost, currency },
     });
   });
 }
@@ -105,7 +171,7 @@ export async function getEnrichedHoldings(userId: string) {
   const holdings = await prisma.holding.findMany({ where: { userId }, orderBy: { stock: "asc" } });
   if (holdings.length === 0) return [];
 
-  // Map each database symbol to its proper Yahoo Finance provider symbol based on its exchange suffix
+  // Map each database symbol to its proper Yahoo Finance provider symbol based on its exchange suffix or universe lookup
   const symbols = holdings.map((h) => {
     const symbol = h.stock.toUpperCase().trim();
     if (h.exchange === "NSE" && !symbol.endsWith(".NS")) {
@@ -113,6 +179,10 @@ export async function getEnrichedHoldings(userId: string) {
     }
     if (h.exchange === "BSE" && !symbol.endsWith(".BO")) {
       return `${symbol}.BO`;
+    }
+    const uni = lookupUniverse(symbol);
+    if (uni && uni.exchange === "NSE" && !symbol.endsWith(".NS") && !symbol.endsWith(".BO")) {
+      return uni.symbol;
     }
     return symbol;
   });
