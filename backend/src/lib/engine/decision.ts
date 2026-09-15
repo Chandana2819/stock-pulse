@@ -48,6 +48,8 @@ export type DecisionResult = {
   warnings: string[];
   mainRisk: string;
   wouldChange: string[];
+  /** One plain-English sentence synthesizing *why* the signal is what it is — the thing reasons[] alone doesn't say. */
+  synthesis: string;
   dataQuality: "EXCELLENT" | "GOOD" | "MODERATE" | "POOR" | "INSUFFICIENT";
   dataQualityScore: number; // 0..100
   horizon: SignalHorizon;
@@ -121,7 +123,9 @@ function computeMomentumPillar(ind: IndicatorSnapshot | null): PillarScore {
 
   if (ind.rsi14 != null) {
     const rsi = ind.rsi14;
-    evidence.push(`RSI(14) is at ${rsi.toFixed(1)}`);
+    // Interpretation first, raw number second — reasons[] (see computeDecision)
+    // only ever surfaces evidence[0] per pillar, so the qualitative read has
+    // to lead or a user only ever sees the bare RSI value with no context.
     if (rsi >= 50 && rsi <= 65) {
       score += 25; // healthy bullish momentum
       evidence.push("RSI indicates healthy bullish momentum");
@@ -131,6 +135,8 @@ function computeMomentumPillar(ind: IndicatorSnapshot | null): PillarScore {
     } else if (rsi >= 75) {
       score -= 10;
       evidence.push("RSI indicates overbought conditions (>75)");
+    } else if (rsi >= 40 && rsi < 50) {
+      evidence.push("RSI is neutral, no clear momentum either way");
     } else if (rsi >= 30 && rsi < 40) {
       score -= 15;
       evidence.push("RSI shows weak momentum");
@@ -138,6 +144,7 @@ function computeMomentumPillar(ind: IndicatorSnapshot | null): PillarScore {
       score -= 25;
       evidence.push("RSI indicates oversold conditions (<30)");
     }
+    evidence.push(`RSI(14) is at ${rsi.toFixed(1)}`);
   }
 
   if (ind.macd) {
@@ -163,7 +170,9 @@ function computeVolumePillar(ind: IndicatorSnapshot | null, volume: number | nul
   const volRatio = ind?.volumeTrendRatio ?? (volume && avgVolume && avgVolume > 0 ? volume / avgVolume : null);
 
   if (volRatio != null) {
-    evidence.push(`Volume is ${volRatio.toFixed(2)}x of 20-day average`);
+    // Interpretation first, raw ratio second — same reasoning as the
+    // momentum/sentiment pillars: reasons[] (see computeDecision) only ever
+    // surfaces evidence[0], so the qualitative read has to lead.
     if (volRatio >= 1.5) {
       if (priceChangePct != null && priceChangePct > 0) {
         score += 35;
@@ -173,13 +182,18 @@ function computeVolumePillar(ind: IndicatorSnapshot | null, volume: number | nul
         evidence.push("High volume distribution/selling pressure on price fall");
       } else {
         score += 10;
+        evidence.push("Elevated volume with no clear price direction");
       }
     } else if (volRatio >= 1.0) {
       score += 10;
+      evidence.push("Volume is in line with normal trading activity");
     } else if (volRatio < 0.6) {
       score -= 15;
       evidence.push("Low volume indicates lack of buying interest");
+    } else {
+      evidence.push("Volume is slightly below average, nothing notable");
     }
+    evidence.push(`Volume is ${volRatio.toFixed(2)}x of 20-day average`);
   } else {
     return { key: "volume", label: "Volume", score: 50, weight: SCORING_WEIGHTS.volume, evidence: ["Volume average data unavailable"], available: false };
   }
@@ -252,8 +266,15 @@ function computeSentimentPillar(newsArticles?: DecisionInput["newsArticles"]): P
   const total = newsArticles.length;
 
   const score = clamp0to100(50 + ((posCount - negCount) / total) * 40);
+  const label =
+    score >= 70 ? "News sentiment leans strongly positive" :
+    score >= 58 ? "News sentiment leans positive" :
+    score <= 30 ? "News sentiment leans strongly negative" :
+    score <= 42 ? "News sentiment leans negative" :
+    "News sentiment is mixed / neutral";
   const evidence = [
-    `News sentiment breakdown: ${posCount} positive, ${total - posCount - negCount} neutral, ${negCount} negative out of ${total} articles`
+    label,
+    `News sentiment breakdown: ${posCount} positive, ${total - posCount - negCount} neutral, ${negCount} negative out of ${total} articles`,
   ];
 
   return { key: "sentiment", label: "News Sentiment", score, weight: SCORING_WEIGHTS.sentiment, evidence, available: true };
@@ -322,6 +343,62 @@ function computeMarketSectorPillar(marketRiskScore: number | null, sectorChangeP
 
   const combined = clamp0to100(0.6 * marketScore + 0.4 * sectorScore);
   return { key: "marketSector", label: "Market & Sector", score: combined, weight: SCORING_WEIGHTS.marketSector, evidence, available: true };
+}
+
+// Ties the pillar breakdown into one plain-English sentence — the thing
+// reasons[] (a flat bullet list) can't say on its own: not just *what* each
+// pillar shows, but *why those add up* to this specific signal. A user
+// reading 6 disconnected facts still has to do this synthesis themselves;
+// this does it for them.
+function buildSynthesis(
+  signal: SignalAction,
+  usable: PillarScore[],
+  mainRisk: string,
+  overrideWarning: string | undefined,
+  dataQualityLabel: DecisionResult["dataQuality"]
+): string {
+  if (overrideWarning) {
+    // A rule fired (insufficient data, elevated market risk, or a downtrend)
+    // and capped what would otherwise have been a BUY — say so plainly,
+    // since this is exactly the case where reasons[] alone looks
+    // contradictory (bullish-sounding bullets next to a WAIT verdict).
+    return overrideWarning.replace(/^BUY signal overridden to WAIT/, "This would otherwise be a BUY, but is held to WAIT");
+  }
+
+  if (dataQualityLabel === "INSUFFICIENT") {
+    return "There isn't enough reliable data yet to generate a confident call — treat this as a placeholder, not a recommendation.";
+  }
+
+  const bullish = [...usable].filter((p) => p.score >= 60).sort((a, b) => b.score - a.score);
+  const bearish = [...usable].filter((p) => p.score <= 40).sort((a, b) => a.score - b.score);
+  const lead = (pillars: PillarScore[]) => pillars.slice(0, 2).map((p) => p.label).join(" and ");
+
+  if (signal === "STRONG BUY" || signal === "BUY") {
+    const support = lead(bullish);
+    const caveat = bearish.length > 0 ? `, though ${lead(bearish)} ${bearish.length === 1 ? "is" : "are"} still a drag` : "";
+    return support
+      ? `Rated ${signal} because ${support} ${bullish.length === 1 ? "looks" : "look"} favorable${caveat}.`
+      : `Rated ${signal} on balance, though no single factor stands out strongly.`;
+  }
+
+  if (signal === "SELL" || signal === "STRONG SELL" || signal === "REDUCE") {
+    const drag = lead(bearish);
+    const caveat = bullish.length > 0 ? `, despite ${lead(bullish)} looking favorable` : "";
+    return drag
+      ? `Rated ${signal} because ${drag} ${bearish.length === 1 ? "is" : "are"} working against the stock${caveat}.`
+      : `Rated ${signal} on balance${caveat}, though nothing looks decisively negative — ${mainRisk.charAt(0).toLowerCase()}${mainRisk.slice(1)}`;
+  }
+
+  if (signal === "HOLD") {
+    return bullish.length > 0 && bearish.length > 0
+      ? `Rated HOLD — ${lead(bullish)} ${bullish.length === 1 ? "looks" : "look"} favorable while ${lead(bearish)} ${bearish.length === 1 ? "pulls" : "pull"} the other way, with no clear edge either side.`
+      : "Rated HOLD — factors are balanced, with no single pillar strong enough to justify a bigger move.";
+  }
+
+  // WAIT with no specific override matched above (falls through to the
+  // generic "insufficient data" framing already handled) — kept for
+  // exhaustiveness in case future signal values are added.
+  return `Rated ${signal} — ${mainRisk.charAt(0).toLowerCase()}${mainRisk.slice(1)}`;
 }
 
 export function computeDecision(input: DecisionInput): DecisionResult {
@@ -447,6 +524,13 @@ export function computeDecision(input: DecisionInput): DecisionResult {
   if (signal === "REDUCE" || signal === "SELL" || signal === "STRONG SELL") wouldChange.push("Trend reversal above EMA20 with volume confirmation or earnings recovery");
   if (wouldChange.length === 0) wouldChange.push("Material shift in technical momentum or fundamental ratios");
 
+  // Only Rule B/C actually "override" a call (they say so explicitly); the
+  // data-quality warnings pushed earlier are generic and shouldn't be
+  // mistaken for one, or a merely-incomplete-data case would get narrated
+  // as if a rule had overridden a BUY.
+  const overrideWarning = warnings.find((w) => w.includes("overridden"));
+  const synthesis = buildSynthesis(signal, usable, mainRisk, overrideWarning, dataQualityLabel);
+
   return {
     symbol: input.symbol,
     signal,
@@ -457,6 +541,7 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     warnings: warnings.slice(0, 4),
     mainRisk,
     wouldChange,
+    synthesis,
     dataQuality: dataQualityLabel,
     dataQualityScore,
     horizon: computeSignalHorizon(pillars, signal),

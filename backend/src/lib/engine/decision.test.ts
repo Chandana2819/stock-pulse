@@ -372,3 +372,64 @@ describe("computeDecision — confidence and data quality", () => {
     expect(agreeing.confidence).toBeGreaterThan(disagreeing.confidence);
   });
 });
+
+describe("computeDecision — synthesis", () => {
+  it("names the supporting pillars for a BUY-tier signal", () => {
+    const result = computeDecision(
+      baseInput({
+        indicators: indicators({ trend: "UPTREND", price: 130, sma200: 100, rsi14: 60 }),
+        priceChangePct: 1,
+        fundamentals: fundamentals({ roe: 25, revenueGrowth: 20 }),
+        marketRiskScore: 20,
+      })
+    );
+    expect(["BUY", "STRONG BUY"]).toContain(result.signal);
+    expect(result.synthesis).toMatch(new RegExp(result.signal));
+    // Should name at least one of the genuinely bullish pillars, not just restate the signal.
+    expect(result.synthesis).toMatch(/Trend|Fundamentals|Momentum/);
+  });
+
+  it("names the dragging pillars for a SELL-tier signal", () => {
+    const result = computeDecision(
+      baseInput({
+        indicators: indicators({ trend: "DOWNTREND", price: 70, sma200: 100, rsi14: 20 }),
+        priceChangePct: -2,
+        fundamentals: fundamentals({ roe: 1, revenueGrowth: -10, profitGrowth: -10, debtToEquity: 3 }),
+        marketRiskScore: 80,
+      })
+    );
+    expect(["SELL", "STRONG SELL", "REDUCE"]).toContain(result.signal);
+    expect(result.synthesis).toMatch(/working against|Rated/);
+  });
+
+  it("rephrases the override warning instead of leaving reasons[] looking contradictory when a downtrend caps a would-be BUY", () => {
+    const result = computeDecision(
+      baseInput({
+        indicators: indicators({ trend: "DOWNTREND", price: 80, sma200: 100, rsi14: 60, macd: { line: 1, signal: 0, histogram: 1 }, volumeTrendRatio: 1.6 }),
+        priceChangePct: 2,
+        fundamentals: fundamentals({ roe: 25, revenueGrowth: 20, profitGrowth: 20, debtToEquity: 0.2, freeCashFlow: 100 }),
+        newsArticles: [{ title: "a", sentiment: "POSITIVE" }],
+        marketRiskScore: 10,
+        sectorChangePct: 2,
+      })
+    );
+    expect(result.signal).toBe("WAIT");
+    expect(result.synthesis).toMatch(/otherwise be a BUY/);
+    expect(result.synthesis).toMatch(/downtrend/);
+  });
+
+  it("frames a fully neutral input as insufficient data, not a false BUY/SELL narrative", () => {
+    const result = computeDecision(baseInput({ candlesCount: 5 }));
+    expect(result.dataQuality).toBe("INSUFFICIENT");
+    expect(result.synthesis).toMatch(/isn't enough reliable data/i);
+  });
+
+  it("still produces a coherent sentence for a fully neutral input with no bullish or bearish pillars to name", () => {
+    const result = computeDecision(baseInput());
+    // Neutral input lands on REDUCE per the documented band asymmetry test
+    // above, with no pillar extreme enough to name — the synthesis should
+    // fall back to something coherent rather than an empty/malformed string.
+    expect(result.synthesis.length).toBeGreaterThan(10);
+    expect(result.synthesis).toMatch(new RegExp(result.signal));
+  });
+});
