@@ -1061,32 +1061,47 @@ function SignalCard({ item }: { item: SignalItem }) {
         </div>
       )}
 
-      {/* Explainer bullets */}
-      <div>
-        <span className="font-mono text-[0.52rem] text-text-3 tracking-[0.1em] uppercase block mb-1">DECISION JUSTIFICATIONS:</span>
-        <ul className="flex flex-col gap-1 pr-2">
-          {item.reasons.map((r, idx) => (
-            <li key={idx} className="text-xs text-text-2 flex gap-1.5 items-start">
-              <span className="text-green-custom shrink-0">✓</span> {r}
-            </li>
-          ))}
-        </ul>
-      </div>
+      {/* warnings[] mixes two different things: an actual rule override
+          (Rule B/C — always says "overridden", e.g. a downtrend capping a
+          would-be BUY to WAIT) and generic data-quality notes (missing
+          fundamentals/indicators). Only the former is worth an alarming
+          amber callout; the latter is just a caveat and belongs in the
+          regular justifications list, not framed as if something was
+          overridden when nothing was. */}
+      {(() => {
+        const overrideWarnings = item.warnings.filter((w) => w.includes("overridden"));
+        const dataQualityNotes = item.warnings.filter((w) => !w.includes("overridden"));
+        return (
+          <>
+            <div>
+              <span className="font-mono text-[0.52rem] text-text-3 tracking-[0.1em] uppercase block mb-1">DECISION JUSTIFICATIONS:</span>
+              <ul className="flex flex-col gap-1 pr-2">
+                {item.reasons.map((r, idx) => (
+                  <li key={`r-${idx}`} className="text-xs text-text-2 flex gap-1.5 items-start">
+                    <span className="text-green-custom shrink-0">✓</span> {r}
+                  </li>
+                ))}
+                {dataQualityNotes.map((w, idx) => (
+                  <li key={`w-${idx}`} className="text-xs text-text-3 flex gap-1.5 items-start">
+                    <span className="text-text-4 shrink-0">✕</span> {w}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-      {/* Warnings double as the "why this override happened" explanation —
-          highlighted separately so an overridden call (e.g. BUY capped to
-          WAIT by a downtrend) doesn't look like it's just one bullet among
-          many that don't otherwise add up. */}
-      {item.warnings.length > 0 && (
-        <div className="border border-amber-custom/40 bg-amber-dim p-2.5">
-          <span className="font-mono text-[0.52rem] text-amber-custom tracking-[0.1em] uppercase block mb-1">⚠ Overridden:</span>
-          <ul className="flex flex-col gap-1">
-            {item.warnings.map((w, idx) => (
-              <li key={idx} className="text-xs text-text-2">{w}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+            {overrideWarnings.length > 0 && (
+              <div className="border border-amber-custom/40 bg-amber-dim p-2.5">
+                <span className="font-mono text-[0.52rem] text-amber-custom tracking-[0.1em] uppercase block mb-1">⚠ Overridden:</span>
+                <ul className="flex flex-col gap-1">
+                  {overrideWarnings.map((w, idx) => (
+                    <li key={idx} className="text-xs text-text-2">{w}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {item.mainRisk && (
         <div>
