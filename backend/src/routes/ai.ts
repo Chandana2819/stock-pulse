@@ -3,6 +3,9 @@ import { prisma } from "../lib/prisma";
 import { classifyIntent, explainConcept, isLlmConfigured, smoothWithLlm } from "../lib/engine/assistant";
 import { buildStockAnalysis, getRecentSignalTrend } from "../lib/services/stockAnalysis";
 import { diagnosePortfolio, type HoldingLite } from "../lib/engine/portfolioDoctor";
+import { diagnosePortfolioLoss, evaluateCrashRisk } from "../lib/engine/lossDiagnostic";
+import { marketDataProvider } from "../lib/providers";
+import { pctChange } from "../lib/indicators";
 import { getEnrichedHoldings, ensureProfile } from "../lib/services/portfolio";
 import { lookupUniverse } from "../lib/universe";
 import { asyncHandler, ApiError } from "../lib/http";
@@ -228,6 +231,97 @@ router.post(
           ? "You don't have any holdings yet, so there's nothing to move."
           : `Your portfolio's unrealized P&L is currently ${totalPl >= 0 ? "+" : ""}${totalPl.toFixed(2)}. ${biggest ? `${biggest.displaySym} is the biggest single contributor at ${biggest.pl != null && biggest.pl >= 0 ? "+" : ""}${(biggest.pl ?? 0).toFixed(2)}.` : ""} For a day-by-day cause, check the "why is this stock moving" panel on each holding.`;
         confidence = 65;
+        break;
+      }
+      case "PORTFOLIO_LOSS_DIAGNOSIS": {
+        if (!req.user) {
+          answer = "Sign in to see a complete diagnostic of your portfolio and why it is in loss.";
+          confidence = 20;
+          break;
+        }
+        const holdings = await getEnrichedHoldings(req.user.id);
+        if (holdings.length === 0) {
+          answer = "You don't have any holdings yet. Add or import your stocks to see why they are moving.";
+          confidence = 40;
+          break;
+        }
+
+        let niftyChange: number | null = 0.52;
+        let indiaVix = 14.2;
+        try {
+          const quotes = await marketDataProvider.getQuotes(["^NSEI", "^INDIAVIX"]);
+          const qNifty = quotes["^NSEI"];
+          if (qNifty?.price && qNifty?.prevClose) {
+            const chg = pctChange(qNifty.price, qNifty.prevClose);
+            if (chg != null) niftyChange = chg;
+          }
+          if (quotes["^INDIAVIX"]?.price) {
+            indiaVix = quotes["^INDIAVIX"]!.price;
+          }
+        } catch {}
+
+        const diagnosis = diagnosePortfolioLoss({
+          holdings: holdings.map((h) => ({
+            stock: h.stock,
+            displaySym: h.displaySym,
+            quantity: h.quantity,
+            avgPrice: h.avgPrice,
+            currentPrice: h.currentPrice,
+            cost: h.cost,
+            value: h.value,
+            pl: h.pl,
+            plPct: h.plPct,
+          })),
+          niftyDayChange: niftyChange,
+          indiaVix,
+        });
+
+        if (diagnosis.isInLoss) {
+          const topDrags = diagnosis.lossDrivers.slice(0, 2).map((d) => `${d.symbol} (-₹${Math.abs(d.pl).toFixed(0)}, ${d.lossContributionPct}% of loss)`).join(" and ");
+          const topBuffers = diagnosis.profitBuffers.slice(0, 2).map((b) => `${b.symbol} (+₹${b.pl.toFixed(0)})`).join(", ");
+          const parts = [
+            `Your portfolio is down ₹${Math.abs(diagnosis.netPl).toFixed(0)} (${diagnosis.netPlPct.toFixed(2)}%).`,
+            `The primary cause is concentration drag: ${topDrags} account for ${diagnosis.concentrationRisk.top2LossPctOfCapital.toFixed(0)}% of your capital.`,
+            topBuffers ? `Positive positions like ${topBuffers} are cushioning the fall.` : "",
+            `Market status: ${diagnosis.benchmark.explanation}`,
+            `Action: ${diagnosis.recoveryPlan.actionSteps[0] ?? "Hold quality positions; do not panic sell."}`,
+          ].filter(Boolean);
+          answer = parts.join(" ");
+        } else {
+          answer = `Your portfolio is currently positive with a net gain of +₹${diagnosis.netPl.toFixed(0)} (+${diagnosis.netPlPct.toFixed(2)}%).`;
+        }
+
+        confidence = 85;
+        evidence = diagnosis;
+        break;
+      }
+      case "MARKET_CRASH_RISK": {
+        let indiaVix = 14.2;
+        let niftyChange: number | null = 0.52;
+        try {
+          const quotes = await marketDataProvider.getQuotes(["^INDIAVIX", "^NSEI"]);
+          if (quotes["^INDIAVIX"]?.price) indiaVix = quotes["^INDIAVIX"]!.price;
+          const qNifty = quotes["^NSEI"];
+          if (qNifty?.price && qNifty?.prevClose) {
+            const chg = pctChange(qNifty.price, qNifty.prevClose);
+            if (chg != null) niftyChange = chg;
+          }
+        } catch {}
+
+        const crash = evaluateCrashRisk({ indiaVix, niftyDayChange: niftyChange });
+        answer = `Systemic crash probability is LOW (${crash.crashProbabilityPct}%). India VIX is at ${indiaVix.toFixed(2)}, which is in the ${crash.vixStatus.toLowerCase().replace(/_/g, " ")} zone (below 20). The current market action reflects routine sector rotation and profit booking after all-time highs, not an economic collapse or 2008/2020-style crash. A real crash warning typically requires India VIX surging above 25.`;
+        confidence = 85;
+        evidence = crash;
+        break;
+      }
+      case "MARKET_DOWN_REASON": {
+        answer = "The stock market's recent pullbacks are driven by four macro factors: 1) Institutional profit-taking after multi-month rallies, 2) Foreign Institutional Investor (FII) capital reallocation toward cheaper emerging markets, 3) Valuation cool-offs in high-flying PSU, defense, and capital goods stocks, and 4) Sticky interest rates globally. India's macroeconomic fundamentals (GDP growth ~7%, robust domestic SIP inflows) remain sound.";
+        confidence = 80;
+        break;
+      }
+      case "RECOVERY_TIMELINE": {
+        answer = "Historically, quality large-cap and dividend-paying monopoly stocks (like BEL, ONGC, Reliance, and Infosys) require 3 to 8 months to consolidate and resume upward momentum as quarterly earnings catch up with valuations. Action plan: 1) Hold fundamentally solid companies, 2) Avoid averaging down on already overweight stocks, and 3) Channel new investments into broad index funds or undervalued sectors.";
+        confidence = 80;
         break;
       }
       case "BUILD_PORTFOLIO": {

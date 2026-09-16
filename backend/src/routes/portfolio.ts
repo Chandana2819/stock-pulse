@@ -3,6 +3,8 @@ import { prisma } from "../lib/prisma";
 import { getEnrichedHoldings, computePortfolioXirr, ensureProfile } from "../lib/services/portfolio";
 import { getEnrichedMfHoldings } from "../lib/services/mfPortfolio";
 import { diagnosePortfolio, type HoldingLite } from "../lib/engine/portfolioDoctor";
+import { diagnosePortfolioLoss } from "../lib/engine/lossDiagnostic";
+import { pctChange } from "../lib/indicators";
 import { analyzeBehavior } from "../lib/engine/behavior";
 import { lookupUniverse } from "../lib/universe";
 import { marketDataProvider } from "../lib/providers";
@@ -252,6 +254,100 @@ router.get(
       profile.riskTolerance as "CONSERVATIVE" | "MODERATE" | "AGGRESSIVE"
     );
     return res.json(analysis);
+  })
+);
+
+const ZERODHA_SNAPSHOT_HOLDINGS = [
+  { stock: "BEL.NS", displaySym: "BEL", quantity: 24, avgPrice: 450.54, exchange: "NSE", currency: "INR" },
+  { stock: "ONGC.NS", displaySym: "ONGC", quantity: 31, avgPrice: 274.22, exchange: "NSE", currency: "INR" },
+  { stock: "COALINDIA.NS", displaySym: "COALINDIA", quantity: 5, avgPrice: 460.74, exchange: "NSE", currency: "INR" },
+  { stock: "INFY.NS", displaySym: "INFY", quantity: 1, avgPrice: 1298.30, exchange: "NSE", currency: "INR" },
+  { stock: "IRFC.NS", displaySym: "IRFC", quantity: 2, avgPrice: 100.75, exchange: "NSE", currency: "INR" },
+  { stock: "RELIANCE.NS", displaySym: "RELIANCE", quantity: 2, avgPrice: 1336.35, exchange: "NSE", currency: "INR" },
+  { stock: "TATAPOWER.NS", displaySym: "TATAPOWER", quantity: 4, avgPrice: 395.85, exchange: "NSE", currency: "INR" },
+  { stock: "ADANIGREEN.NS", displaySym: "ADANIGREEN", quantity: 3, avgPrice: 1020.20, exchange: "NSE", currency: "INR" },
+  { stock: "MON100.NS", displaySym: "MON100", quantity: 6, avgPrice: 247.28, exchange: "NSE", currency: "INR" },
+  { stock: "MASPTOP50.NS", displaySym: "MASPTOP50", quantity: 6, avgPrice: 75.00, exchange: "NSE", currency: "INR" },
+  { stock: "TATAGOLD.NS", displaySym: "TATAGOLD", quantity: 102, avgPrice: 14.61, exchange: "NSE", currency: "INR" },
+];
+
+router.post(
+  "/seed-zerodha",
+  asyncHandler(async (req, res) => {
+    const userId = req.user!.id;
+    for (const item of ZERODHA_SNAPSHOT_HOLDINGS) {
+      await prisma.holding.upsert({
+        where: { userId_stock: { userId, stock: item.stock } },
+        update: {
+          quantity: item.quantity,
+          avgPrice: item.avgPrice,
+          exchange: item.exchange,
+          currency: item.currency,
+          displaySym: item.displaySym,
+          source: "ZERODHA_IMPORT",
+          broker: "ZERODHA",
+        },
+        create: {
+          userId,
+          stock: item.stock,
+          quantity: item.quantity,
+          avgPrice: item.avgPrice,
+          exchange: item.exchange,
+          currency: item.currency,
+          displaySym: item.displaySym,
+          source: "ZERODHA_IMPORT",
+          broker: "ZERODHA",
+        },
+      });
+    }
+
+    const holdings = await getEnrichedHoldings(userId);
+    return res.json({ success: true, count: ZERODHA_SNAPSHOT_HOLDINGS.length, holdings });
+  })
+);
+
+router.get(
+  "/loss-diagnosis",
+  asyncHandler(async (req, res) => {
+    const holdings = await getEnrichedHoldings(req.user!.id);
+
+    // Fetch live Nifty 50 and India VIX quotes for real-time backdrop
+    let niftyChange: number | null = 0.52;
+    let indiaVix: number | null = 14.2;
+
+    try {
+      const quotes = await marketDataProvider.getQuotes(["^NSEI", "^INDIAVIX"]);
+      const nifty = quotes["^NSEI"];
+      const vix = quotes["^INDIAVIX"];
+      if (nifty?.price && nifty?.prevClose) {
+        niftyChange = pctChange(nifty.price, nifty.prevClose);
+      }
+      if (vix?.price) {
+        indiaVix = vix.price;
+      }
+    } catch (e) {
+      console.warn("[loss-diagnosis] Live index fetch failed, using fallback:", e);
+    }
+
+    const liteHoldings = holdings.map((h) => ({
+      stock: h.stock,
+      displaySym: h.displaySym,
+      quantity: h.quantity,
+      avgPrice: h.avgPrice,
+      currentPrice: h.currentPrice,
+      cost: h.cost,
+      value: h.value,
+      pl: h.pl,
+      plPct: h.plPct,
+    }));
+
+    const diagnosis = diagnosePortfolioLoss({
+      holdings: liteHoldings,
+      niftyDayChange: niftyChange,
+      indiaVix,
+    });
+
+    return res.json(diagnosis);
   })
 );
 

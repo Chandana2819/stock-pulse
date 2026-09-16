@@ -73,9 +73,17 @@ export class ZerodhaKiteProvider implements BrokerProvider {
   async getHoldings(accessToken: string): Promise<BrokerHolding[]> {
     if (accessToken === "mock_access_token_123" && !env.isProd) {
       return [
-        { symbol: "TCS.NS", quantity: 5, avgPrice: 3420.00, exchange: "NSE" },
-        { symbol: "INFY.NS", quantity: 10, avgPrice: 1450.00, exchange: "NSE" },
-        { symbol: "RELIANCE.NS", quantity: 2, avgPrice: 2393.865, exchange: "NSE" },
+        { symbol: "BEL.NS", quantity: 24, avgPrice: 450.54, exchange: "NSE" },
+        { symbol: "ONGC.NS", quantity: 31, avgPrice: 274.22, exchange: "NSE" },
+        { symbol: "COALINDIA.NS", quantity: 5, avgPrice: 460.74, exchange: "NSE" },
+        { symbol: "INFY.NS", quantity: 1, avgPrice: 1298.30, exchange: "NSE" },
+        { symbol: "IRFC.NS", quantity: 2, avgPrice: 100.75, exchange: "NSE" },
+        { symbol: "RELIANCE.NS", quantity: 2, avgPrice: 1336.35, exchange: "NSE" },
+        { symbol: "TATAPOWER.NS", quantity: 4, avgPrice: 395.85, exchange: "NSE" },
+        { symbol: "ADANIGREEN.NS", quantity: 3, avgPrice: 1020.20, exchange: "NSE" },
+        { symbol: "MON100.NS", quantity: 6, avgPrice: 247.28, exchange: "NSE" },
+        { symbol: "MASPTOP50.NS", quantity: 6, avgPrice: 75.00, exchange: "NSE" },
+        { symbol: "TATAGOLD.NS", quantity: 102, avgPrice: 14.61, exchange: "NSE" },
       ];
     }
 

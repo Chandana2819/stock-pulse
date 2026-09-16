@@ -7,14 +7,15 @@ import { api, ApiRequestError } from "../lib/api";
 type Msg = { role: "user" | "assistant"; text: string; confidence?: number; symbol?: string | null };
 
 const SUGGESTIONS = [
-  "Why is TCS falling?",
+  "Why am I in loss?",
+  "Is there an upcoming stock market crash?",
+  "When will my portfolio recover?",
+  "Why is the stock market down?",
+  "Why is BEL falling?",
   "Should I add more Infosys?",
-  "Compare TCS vs Infosys",
   "How much am I exposed to IT?",
   "What are my biggest risks?",
   "Explain PE ratio",
-  "Create a ₹10,000 diversified portfolio",
-  "Why did my portfolio fall today?",
 ];
 
 export default function AssistantPage() {

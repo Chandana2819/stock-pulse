@@ -26,6 +26,10 @@ export type AssistantIntent =
   | { type: "PORTFOLIO_RISK" }
   | { type: "PORTFOLIO_EXPOSURE"; sectorHint?: string }
   | { type: "PORTFOLIO_MOVE_TODAY" }
+  | { type: "PORTFOLIO_LOSS_DIAGNOSIS" }
+  | { type: "MARKET_CRASH_RISK" }
+  | { type: "MARKET_DOWN_REASON" }
+  | { type: "RECOVERY_TIMELINE" }
   | { type: "BUILD_PORTFOLIO"; amount: number }
   | { type: "CONCEPT_EXPLAIN"; term: string }
   | { type: "UNKNOWN" };
@@ -99,6 +103,26 @@ export function classifyIntent(question: string): AssistantIntent {
     if (q.includes(`explain ${term}`) || q === term || q.includes(`what is ${term}`) || q.includes(`what's ${term}`)) {
       return { type: "CONCEPT_EXPLAIN", term };
     }
+  }
+
+  // "Why am I in loss" / portfolio loss diagnostic (check first because it addresses investor's personal capital and includes crash/recovery context)
+  if (/(why am i (in|at) loss|why (is|did) my portfolio (in loss|down|falling|red|loss)|why am i losing|am i in loss|portfolio loss|why loss)/.test(q)) {
+    return { type: "PORTFOLIO_LOSS_DIAGNOSIS" };
+  }
+
+  // Recovery timeline
+  if (/(when will (.*?)recover|recovery|when will it bounce back|how long to recover|when will loss recover)/.test(q)) {
+    return { type: "RECOVERY_TIMELINE" };
+  }
+
+  // Crash risk questions
+  if (/(crash|upcoming crash|will market crash|is market crashing|stock market crash|market collapse|market breakdown)/.test(q)) {
+    return { type: "MARKET_CRASH_RISK" };
+  }
+
+  // Why is the market down
+  if (/(why (is|are) (the )?(stock )?markets? (down|falling|dropping|red|crashing)|why did (the )?market fall|why market down)/.test(q)) {
+    return { type: "MARKET_DOWN_REASON" };
   }
 
   const symbolFromText = (text: string): string | undefined => extractSymbols(text, 1)[0];
