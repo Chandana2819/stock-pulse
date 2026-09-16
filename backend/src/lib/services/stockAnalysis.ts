@@ -235,10 +235,52 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     else riskLevel = "VERY HIGH";
 
     // Determine Market Status
-    const marketState = quote.marketState ?? "CLOSED";
-    const marketStatus = marketState === "REGULAR" ? "OPEN" :
-                         marketState.includes("PRE") ? "PRE_MARKET" :
-                         marketState.includes("POST") ? "POST_MARKET" : "CLOSED";
+    let marketStatus: "OPEN" | "PRE_MARKET" | "POST_MARKET" | "CLOSED" = "CLOSED";
+    const marketState = quote.marketState ? quote.marketState.toUpperCase() : null;
+
+    if (marketState === "REGULAR" || marketState === "OPEN") {
+      marketStatus = "OPEN";
+    } else if (marketState?.includes("PRE")) {
+      marketStatus = "PRE_MARKET";
+    } else if (marketState?.includes("POST")) {
+      marketStatus = "POST_MARKET";
+    } else {
+      // Exchange trading hours fallback when provider marketState is missing or closed
+      const now = new Date();
+      if (resolved.exchange === "NSE" || resolved.exchange === "BSE" || symbol.endsWith(".NS") || symbol.endsWith(".BO")) {
+        const istStr = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+        const istDate = new Date(istStr);
+        const day = istDate.getDay(); // 0 = Sun, 1 = Mon ... 6 = Sat
+        const mins = istDate.getHours() * 60 + istDate.getMinutes();
+
+        // Monday to Friday: 9:15 AM (555 mins) to 3:30 PM (930 mins) IST
+        if (day >= 1 && day <= 5) {
+          if (mins >= 555 && mins < 930) {
+            marketStatus = "OPEN";
+          } else if (mins >= 540 && mins < 555) {
+            marketStatus = "PRE_MARKET";
+          } else if (mins >= 930 && mins < 960) {
+            marketStatus = "POST_MARKET";
+          }
+        }
+      } else if (resolved.exchange === "GLOBAL") {
+        const nyStr = now.toLocaleString("en-US", { timeZone: "America/New_York" });
+        const nyDate = new Date(nyStr);
+        const day = nyDate.getDay();
+        const mins = nyDate.getHours() * 60 + nyDate.getMinutes();
+
+        // Monday to Friday: 9:30 AM (570 mins) to 4:00 PM (960 mins) ET
+        if (day >= 1 && day <= 5) {
+          if (mins >= 570 && mins < 960) {
+            marketStatus = "OPEN";
+          } else if (mins >= 240 && mins < 570) {
+            marketStatus = "PRE_MARKET";
+          } else if (mins >= 960 && mins < 1200) {
+            marketStatus = "POST_MARKET";
+          }
+        }
+      }
+    }
 
     // Determine Data Freshness
     let dataFreshness: "LIVE" | "DELAYED" | "STALE" = "LIVE";

@@ -107,7 +107,31 @@ function quoteFromChartResult(providerSymbol: string, result: YahooChartResult |
     week52Low: num(meta.fiftyTwoWeekLow),
     volume: num(meta.regularMarketVolume),
     avgVolume: num(meta.averageDailyVolume10Day) ?? num(meta.averageDailyVolume3Month),
-    marketState: str(meta.marketState) ?? undefined,
+    marketState: (() => {
+      let state = str(meta.marketState);
+      if (!state && meta.currentTradingPeriod && typeof meta.currentTradingPeriod === "object") {
+        const period = meta.currentTradingPeriod as Record<string, Record<string, unknown>>;
+        const nowSec = Math.floor(Date.now() / 1000);
+        const reg = period.regular;
+        const pre = period.pre;
+        const post = period.post;
+
+        if (reg && num(reg.start) != null && num(reg.end) != null) {
+          const start = num(reg.start)!;
+          const end = num(reg.end)!;
+          if (nowSec >= start && nowSec <= end) {
+            state = "REGULAR";
+          } else if (pre && num(pre.start) != null && num(pre.end) != null && nowSec >= num(pre.start)! && nowSec < num(pre.end)!) {
+            state = "PRE";
+          } else if (post && num(post.start) != null && num(post.end) != null && nowSec > num(post.start)! && nowSec <= num(post.end)!) {
+            state = "POST";
+          } else {
+            state = "CLOSED";
+          }
+        }
+      }
+      return state ?? undefined;
+    })(),
     quoteTime: num(meta.regularMarketTime) ?? undefined,
   };
 }

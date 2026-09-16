@@ -183,7 +183,13 @@ export default function StockDetailPage() {
             <span className={`px-2 py-0.5 border ${data.decision.dataFreshness === "LIVE" ? "text-green-custom border-green-custom bg-green-dim" : data.decision.dataFreshness === "DELAYED" ? "text-amber-custom border-amber-custom bg-amber-dim" : "text-red-custom border-red-custom bg-red-dim"}`}>
               {data.decision.dataFreshness === "DELAYED" ? "DATA DELAYED (15m)" : `DATA FRESHNESS: ${data.decision.dataFreshness}`}
             </span>
-            <span className="text-text-3 px-2 py-0.5 border border-border-custom bg-bg-2">
+            <span className={`px-2 py-0.5 border ${
+              data.decision.marketStatus === "OPEN"
+                ? "text-green-custom border-green-custom bg-green-dim"
+                : data.decision.marketStatus === "PRE_MARKET" || data.decision.marketStatus === "POST_MARKET"
+                ? "text-amber-custom border-amber-custom bg-amber-dim"
+                : "text-text-3 border-border-custom bg-bg-2"
+            }`}>
               MARKET STATUS: {data.decision.marketStatus === "OPEN" ? "OPEN" : data.decision.marketStatus === "PRE_MARKET" ? "PRE-MARKET" : data.decision.marketStatus === "POST_MARKET" ? "POST-MARKET" : "CLOSED"}
             </span>
             <span className="text-text-4 py-0.5">
