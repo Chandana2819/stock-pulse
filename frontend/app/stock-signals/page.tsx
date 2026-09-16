@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiRequestError, apiFetch } from "../lib/api";
 
@@ -121,8 +121,11 @@ export default function StockSignalsPage() {
 
   // Filters state
   const [sectorFilter, setSectorFilter] = useState<string>("");
-  const [exchangeFilter, setExchangeFilter] = useState<string>("");
+  const [exchangeFilter, setExchangeFilter] = useState<string>("NSE");
   const [sortBy, setSortBy] = useState<string>("score");
+  const [signalSourceTab, setSignalSourceTab] = useState<"market" | "portfolio">("market");
+  const [marketSearch, setMarketSearch] = useState<string>("");
+  const [directoryActionFilter, setDirectoryActionFilter] = useState<string>("ALL");
 
   // Backtest state
   const [backtesting, setBacktesting] = useState(false);
@@ -270,9 +273,17 @@ export default function StockSignalsPage() {
 
   const riskEmoji = riskData?.classification.includes("HIGH") ? "🔴" : riskData?.classification.includes("MODERATE") ? "🟡" : "🟢";
 
-  // BUY and WAIT signals represent market screener opportunities
-  const buySignals = items.filter((item) => item.action.includes("BUY"));
-  const waitSignals = items.filter((item) => item.action === "WAIT");
+  // Broad market signals categorized
+  const marketBuySignals = items.filter((item) => item.action.includes("BUY"));
+  const marketHoldSignals = items.filter((item) => item.action === "HOLD");
+  const marketSellSignals = items.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const marketWaitSignals = items.filter((item) => item.action === "WAIT");
+
+  // Top Accumulate Candidates: High scoring HOLD stocks (scores 58-64) with bullish characteristics
+  const topAccumulateCandidates = items
+    .filter((item) => item.action === "HOLD" && item.score >= 58)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
 
   // SELL / REDUCE and HOLD signals fetch directly from user's portfolio holdings
   const filteredPortfolio = [...portfolioSignals].filter((item) => {
@@ -292,8 +303,35 @@ export default function StockSignalsPage() {
     filteredPortfolio.sort((a, b) => b.score - a.score);
   }
 
-  const sellSignals = filteredPortfolio.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
-  const holdSignals = filteredPortfolio.filter((item) => item.action === "HOLD");
+  const portfolioBuySignals = filteredPortfolio.filter((item) => item.action.includes("BUY"));
+  const portfolioHoldSignals = filteredPortfolio.filter((item) => item.action === "HOLD");
+  const portfolioSellSignals = filteredPortfolio.filter((item) => item.action.includes("SELL") || item.action === "REDUCE");
+  const portfolioWaitSignals = filteredPortfolio.filter((item) => item.action === "WAIT");
+
+  // Active signals based on toggle
+  const displayBuySignals = signalSourceTab === "portfolio" ? portfolioBuySignals : marketBuySignals;
+  const displayHoldSignals = signalSourceTab === "portfolio" ? portfolioHoldSignals : marketHoldSignals;
+  const displaySellSignals = signalSourceTab === "portfolio" ? portfolioSellSignals : marketSellSignals;
+  const displayWaitSignals = signalSourceTab === "portfolio" ? portfolioWaitSignals : marketWaitSignals;
+
+  // Searchable Directory of all market items in the current exchange
+  const directoryItems = useMemo(() => {
+    return items.filter((item) => {
+      if (directoryActionFilter === "BUY" && !item.action.includes("BUY")) return false;
+      if (directoryActionFilter === "HOLD" && item.action !== "HOLD") return false;
+      if (directoryActionFilter === "SELL" && (!item.action.includes("SELL") && item.action !== "REDUCE")) return false;
+      if (directoryActionFilter === "WAIT" && item.action !== "WAIT") return false;
+
+      if (marketSearch.trim()) {
+        const q = marketSearch.trim().toLowerCase();
+        const sym = (item.displaySymbol || "").toLowerCase();
+        const name = (item.name || "").toLowerCase();
+        const sec = (item.sector || "").toLowerCase();
+        return sym.includes(q) || name.includes(q) || sec.includes(q);
+      }
+      return true;
+    });
+  }, [items, directoryActionFilter, marketSearch]);
 
   const escapeCsvField = (value: string) => {
     if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -305,10 +343,10 @@ export default function StockSignalsPage() {
   const handleExportSignals = () => {
     const header = ["Category", "Symbol", "Name", "Sector", "Exchange", "Action", "Score", "Confidence %", "Risk", "Entry Zone", "Stop Loss", "Target Range", "Reasons", "Warnings", "Generated At"];
     const groups: Array<[string, SignalItem[]]> = [
-      ["BUY", buySignals],
-      ["SELL / REDUCE", sellSignals],
-      ["HOLD", holdSignals],
-      ["WAIT", waitSignals],
+      ["BUY", displayBuySignals],
+      ["SELL / REDUCE", displaySellSignals],
+      ["HOLD", displayHoldSignals],
+      ["WAIT", displayWaitSignals],
     ];
     const rows = [header];
     for (const [label, list] of groups) {
@@ -519,39 +557,113 @@ export default function StockSignalsPage() {
           )}
         </div>
 
-      {/* Signals Summary Counts Panel */}
-      {summary && (
+      {/* Signals Summary Counts & Exchange Navigation */}
+      <div className="flex flex-col gap-4">
+        {/* Navigation & Controls Bar: Market/Portfolio switch & Exchange Selector */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border border-border-custom bg-bg-1 p-4 rounded">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-xs text-text-3 uppercase tracking-wider mr-1">VIEW:</span>
+            <div className="inline-flex border border-border-custom bg-bg-2 p-0.5 rounded font-mono text-xs">
+              <button
+                onClick={() => setSignalSourceTab("market")}
+                className={`px-3 py-1.5 transition-all rounded ${
+                  signalSourceTab === "market"
+                    ? "bg-bg-1 border border-border-bright text-text-custom font-bold shadow-sm"
+                    : "text-text-3 hover:text-text-custom"
+                }`}
+              >
+                🌍 BROAD MARKET SIGNALS ({items.length})
+              </button>
+              <button
+                onClick={() => setSignalSourceTab("portfolio")}
+                className={`px-3 py-1.5 transition-all rounded ${
+                  signalSourceTab === "portfolio"
+                    ? "bg-bg-1 border border-border-bright text-text-custom font-bold shadow-sm"
+                    : "text-text-3 hover:text-text-custom"
+                }`}
+              >
+                💼 MY PORTFOLIO SIGNALS ({filteredPortfolio.length})
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-xs text-text-3 uppercase tracking-wider mr-1">EXCHANGE:</span>
+            <div className="inline-flex border border-border-custom bg-bg-2 p-0.5 rounded font-mono text-xs">
+              <button
+                onClick={() => setExchangeFilter("NSE")}
+                className={`px-3 py-1.5 transition-all rounded flex items-center gap-1.5 ${
+                  exchangeFilter === "NSE"
+                    ? "bg-green-dim border border-green-custom text-green-custom font-bold"
+                    : "text-text-3 hover:text-text-custom"
+                }`}
+              >
+                <span>🇮🇳</span> NSE (INDIA)
+              </button>
+              <button
+                onClick={() => setExchangeFilter("GLOBAL")}
+                className={`px-3 py-1.5 transition-all rounded flex items-center gap-1.5 ${
+                  exchangeFilter === "GLOBAL"
+                    ? "bg-blue-dim border border-blue-custom text-blue-custom font-bold"
+                    : "text-text-3 hover:text-text-custom"
+                }`}
+              >
+                <span>🇺🇸</span> GLOBAL / US
+              </button>
+              <button
+                onClick={() => setExchangeFilter("")}
+                className={`px-3 py-1.5 transition-all rounded flex items-center gap-1.5 ${
+                  exchangeFilter === ""
+                    ? "bg-bg-1 border border-border-bright text-text-custom font-bold"
+                    : "text-text-3 hover:text-text-custom"
+                }`}
+              >
+                <span>🌐</span> ALL ({summary?.total || 136})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Signals Summary Counts Tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <button 
             onClick={() => scrollToSection("buy-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-green-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟢 BUY SIGNALS</span>
-            <span className="font-mono text-2xl font-bold text-green-custom">{buySignals.length}</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">
+              🟢 BUY SIGNALS ({signalSourceTab === "market" ? "MARKET" : "PORTFOLIO"})
+            </span>
+            <span className="font-mono text-2xl font-bold text-green-custom">{displayBuySignals.length}</span>
           </button>
           <button 
             onClick={() => scrollToSection("sell-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-red-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🔴 SELL / REDUCE (PORTFOLIO)</span>
-            <span className="font-mono text-2xl font-bold text-red-custom">{sellSignals.length}</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">
+              🔴 SELL / REDUCE ({signalSourceTab === "market" ? "MARKET" : "PORTFOLIO"})
+            </span>
+            <span className="font-mono text-2xl font-bold text-red-custom">{displaySellSignals.length}</span>
           </button>
           <button 
             onClick={() => scrollToSection("hold-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-blue-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">🟡 HOLD (PORTFOLIO)</span>
-            <span className="font-mono text-2xl font-bold text-blue-custom">{holdSignals.length}</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">
+              🟡 HOLD ({signalSourceTab === "market" ? "MARKET" : "PORTFOLIO"})
+            </span>
+            <span className="font-mono text-2xl font-bold text-blue-custom">{displayHoldSignals.length}</span>
           </button>
           <button 
             onClick={() => scrollToSection("wait-section")} 
             className="border border-border-custom bg-bg-1 p-4 flex flex-col items-center cursor-pointer hover:border-amber-custom hover:bg-bg-2 transition-all duration-150 text-left focus:outline-none"
           >
-            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">⚪ WAIT</span>
-            <span className="font-mono text-2xl font-bold text-amber-custom">{waitSignals.length}</span>
+            <span className="font-mono text-[0.55rem] text-text-3 tracking-[0.15em] uppercase mb-1">
+              ⚪ WAIT ({signalSourceTab === "market" ? "MARKET" : "PORTFOLIO"})
+            </span>
+            <span className="font-mono text-2xl font-bold text-amber-custom">{displayWaitSignals.length}</span>
           </button>
         </div>
-      )}
+      </div>
 
       {/* Market Risk Section */}
       {riskData && (
@@ -600,7 +712,9 @@ export default function StockSignalsPage() {
 
       {/* Global Sorters and Filters Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border-custom pb-3">
-        <span className="font-mono text-[0.68rem] tracking-[0.15em] text-text-3 uppercase">🌍 BROAD MARKET WATCH SIGNALS</span>
+        <span className="font-mono text-[0.68rem] tracking-[0.15em] text-text-3 uppercase">
+          {signalSourceTab === "market" ? `🌍 BROAD MARKET SIGNALS (${exchangeFilter === "NSE" ? "NSE INDIA" : exchangeFilter === "GLOBAL" ? "US GLOBAL" : "ALL"})` : "💼 PORTFOLIO SIGNALS"}
+        </span>
         <div className="flex items-center gap-3 flex-wrap">
           <select
             value={sectorFilter}
@@ -641,45 +755,104 @@ export default function StockSignalsPage() {
         
         {/* 🟢 TOP BUY SIGNALS */}
         <div id="buy-section" className="border border-green-custom bg-bg-1 p-6 flex flex-col gap-4">
-          <h2 className="font-display text-2xl tracking-[0.1em] text-green-custom border-b border-border-custom pb-2">🟢 TOP BUY SIGNALS</h2>
+          <div className="flex items-center justify-between border-b border-border-custom pb-2 flex-wrap gap-2">
+            <h2 className="font-display text-2xl tracking-[0.1em] text-green-custom">🟢 TOP BUY SIGNALS</h2>
+            <span className="font-mono text-[0.62rem] text-green-custom border border-green-custom/40 bg-green-dim px-2 py-0.5 uppercase">
+              {signalSourceTab === "market" ? (exchangeFilter === "NSE" ? "NSE INDIA MARKET" : exchangeFilter === "GLOBAL" ? "US GLOBAL MARKET" : "ALL MARKETS") : "PORTFOLIO HOLDINGS"}
+            </span>
+          </div>
           <div className="flex flex-col gap-4">
-            {buySignals.length === 0 ? (
+            {displayBuySignals.length === 0 ? (
               <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
-                No active BUY signals currently calculated.
+                No active BUY signals currently calculated for {exchangeFilter === "NSE" ? "NSE India" : exchangeFilter === "GLOBAL" ? "US Market" : "selected universe"}.
               </div>
             ) : (
-              buySignals.map((item) => (
+              displayBuySignals.map((item) => (
                 <SignalCard key={item.id} item={item} />
               ))
             )}
           </div>
+
+          {/* If looking at Broad Market for Indian stocks and market conditions are conservative, show the Top Accumulate Candidates */}
+          {signalSourceTab === "market" && exchangeFilter !== "GLOBAL" && topAccumulateCandidates.length > 0 && (
+            <div className="mt-4 border border-border-custom bg-bg-2 p-4 rounded flex flex-col gap-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-custom font-bold">⚡</span>
+                  <span className="font-mono text-xs font-bold text-text-custom uppercase tracking-wider">
+                    Top Bullish &amp; Accumulate Candidates (NSE India)
+                  </span>
+                </div>
+                <span className="font-mono text-[0.6rem] text-text-4">Scores 58–64 · Strong Technical Support</span>
+              </div>
+              <p className="text-xs text-text-3 leading-relaxed">
+                While broad market volatility holds strict BUY calls to score ≥65, these top Indian stocks hold the highest quantitative technical and momentum ratings across the market:
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
+                {topAccumulateCandidates.map((c) => (
+                  <div key={c.id} className="border border-border-custom bg-bg-1 p-3 rounded flex items-center justify-between hover:border-green-custom/50 transition-all">
+                    <div>
+                      <div className="font-display font-bold text-sm text-text-custom flex items-center gap-1.5">
+                        {c.displaySymbol}
+                        <span className="text-[0.55rem] font-mono text-green-custom bg-green-dim px-1 border border-green-custom/30">NSE</span>
+                      </div>
+                      <div className="text-[0.62rem] text-text-4 font-mono truncate max-w-[140px]">{c.name}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono text-sm font-bold text-green-custom">{c.score}<span className="text-[0.6rem] text-text-4">/100</span></div>
+                      <button
+                        onClick={() => router.push(`/stock/${encodeURIComponent(c.displaySymbol)}`)}
+                        className="font-mono text-[0.55rem] text-text-custom hover:text-green-custom underline"
+                      >
+                        View Analysis →
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 🔴 SELL / REDUCE */}
         <div id="sell-section" className="border border-red-custom bg-bg-1 p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between border-b border-border-custom pb-2 flex-wrap gap-2">
             <h2 className="font-display text-2xl tracking-[0.1em] text-red-custom">🔴 SELL / REDUCE SIGNALS</h2>
-            <span className="font-mono text-[0.62rem] text-red-custom border border-red-custom/40 bg-red-dim/20 px-2 py-0.5">PORTFOLIO HOLDINGS</span>
+            <span className="font-mono text-[0.62rem] text-red-custom border border-red-custom/40 bg-red-dim/20 px-2 py-0.5 uppercase">
+              {signalSourceTab === "market" ? "BROAD MARKET" : "PORTFOLIO HOLDINGS"}
+            </span>
           </div>
           <div className="flex flex-col gap-4">
-            {sellSignals.length === 0 ? (
+            {displaySellSignals.length === 0 ? (
               <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono flex flex-col items-center gap-2">
                 <span>
-                  {portfolioSignals.length === 0
+                  {signalSourceTab === "portfolio" && portfolioSignals.length === 0
                     ? "No holdings found in portfolio. Connect your broker or trade assets to monitor SELL / REDUCE signals."
-                    : "No active SELL or REDUCE signals for your portfolio holdings. All positions maintain HOLD or BUY ratings."}
+                    : "No active SELL or REDUCE signals currently calculated for this view."}
                 </span>
-                <button
-                  onClick={() => router.push("/portfolio")}
-                  className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
-                >
-                  VIEW PORTFOLIO →
-                </button>
+                {signalSourceTab === "portfolio" && (
+                  <button
+                    onClick={() => router.push("/portfolio")}
+                    className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
+                  >
+                    VIEW PORTFOLIO →
+                  </button>
+                )}
               </div>
             ) : (
-              sellSignals.map((item) => (
+              displaySellSignals.slice(0, signalSourceTab === "market" ? 8 : displaySellSignals.length).map((item) => (
                 <SignalCard key={item.id} item={item} />
               ))
+            )}
+            {signalSourceTab === "market" && displaySellSignals.length > 8 && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={() => scrollToSection("directory-section")}
+                  className="font-mono text-xs text-text-3 hover:text-text-custom underline"
+                >
+                  View all {displaySellSignals.length} SELL / REDUCE signals in Directory below ↓
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -688,27 +861,41 @@ export default function StockSignalsPage() {
         <div id="hold-section" className="border border-blue-custom bg-bg-1 p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between border-b border-border-custom pb-2 flex-wrap gap-2">
             <h2 className="font-display text-2xl tracking-[0.1em] text-blue-custom">🟡 HOLD SIGNALS</h2>
-            <span className="font-mono text-[0.62rem] text-blue-custom border border-blue-custom/40 bg-blue-dim/20 px-2 py-0.5">PORTFOLIO HOLDINGS</span>
+            <span className="font-mono text-[0.62rem] text-blue-custom border border-blue-custom/40 bg-blue-dim/20 px-2 py-0.5 uppercase">
+              {signalSourceTab === "market" ? "BROAD MARKET" : "PORTFOLIO HOLDINGS"}
+            </span>
           </div>
           <div className="flex flex-col gap-4">
-            {holdSignals.length === 0 ? (
+            {displayHoldSignals.length === 0 ? (
               <div className="border border-border-custom bg-bg-2 p-6 text-center text-xs text-text-3 font-mono flex flex-col items-center gap-2">
                 <span>
-                  {portfolioSignals.length === 0
+                  {signalSourceTab === "portfolio" && portfolioSignals.length === 0
                     ? "No holdings found in portfolio. Connect your broker or trade assets to monitor HOLD signals."
-                    : "No active HOLD signals for your portfolio holdings."}
+                    : "No active HOLD signals currently calculated for this view."}
                 </span>
-                <button
-                  onClick={() => router.push("/portfolio")}
-                  className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
-                >
-                  VIEW PORTFOLIO →
-                </button>
+                {signalSourceTab === "portfolio" && (
+                  <button
+                    onClick={() => router.push("/portfolio")}
+                    className="font-mono text-[0.62rem] border border-border-bright px-3 py-1 text-text-custom hover:bg-bg-3"
+                  >
+                    VIEW PORTFOLIO →
+                  </button>
+                )}
               </div>
             ) : (
-              holdSignals.map((item) => (
+              displayHoldSignals.slice(0, signalSourceTab === "market" ? 8 : displayHoldSignals.length).map((item) => (
                 <SignalCard key={item.id} item={item} />
               ))
+            )}
+            {signalSourceTab === "market" && displayHoldSignals.length > 8 && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={() => scrollToSection("directory-section")}
+                  className="font-mono text-xs text-text-3 hover:text-text-custom underline"
+                >
+                  View all {displayHoldSignals.length} HOLD signals in Directory below ↓
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -717,18 +904,141 @@ export default function StockSignalsPage() {
         <div id="wait-section" className="border border-amber-custom bg-bg-1 p-6 flex flex-col gap-4">
           <h2 className="font-display text-2xl tracking-[0.1em] text-amber-custom border-b border-border-custom pb-2">⚪ WAIT SIGNALS</h2>
           <div className="flex flex-col gap-4">
-            {waitSignals.length === 0 ? (
+            {displayWaitSignals.length === 0 ? (
               <div className="border border-border-custom bg-bg-2 p-4 text-center text-xs text-text-3 font-mono">
                 No active WAIT signals currently calculated.
               </div>
             ) : (
-              waitSignals.map((item) => (
+              displayWaitSignals.map((item) => (
                 <SignalCard key={item.id} item={item} />
               ))
             )}
           </div>
         </div>
 
+      </div>
+
+      {/* 📋 ALL BROAD MARKET SIGNALS DIRECTORY */}
+      <div id="directory-section" className="border border-border-bright bg-bg-1 p-6 flex flex-col gap-5">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border-custom pb-4">
+          <div>
+            <h2 className="font-display text-2xl tracking-[0.1em] text-text-custom">
+              {exchangeFilter === "NSE" ? "🇮🇳 NSE INDIA" : exchangeFilter === "GLOBAL" ? "🇺🇸 US / GLOBAL" : "🌐 FULL"} SIGNALS DIRECTORY
+            </h2>
+            <p className="text-xs text-text-3 mt-1">
+              Complete universe tracking ({items.length} stocks) with live AI score, risk rating, and recommendation status.
+            </p>
+          </div>
+
+          {/* Search bar inside directory */}
+          <div className="w-full sm:w-72">
+            <input
+              type="text"
+              value={marketSearch}
+              onChange={(e) => setMarketSearch(e.target.value)}
+              placeholder="Search symbol, company, sector..."
+              className="w-full font-mono text-xs bg-bg-2 border border-border-custom text-text-custom px-3 py-2 focus:outline-none focus:border-green-custom rounded"
+            />
+          </div>
+        </div>
+
+        {/* Action filter pills */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-mono text-[0.62rem] text-text-3 uppercase tracking-wider">FILTER BY ACTION:</span>
+          {["ALL", "BUY", "HOLD", "SELL", "WAIT"].map((act) => {
+            const count = act === "ALL" ? items.length :
+                          act === "BUY" ? marketBuySignals.length :
+                          act === "HOLD" ? marketHoldSignals.length :
+                          act === "SELL" ? marketSellSignals.length : marketWaitSignals.length;
+            return (
+              <button
+                key={act}
+                onClick={() => setDirectoryActionFilter(act)}
+                className={`font-mono text-xs px-2.5 py-1 rounded border transition-all ${
+                  directoryActionFilter === act
+                    ? "bg-bg-3 border-border-bright text-text-custom font-bold"
+                    : "border-border-custom text-text-3 hover:text-text-custom hover:bg-bg-2"
+                }`}
+              >
+                {act} ({count})
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Directory Table */}
+        <div className="overflow-x-auto max-h-[500px] overflow-y-auto border border-border-custom">
+          <table className="w-full text-left border-collapse min-w-[750px]">
+            <thead className="sticky top-0 bg-bg-2 z-10">
+              <tr className="border-b border-border-custom text-text-3 font-mono text-[0.58rem] tracking-wider uppercase">
+                <th className="py-3 px-3">Stock / Company</th>
+                <th className="py-3 px-2">Exchange</th>
+                <th className="py-3 px-2">Sector</th>
+                <th className="py-3 px-2 text-center">AI Signal</th>
+                <th className="py-3 px-2 text-right">Score</th>
+                <th className="py-3 px-2 text-right">Confidence</th>
+                <th className="py-3 px-2 text-center">Risk</th>
+                <th className="py-3 px-3 text-center">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {directoryItems.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-xs font-mono text-text-3">
+                    No stocks matching search &ldquo;{marketSearch}&rdquo; in this view.
+                  </td>
+                </tr>
+              ) : (
+                directoryItems.map((item) => {
+                  const signalStyle = item.action.includes("BUY") ? "text-green-custom border-green-custom bg-green-dim" :
+                                      item.action.includes("SELL") || item.action === "REDUCE" ? "text-red-custom border-red-custom bg-red-dim" :
+                                      item.action === "HOLD" ? "text-blue-custom border-blue-custom bg-blue-dim" :
+                                      "text-amber-custom border-amber-custom bg-amber-dim";
+                  return (
+                    <tr key={item.id} className="border-b border-border-custom hover:bg-bg-2 text-xs transition-colors duration-100">
+                      <td className="py-2.5 px-3">
+                        <div className="font-bold font-display text-sm text-text-custom">{item.displaySymbol}</div>
+                        <div className="text-[0.62rem] text-text-3 truncate max-w-[200px]">{item.name}</div>
+                      </td>
+                      <td className="py-2.5 px-2 font-mono text-xs">
+                        <span className={`px-1.5 py-0.5 rounded border text-[0.62rem] ${
+                          item.exchange === "NSE" ? "border-green-custom/40 bg-green-dim/20 text-green-custom" : "border-blue-custom/40 bg-blue-dim/20 text-blue-custom"
+                        }`}>
+                          {item.exchange === "NSE" ? "🇮🇳 NSE" : "🇺🇸 GLOBAL"}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-text-3 font-mono text-[0.68rem]">{item.sector}</td>
+                      <td className="py-2.5 px-2 text-center">
+                        <span className={`font-mono text-[0.62rem] font-bold px-2 py-0.5 border rounded ${signalStyle}`}>
+                          {item.action}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono font-bold text-text-custom">
+                        {item.score}<span className="text-[0.6rem] text-text-4">/100</span>
+                      </td>
+                      <td className="py-2.5 px-2 text-right font-mono text-text-2">{item.confidence}%</td>
+                      <td className={`py-2.5 px-2 text-center font-mono text-[0.62rem] font-bold ${
+                        item.risk === "LOW" ? "text-green-custom" :
+                        item.risk === "MODERATE" ? "text-blue-custom" :
+                        item.risk === "HIGH" ? "text-amber-custom" : "text-red-custom"
+                      }`}>
+                        {item.risk}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <button
+                          onClick={() => router.push(`/stock/${encodeURIComponent(item.displaySymbol)}`)}
+                          className="font-mono text-[0.58rem] tracking-wider border border-border-bright text-text-custom px-2.5 py-1 hover:bg-bg-3 hover:border-green-custom transition-all"
+                        >
+                          View Analysis →
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* AI Track Record */}
