@@ -275,6 +275,15 @@ router.post(
   "/seed-zerodha",
   asyncHandler(async (req, res) => {
     const userId = req.user!.id;
+    // Clear any previous variations (with or without .NS) so holdings never duplicate
+    const allSymbols = ZERODHA_SNAPSHOT_HOLDINGS.flatMap((i) => [i.stock, i.displaySym]);
+    await prisma.holding.deleteMany({
+      where: {
+        userId,
+        stock: { in: allSymbols },
+      },
+    });
+
     for (const item of ZERODHA_SNAPSHOT_HOLDINGS) {
       await prisma.holding.upsert({
         where: { userId_stock: { userId, stock: item.stock } },

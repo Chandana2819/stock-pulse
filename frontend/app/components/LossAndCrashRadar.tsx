@@ -125,17 +125,32 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
           <span className="font-mono text-[0.68rem] tracking-[0.18em] text-text-custom font-bold uppercase">
             WHY AM I IN LOSS? & MARKET CRASH RADAR
           </span>
+          {data.totalInvested > 0 && (
+            <span className="font-mono text-[0.6rem] px-2 py-0.5 bg-green-dim text-green-custom border border-green-custom/30 uppercase">
+              LIVE CONNECTED PORTFOLIO
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={handleSeedZerodha}
-            disabled={seeding}
-            className="font-mono text-[0.62rem] px-3 py-1 bg-cyan-custom/10 hover:bg-cyan-custom/20 border border-cyan-custom/40 text-cyan-custom uppercase tracking-wider transition-all disabled:opacity-50"
-            title="Import/Seed your 11 Zerodha holdings"
+            onClick={loadDiagnosis}
+            disabled={loading}
+            className="font-mono text-[0.62rem] px-3 py-1 bg-bg-1 hover:bg-bg-3 border border-border-custom text-text-3 hover:text-text-custom uppercase tracking-wider transition-all disabled:opacity-50"
+            title="Refresh diagnostic analysis"
           >
-            {seeding ? "Syncing Zerodha…" : "⚡ Load My 11 Zerodha Holdings"}
+            {loading ? "Refreshing…" : "🔄 Refresh Analysis"}
           </button>
+          {data.totalInvested === 0 && (
+            <button
+              onClick={handleSeedZerodha}
+              disabled={seeding}
+              className="font-mono text-[0.62rem] px-3 py-1 bg-cyan-custom/10 hover:bg-cyan-custom/20 border border-cyan-custom/40 text-cyan-custom uppercase tracking-wider transition-all disabled:opacity-50"
+              title="Load demo holdings"
+            >
+              {seeding ? "Syncing…" : "⚡ Load Sample Portfolio"}
+            </button>
+          )}
         </div>
       </div>
 

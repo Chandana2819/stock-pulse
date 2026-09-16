@@ -168,8 +168,29 @@ export async function executeTransaction(
 export type EnrichedHolding = Awaited<ReturnType<typeof getEnrichedHoldings>>[number];
 
 export async function getEnrichedHoldings(userId: string) {
-  const holdings = await prisma.holding.findMany({ where: { userId }, orderBy: { stock: "asc" } });
-  if (holdings.length === 0) return [];
+  const rawHoldings = await prisma.holding.findMany({ where: { userId }, orderBy: { stock: "asc" } });
+  if (rawHoldings.length === 0) return [];
+
+  // Deduplicate holdings by canonical display symbol (e.g. BEL vs BEL.NS)
+  // Source priority: CONNECTED > BROKER > ZERODHA_IMPORT > SIMULATED
+  const sourcePriority: Record<string, number> = { CONNECTED: 3, BROKER: 2, ZERODHA_IMPORT: 1, SIMULATED: 0 };
+  const dedupedMap = new Map<string, typeof rawHoldings[number]>();
+
+  for (const h of rawHoldings) {
+    const key = (h.displaySym || h.stock.replace(/\.(NS|BO)$/, "")).toUpperCase().trim();
+    const existing = dedupedMap.get(key);
+    if (!existing) {
+      dedupedMap.set(key, h);
+    } else {
+      const existingPrio = sourcePriority[existing.source] ?? 0;
+      const currentPrio = sourcePriority[h.source] ?? 0;
+      if (currentPrio > existingPrio) {
+        dedupedMap.set(key, h);
+      }
+    }
+  }
+
+  const holdings = Array.from(dedupedMap.values());
 
   // Map each database symbol to its proper Yahoo Finance provider symbol based on its exchange suffix or universe lookup
   const symbols = holdings.map((h) => {
