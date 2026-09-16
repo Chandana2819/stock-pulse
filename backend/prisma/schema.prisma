@@ -60,6 +60,7 @@ model User {
   auditLogs     AuditLog[]
   eventSubs     EventSubscription[]
   fundWatch     FundWatchItem[]
+  mfHoldings    MfHolding[]
   posts            CommunityPost[]
   comments         CommunityComment[]
   postLikes        PostLike[]
@@ -542,6 +543,25 @@ model FundWatchItem {
   createdAt  DateTime @default(now())
 
   @@unique([userId, schemeCode])
+}
+
+model MfHolding {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schemeCode  String
+  schemeName  String
+  folioNumber String?
+  units       Float
+  avgNav      Float
+  invested    Float?
+  source      String   @default("MANUAL") // MANUAL | BROKER | CSV
+  broker      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, schemeCode, folioNumber])
+  @@index([userId])
 }
 
 // ────────────────────────  SUPPORT & PLATFORM  ────────────────────────

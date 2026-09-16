@@ -7,8 +7,140 @@ import { requireAuth } from "../middleware/auth";
 import { getFundRecommendations, suggestCategoryForGoal } from "../lib/services/fundRecommendations";
 import { FUND_CATEGORY_LABELS, type FundCategory } from "../lib/mfUniverse";
 import { assessGoalFeasibility } from "./goals";
+import { getEnrichedMfHoldings } from "../lib/services/mfPortfolio";
 
 const router = express.Router();
+
+// ─── USER MUTUAL FUND HOLDINGS ───────────────────────────────────────
+
+router.get(
+  "/holdings/mine",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const data = await getEnrichedMfHoldings(req.user!.id);
+    return res.json(data);
+  })
+);
+
+router.post(
+  "/holdings/mine",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { schemeCode, schemeName, units, avgNav, folioNumber } = parse(
+      {
+        schemeCode: v.string({ min: 1, max: 20 }),
+        schemeName: v.string({ min: 1, max: 250 }),
+        units: v.number({ min: 0.0001 }),
+        avgNav: v.number({ min: 0.0001 }),
+        folioNumber: v.optional(v.string({ max: 50 })),
+      },
+      req.body
+    );
+
+    const folio = folioNumber ? folioNumber.trim() : "";
+    const invested = Number((units * avgNav).toFixed(2));
+
+    const holding = await prisma.mfHolding.upsert({
+      where: {
+        userId_schemeCode_folioNumber: {
+          userId: req.user!.id,
+          schemeCode: schemeCode.trim(),
+          folioNumber: folio,
+        },
+      },
+      update: {
+        schemeName: schemeName.trim(),
+        units,
+        avgNav,
+        invested,
+        source: "MANUAL",
+      },
+      create: {
+        userId: req.user!.id,
+        schemeCode: schemeCode.trim(),
+        schemeName: schemeName.trim(),
+        folioNumber: folio,
+        units,
+        avgNav,
+        invested,
+        source: "MANUAL",
+      },
+    });
+
+    return res.json(holding);
+  })
+);
+
+router.delete(
+  "/holdings/mine/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await prisma.mfHolding.deleteMany({
+      where: { id: req.params.id, userId: req.user!.id },
+    });
+    return res.json({ success: true });
+  })
+);
+
+router.post(
+  "/holdings/mine/csv",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const items = Array.isArray(req.body.items) ? req.body.items : [];
+    let imported = 0;
+
+    for (const item of items) {
+      let schemeCode = typeof item.schemeCode === "string" ? item.schemeCode.trim() : "";
+      const schemeName = typeof item.schemeName === "string" ? item.schemeName.trim() : "";
+      const units = Number(item.units);
+      const avgNav = Number(item.avgNav);
+      const folioNumber = typeof item.folioNumber === "string" ? item.folioNumber.trim() : "";
+
+      if (!units || units <= 0 || !avgNav || avgNav <= 0) continue;
+
+      if (!schemeCode && schemeName) {
+        const found = await fundProvider.search(schemeName, 1).catch(() => []);
+        if (found.length > 0) {
+          schemeCode = found[0].schemeCode;
+        }
+      }
+
+      if (!schemeCode) continue;
+
+      const invested = Number((units * avgNav).toFixed(2));
+
+      await prisma.mfHolding.upsert({
+        where: {
+          userId_schemeCode_folioNumber: {
+            userId: req.user!.id,
+            schemeCode,
+            folioNumber,
+          },
+        },
+        update: {
+          schemeName: schemeName || "Mutual Fund",
+          units,
+          avgNav,
+          invested,
+          source: "CSV",
+        },
+        create: {
+          userId: req.user!.id,
+          schemeCode,
+          schemeName: schemeName || "Mutual Fund",
+          folioNumber,
+          units,
+          avgNav,
+          invested,
+          source: "CSV",
+        },
+      });
+      imported++;
+    }
+
+    return res.json({ success: true, count: imported });
+  })
+);
 
 // Goal-first suggestion: instead of a flat "top funds per category" list, ask
 // for the same two inputs the Goals feature already uses (timeline + assumed

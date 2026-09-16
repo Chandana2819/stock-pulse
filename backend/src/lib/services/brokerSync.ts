@@ -27,9 +27,10 @@ export async function syncUserBroker(userId: string, brokerId: string) {
       ? conn.accessTokenEnc
       : decryptSecret(conn.accessTokenEnc);
 
-    const [holdings, orders] = await Promise.all([
+    const [holdings, orders, mfHoldings] = await Promise.all([
       provider.getHoldings(accessToken),
-      provider.getOrders(accessToken)
+      provider.getOrders(accessToken),
+      provider.getMfHoldings ? provider.getMfHoldings(accessToken) : Promise.resolve([]),
     ]);
 
     // Save synced holdings to database Holding table
@@ -73,12 +74,44 @@ export async function syncUserBroker(userId: string, brokerId: string) {
           broker: provider.id
         }
       });
+    }
 
-      // Current price for P&L comes from a live quote (getEnrichedHoldings ->
-      // marketDataProvider.getQuotes), never from this sync step — writing a
-      // guessed/hardcoded "close" into StockPrice here would risk planting a
-      // fabricated candle in the real historical series that the decision
-      // engine's indicators (SMA/RSI/trend) read for this symbol.
+    // Save synced mutual fund holdings
+    if (mfHoldings && mfHoldings.length > 0) {
+      for (const mf of mfHoldings) {
+        const schemeCode = mf.schemeCode || "";
+        const folioNumber = mf.folio || "";
+        if (!schemeCode) continue;
+
+        await prisma.mfHolding.upsert({
+          where: {
+            userId_schemeCode_folioNumber: {
+              userId,
+              schemeCode,
+              folioNumber,
+            },
+          },
+          update: {
+            schemeName: mf.schemeName,
+            units: mf.units,
+            avgNav: mf.avgPrice,
+            invested: mf.units * mf.avgPrice,
+            source: "BROKER",
+            broker: provider.id,
+          },
+          create: {
+            userId,
+            schemeCode,
+            schemeName: mf.schemeName,
+            folioNumber,
+            units: mf.units,
+            avgNav: mf.avgPrice,
+            invested: mf.units * mf.avgPrice,
+            source: "BROKER",
+            broker: provider.id,
+          },
+        });
+      }
     }
 
     await prisma.brokerConnection.update({
@@ -86,7 +119,7 @@ export async function syncUserBroker(userId: string, brokerId: string) {
       data: { lastSyncAt: new Date(), lastError: null }
     });
 
-    return { holdings, orders };
+    return { holdings, orders, mfHoldings: mfHoldings ?? [] };
   } catch (err: any) {
     const message = err.message || "Sync failed";
     

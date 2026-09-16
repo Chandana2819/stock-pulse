@@ -1,7 +1,7 @@
 import axios from "axios";
 import crypto from "crypto";
 import { env } from "../../config/env";
-import type { BrokerHolding, BrokerOrder, BrokerProvider } from "./types";
+import type { BrokerHolding, BrokerMfHolding, BrokerOrder, BrokerProvider } from "./types";
 
 /**
  * Broker integration layer.
@@ -94,6 +94,54 @@ export class ZerodhaKiteProvider implements BrokerProvider {
       avgPrice: Number(r.average_price ?? 0),
       exchange: String(r.exchange ?? "NSE"),
     }));
+  }
+
+  async getMfHoldings(accessToken: string): Promise<BrokerMfHolding[]> {
+    if (accessToken === "mock_access_token_123" && !env.isProd) {
+      return [
+        {
+          schemeCode: "122639",
+          schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth",
+          folio: "10192834/56",
+          units: 145.25,
+          avgPrice: 62.40,
+        },
+        {
+          schemeCode: "118834",
+          schemeName: "Mirae Asset Large Cap Fund - Direct Plan - Growth",
+          folio: "20938475/12",
+          units: 210.50,
+          avgPrice: 94.80,
+        },
+        {
+          schemeCode: "120503",
+          schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth",
+          folio: "31827465/99",
+          units: 180.00,
+          avgPrice: 125.10,
+        },
+      ];
+    }
+
+    try {
+      const res = await axios.get("https://api.kite.trade/mf/holdings", {
+        headers: this.headers(accessToken),
+        timeout: 12000,
+      });
+      const rows: Array<Record<string, unknown>> = res.data?.data ?? [];
+      return rows.map((r) => ({
+        folio: r.folio ? String(r.folio) : undefined,
+        schemeCode: r.tradingsymbol ? String(r.tradingsymbol) : undefined,
+        schemeName: String(r.fund ?? r.tradingsymbol ?? "Mutual Fund"),
+        units: Number(r.quantity ?? 0),
+        avgPrice: Number(r.average_price ?? 0),
+        lastPrice: r.last_price != null ? Number(r.last_price) : undefined,
+        pnl: r.pnl != null ? Number(r.pnl) : undefined,
+      }));
+    } catch (err) {
+      console.warn("[Zerodha] Failed to fetch MF holdings from Kite:", err);
+      return [];
+    }
   }
 
   async getOrders(accessToken: string): Promise<BrokerOrder[]> {
@@ -217,6 +265,10 @@ export class UpstoxProvider implements BrokerProvider {
       avgPrice: Number(r.average_price ?? 0),
       exchange: String(r.exchange ?? "NSE"),
     }));
+  }
+
+  async getMfHoldings(_accessToken: string): Promise<BrokerMfHolding[]> {
+    return [];
   }
 
   async getOrders(accessToken: string): Promise<BrokerOrder[]> {

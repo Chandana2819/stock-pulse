@@ -30,6 +30,35 @@ type Holding = {
   plPct: number;
 };
 
+type MfHolding = {
+  id: string;
+  schemeCode: string;
+  schemeName: string;
+  folioNumber: string | null;
+  units: number;
+  avgNav: number;
+  currentNav: number;
+  navDate?: string | null;
+  category?: string;
+  fundHouse?: string;
+  invested: number;
+  currentValue: number;
+  pl: number;
+  plPct: number;
+  source: string;
+  broker: string | null;
+  createdAt: string;
+};
+
+type MfSummary = {
+  totalInvested: number;
+  totalValue: number;
+  totalPl: number;
+  totalPlPct: number;
+  fundCount: number;
+  totalUnits: number;
+};
+
 type Transaction = {
   id: string;
   stock: string;
@@ -42,12 +71,30 @@ type Transaction = {
 };
 
 export default function PortfolioPage() {
+  const [activeAssetTab, setActiveAssetTab] = useState<"STOCKS" | "MUTUAL_FUNDS">("STOCKS");
   const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [mfHoldings, setMfHoldings] = useState<MfHolding[]>([]);
+  const [mfSummary, setMfSummary] = useState<MfSummary | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [wallet, setWallet] = useState<{ inr: number; usd: number }>({ inr: 0, usd: 0 });
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [aiSignals, setAiSignals] = useState<any[]>([]);
+
+  // Mutual Fund modal & form states
+  const [showAddMfModal, setShowAddMfModal] = useState(false);
+  const [mfSearchQuery, setMfSearchQuery] = useState("");
+  const [mfSearchResults, setMfSearchResults] = useState<Array<{ schemeCode: string; schemeName: string }>>([]);
+  const [mfSearching, setMfSearching] = useState(false);
+  const [selectedMfScheme, setSelectedMfScheme] = useState<{ schemeCode: string; schemeName: string } | null>(null);
+  const [mfUnits, setMfUnits] = useState("");
+  const [mfAvgNav, setMfAvgNav] = useState("");
+  const [mfFolio, setMfFolio] = useState("");
+  const [savingMf, setSavingMf] = useState(false);
+
+  const [showMfCsvModal, setShowMfCsvModal] = useState(false);
+  const [mfCsvFile, setMfCsvFile] = useState<File | null>(null);
+  const [uploadingMfCsv, setUploadingMfCsv] = useState(false);
 
   // Signal detail modal states
   const [selectedModalHolding, setSelectedModalHolding] = useState<Holding | null>(null);
@@ -81,9 +128,16 @@ export default function PortfolioPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1. Fetch Holdings & Wallet
-      const holdData = await apiFetch<{ holdings: Holding[]; user?: { walletInr: number; walletUsd: number } }>("/api/portfolio");
+      // 1. Fetch Holdings & Wallet & Mutual Funds
+      const holdData = await apiFetch<{
+        holdings: Holding[];
+        mfHoldings?: MfHolding[];
+        mfSummary?: MfSummary;
+        user?: { walletInr: number; walletUsd: number };
+      }>("/api/portfolio");
       setHoldings(holdData.holdings || []);
+      setMfHoldings(holdData.mfHoldings || []);
+      setMfSummary(holdData.mfSummary || null);
       if (holdData.user) {
         setWallet({
           inr: holdData.user.walletInr,
@@ -166,6 +220,164 @@ export default function PortfolioPage() {
         message: err instanceof Error ? err.message : "Wipe failed.",
       });
     }
+  };
+
+  // Mutual Funds: Search AMFI schemes
+  const handleMfSearch = async (q: string) => {
+    setMfSearchQuery(q);
+    if (!q.trim() || q.trim().length < 2) {
+      setMfSearchResults([]);
+      return;
+    }
+    setMfSearching(true);
+    try {
+      const res = await apiFetch<{ results: Array<{ schemeCode: string; schemeName: string }> }>(
+        `/api/mutual-funds/search?q=${encodeURIComponent(q)}`
+      );
+      setMfSearchResults(res.results || []);
+    } catch {
+      setMfSearchResults([]);
+    } finally {
+      setMfSearching(false);
+    }
+  };
+
+  const handleSelectScheme = async (scheme: { schemeCode: string; schemeName: string }) => {
+    setSelectedMfScheme(scheme);
+    setMfSearchQuery(scheme.schemeName);
+    setMfSearchResults([]);
+    try {
+      const detail = await apiFetch<{ nav?: number }>(`/api/mutual-funds/${scheme.schemeCode}`);
+      if (detail.nav && !mfAvgNav) {
+        setMfAvgNav(detail.nav.toFixed(4));
+      }
+    } catch {}
+  };
+
+  const handleSaveMf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMfScheme || !mfUnits || !mfAvgNav) {
+      addToast({ type: "danger", title: "Incomplete Form", message: "Please select a scheme and enter units & NAV." });
+      return;
+    }
+    const unitsNum = parseFloat(mfUnits);
+    const navNum = parseFloat(mfAvgNav);
+    if (isNaN(unitsNum) || unitsNum <= 0 || isNaN(navNum) || navNum <= 0) {
+      addToast({ type: "danger", title: "Invalid Input", message: "Units and NAV must be positive numbers." });
+      return;
+    }
+    setSavingMf(true);
+    try {
+      await apiFetch("/api/mutual-funds/holdings/mine", {
+        method: "POST",
+        body: JSON.stringify({
+          schemeCode: selectedMfScheme.schemeCode,
+          schemeName: selectedMfScheme.schemeName,
+          units: unitsNum,
+          avgNav: navNum,
+          folioNumber: mfFolio.trim() || undefined,
+        }),
+      });
+      addToast({
+        type: "success",
+        title: "Mutual Fund Added",
+        message: `${selectedMfScheme.schemeName.slice(0, 30)}... added to your portfolio!`,
+      });
+      setShowAddMfModal(false);
+      setSelectedMfScheme(null);
+      setMfSearchQuery("");
+      setMfUnits("");
+      setMfAvgNav("");
+      setMfFolio("");
+      fetchData();
+    } catch (err) {
+      addToast({
+        type: "danger",
+        title: "Save Failed",
+        message: err instanceof Error ? err.message : "Failed to record mutual fund holding.",
+      });
+    } finally {
+      setSavingMf(false);
+    }
+  };
+
+  const handleDeleteMf = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove "${name}" from your portfolio?`)) return;
+    try {
+      await apiFetch(`/api/mutual-funds/holdings/mine/${id}`, { method: "DELETE" });
+      addToast({ type: "info", title: "Removed", message: "Mutual fund removed from portfolio." });
+      fetchData();
+    } catch (err) {
+      addToast({ type: "danger", title: "Delete Failed", message: err instanceof Error ? err.message : "Failed to delete holding." });
+    }
+  };
+
+  const handleMfCsvSubmit = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        setUploadingMfCsv(true);
+        const text = e.target?.result as string;
+        const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+        if (lines.length < 2) throw new Error("CSV contains no data rows");
+
+        const headers = lines[0].toLowerCase().split(",").map((h) => h.replace(/["']/g, "").trim());
+        const schemeIdx = headers.findIndex((h) => h.includes("scheme") || h.includes("fund") || h.includes("name") || h.includes("instrument"));
+        const unitsIdx = headers.findIndex((h) => h.includes("unit") || h.includes("qty") || h.includes("quantity") || h.includes("balance"));
+        const navIdx = headers.findIndex((h) => h.includes("nav") || h.includes("avg") || h.includes("cost") || h.includes("price") || h.includes("buy"));
+        const folioIdx = headers.findIndex((h) => h.includes("folio"));
+        const codeIdx = headers.findIndex((h) => h.includes("code") || h.includes("isin") || h.includes("symbol"));
+
+        if (schemeIdx === -1 && codeIdx === -1) {
+          throw new Error("Could not find a Scheme/Fund Name or Scheme Code column in CSV.");
+        }
+        if (unitsIdx === -1) {
+          throw new Error("Could not find a Units/Quantity column in CSV.");
+        }
+
+        const items: Array<{ schemeName: string; schemeCode?: string; units: number; avgNav: number; folioNumber?: string }> = [];
+
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",").map((c) => c.replace(/["']/g, "").trim());
+          const schemeName = schemeIdx !== -1 ? cols[schemeIdx] : "";
+          const schemeCode = codeIdx !== -1 ? cols[codeIdx] : undefined;
+          const units = parseFloat(cols[unitsIdx]);
+          const avgNav = navIdx !== -1 ? parseFloat(cols[navIdx]) : 10;
+          const folio = folioIdx !== -1 ? cols[folioIdx] : undefined;
+
+          if ((!schemeName && !schemeCode) || isNaN(units) || units <= 0) continue;
+
+          items.push({
+            schemeName: schemeName || "Mutual Fund",
+            schemeCode: schemeCode || undefined,
+            units,
+            avgNav: isNaN(avgNav) || avgNav <= 0 ? 10 : avgNav,
+            folioNumber: folio,
+          });
+        }
+
+        if (items.length === 0) throw new Error("No valid mutual fund holding rows found in CSV.");
+
+        const res = await apiFetch<{ success: boolean; count: number }>("/api/mutual-funds/holdings/mine/csv", {
+          method: "POST",
+          body: JSON.stringify({ items }),
+        });
+
+        addToast({
+          type: "success",
+          title: "MF CSV Imported",
+          message: `Successfully imported ${res.count || items.length} mutual funds!`,
+        });
+        setShowMfCsvModal(false);
+        setMfCsvFile(null);
+        fetchData();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "CSV Parse error");
+      } finally {
+        setUploadingMfCsv(false);
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Handle manual transaction recording
@@ -306,10 +518,23 @@ export default function PortfolioPage() {
           });
         }
 
+        // Also seed mock mutual funds for DEMO account
+        const mockMfs = [
+          { schemeCode: "122639", schemeName: "Parag Parikh Flexi Cap Fund - Direct Plan - Growth", units: 145.25, avgNav: 62.40, folioNumber: "10192834/56" },
+          { schemeCode: "118834", schemeName: "Mirae Asset Large Cap Fund - Direct Plan - Growth", units: 210.50, avgNav: 94.80, folioNumber: "20938475/12" },
+          { schemeCode: "120503", schemeName: "Nippon India Small Cap Fund - Direct Plan - Growth", units: 180.00, avgNav: 125.10, folioNumber: "31827465/99" },
+        ];
+        for (const mf of mockMfs) {
+          await apiFetch("/api/mutual-funds/holdings/mine", {
+            method: "POST",
+            body: JSON.stringify(mf),
+          }).catch(() => {});
+        }
+
         addToast({
           type: "success",
           title: "Demat Connected",
-          message: `Successfully connected client ID ${brokerUserId} and synced holdings!`,
+          message: `Successfully connected client ID ${brokerUserId} and synced stocks & mutual funds!`,
         });
         
         // Reset broker inputs
@@ -421,14 +646,46 @@ export default function PortfolioPage() {
               </div>
             </div>
 
-            {/* Holdings Table */}
-            {(() => {
+            {/* Asset Class Switcher */}
+            <div className="flex border-b border-border-custom gap-2 mt-4">
+              <button
+                type="button"
+                onClick={() => setActiveAssetTab("STOCKS")}
+                className={`font-mono text-xs font-bold px-4 py-2.5 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                  activeAssetTab === "STOCKS"
+                    ? "border-green-custom text-green-custom bg-green-custom/10"
+                    : "border-transparent text-text-3 hover:text-text-custom hover:bg-bg-2"
+                }`}
+              >
+                <span>STOCKS &amp; ETFS</span>
+                <span className={`text-[0.65rem] px-1.5 py-0.5 rounded ${activeAssetTab === "STOCKS" ? "bg-green-custom/20 text-green-custom" : "bg-bg-2 text-text-3"}`}>
+                  {holdings.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAssetTab("MUTUAL_FUNDS")}
+                className={`font-mono text-xs font-bold px-4 py-2.5 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                  activeAssetTab === "MUTUAL_FUNDS"
+                    ? "border-green-custom text-green-custom bg-green-custom/10"
+                    : "border-transparent text-text-3 hover:text-text-custom hover:bg-bg-2"
+                }`}
+              >
+                <span>MUTUAL FUNDS</span>
+                <span className={`text-[0.65rem] px-1.5 py-0.5 rounded ${activeAssetTab === "MUTUAL_FUNDS" ? "bg-green-custom/20 text-green-custom" : "bg-bg-2 text-text-3"}`}>
+                  {mfHoldings.length}
+                </span>
+              </button>
+            </div>
+
+            {/* Holdings Tables by Asset Class */}
+            {activeAssetTab === "STOCKS" && (() => {
               const inrTotalValue = holdings.filter(h => h.currency === "INR").reduce((sum, h) => sum + (h.value || 0), 0);
               const usdTotalValue = holdings.filter(h => h.currency === "USD").reduce((sum, h) => sum + (h.value || 0), 0);
 
               return (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-3 mt-8 mb-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mt-6 mb-3">
                     <div className="flex items-center gap-3">
                       <div className="font-mono text-[0.65rem] tracking-[0.15em] text-text-3 uppercase font-bold">
                         ACTIVE PORTFOLIO POSITIONS
@@ -611,6 +868,186 @@ export default function PortfolioPage() {
                 </>
               );
             })()}
+
+            {/* MUTUAL FUNDS VIEW */}
+            {activeAssetTab === "MUTUAL_FUNDS" && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 mt-6 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="font-mono text-[0.65rem] tracking-[0.15em] text-text-3 uppercase font-bold">
+                      OWNED MUTUAL FUND PORTFOLIO
+                    </div>
+                    <span className="font-mono text-[0.6rem] bg-bg-2 border border-border-custom px-2 py-0.5 rounded text-text-3">
+                      {mfHoldings.length} SCHEMES
+                    </span>
+                    <span className="font-mono text-[0.58rem] bg-cyan-custom/10 text-cyan-custom border border-cyan-custom/30 px-2 py-0.5 rounded">
+                      AMFI LIVE NAV
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddMfModal(true)}
+                      className="font-mono text-[0.65rem] font-bold px-3 py-1.5 bg-green-custom text-bg rounded cursor-pointer hover:opacity-90 transition-opacity flex items-center gap-1"
+                    >
+                      <span>+ ADD FUND</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowMfCsvModal(true)}
+                      className="font-mono text-[0.65rem] px-3 py-1.5 bg-bg-2 border border-border-custom text-text-2 hover:text-text-custom rounded cursor-pointer transition-colors"
+                    >
+                      IMPORT MF CSV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => fetchData()}
+                      className="font-mono text-[0.65rem] px-2.5 py-1.5 bg-bg-2 border border-border-custom text-text-3 hover:text-text-custom rounded cursor-pointer transition-colors"
+                      title="Refresh NAVs"
+                    >
+                      REFRESH
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mutual Fund Summary Metric Cards */}
+                {mfSummary && mfHoldings.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                    <div className="bg-bg-1 border border-border-custom p-4 rounded">
+                      <div className="font-mono text-[0.58rem] tracking-[0.1em] text-text-3 uppercase">TOTAL INVESTED</div>
+                      <div className="font-mono text-lg font-bold text-text-custom mt-1">
+                        ₹{mfSummary.totalInvested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="bg-bg-1 border border-border-custom p-4 rounded">
+                      <div className="font-mono text-[0.58rem] tracking-[0.1em] text-text-3 uppercase">CURRENT VALUE</div>
+                      <div className="font-mono text-lg font-bold text-cyan-custom mt-1">
+                        ₹{mfSummary.totalValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="bg-bg-1 border border-border-custom p-4 rounded">
+                      <div className="font-mono text-[0.58rem] tracking-[0.1em] text-text-3 uppercase">TOTAL RETURNS</div>
+                      <div className={`font-mono text-lg font-bold mt-1 ${mfSummary.totalPl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                        {mfSummary.totalPl >= 0 ? "+" : ""}₹{mfSummary.totalPl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        <span className="text-xs ml-1.5 font-normal">
+                          ({mfSummary.totalPl >= 0 ? "+" : ""}{mfSummary.totalPlPct.toFixed(2)}%)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {loading ? (
+                  <div className="font-mono text-xs text-text-3 py-8 text-center bg-bg-1 border border-border-custom rounded">
+                    FETCHING AMFI LIVE NAVS...
+                  </div>
+                ) : mfHoldings.length === 0 ? (
+                  <div className="border border-dashed border-border-custom bg-bg-1/40 p-10 text-center rounded flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-green-custom/10 flex items-center justify-center text-green-custom text-xl">
+                      📊
+                    </div>
+                    <div className="font-display text-base text-text-custom">NO MUTUAL FUNDS RECORDED</div>
+                    <p className="font-mono text-xs text-text-3 max-w-md leading-relaxed">
+                      Track your mutual fund portfolio with live daily NAV updates from AMFI. Add your holdings manually, sync via Zerodha Kite, or import your CAS statement.
+                    </p>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddMfModal(true)}
+                        className="font-mono text-xs font-bold px-4 py-2 bg-green-custom text-bg rounded cursor-pointer hover:opacity-90"
+                      >
+                        + ADD MUTUAL FUND
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowMfCsvModal(true)}
+                        className="font-mono text-xs px-4 py-2 bg-bg-2 border border-border-custom text-text-custom rounded cursor-pointer hover:bg-bg-3"
+                      >
+                        IMPORT CAS / COIN CSV
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-border-custom bg-bg-1 rounded">
+                    <table className="w-full text-left border-collapse text-xs font-mono">
+                      <thead>
+                        <tr className="border-b border-border-custom bg-bg-2 text-[0.62rem] text-text-3 tracking-[0.08em] uppercase">
+                          <th className="p-3">SCHEME NAME</th>
+                          <th className="p-3">FOLIO</th>
+                          <th className="p-3 text-right">UNITS</th>
+                          <th className="p-3 text-right">AVG NAV</th>
+                          <th className="p-3 text-right">CURRENT NAV</th>
+                          <th className="p-3 text-right">INVESTED</th>
+                          <th className="p-3 text-right">CURRENT VALUE</th>
+                          <th className="p-3 text-right">OVERALL P&amp;L</th>
+                          <th className="p-3 text-center">SOURCE</th>
+                          <th className="p-3 text-center">ACTIONS</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {mfHoldings.map((mf) => (
+                          <tr key={mf.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors whitespace-nowrap">
+                            <td className="p-3">
+                              <div className="font-bold text-text-custom max-w-[280px] truncate" title={mf.schemeName}>
+                                {mf.schemeName}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[0.62rem] text-text-3 mt-0.5">
+                                {mf.category && (
+                                  <span className="bg-bg-2 px-1 rounded text-text-3">{mf.category}</span>
+                                )}
+                                <span>AMFI: {mf.schemeCode}</span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-text-3 text-[0.7rem]">{mf.folioNumber || "—"}</td>
+                            <td className="p-3 text-right text-text-custom font-bold">{mf.units.toFixed(3)}</td>
+                            <td className="p-3 text-right text-text-custom">₹{mf.avgNav.toFixed(2)}</td>
+                            <td className="p-3 text-right text-cyan-custom font-bold">
+                              ₹{mf.currentNav.toFixed(2)}
+                              {mf.navDate && (
+                                <div className="text-[0.55rem] text-text-3 font-normal">{mf.navDate}</div>
+                              )}
+                            </td>
+                            <td className="p-3 text-right text-text-custom">₹{mf.invested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                            <td className="p-3 text-right text-text-custom font-bold">₹{mf.currentValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                            <td className={`p-3 text-right font-bold ${mf.pl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                              {mf.pl >= 0 ? "+" : ""}₹{mf.pl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                              <div className="text-[0.6rem] font-normal">
+                                ({mf.pl >= 0 ? "+" : ""}{mf.plPct.toFixed(2)}%)
+                              </div>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className="text-[0.6rem] px-1.5 py-0.5 rounded bg-bg-2 border border-border-custom text-text-3">
+                                {mf.source}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <a
+                                  href={`/mutual-funds`}
+                                  className="text-[0.62rem] font-mono px-2 py-0.5 border border-border-custom text-text-2 hover:text-green-custom rounded hover:border-green-custom transition-colors"
+                                  title="Explore in Mutual Funds"
+                                >
+                                  EXPLORE
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteMf(mf.id, mf.schemeName)}
+                                  className="text-[0.62rem] font-mono px-2 py-0.5 border border-red-custom/40 text-red-custom hover:bg-red-custom/10 rounded cursor-pointer transition-colors"
+                                  title="Remove from portfolio"
+                                >
+                                  RESET
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
           </section>
         </div>
 
@@ -928,6 +1365,220 @@ export default function PortfolioPage() {
           <span>© 2026</span>
         </div>
       </footer>
+
+      {/* Add Mutual Fund Modal */}
+      {showAddMfModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 backdrop-blur-sm p-4">
+          <div className="bg-bg-1 border border-border-custom rounded-lg max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 relative">
+            <div className="flex justify-between items-center border-b border-border-custom pb-3">
+              <div>
+                <h3 className="font-display text-lg text-text-custom">RECORD MUTUAL FUND HOLDING</h3>
+                <p className="font-mono text-[0.62rem] text-text-3 mt-0.5">Search any Indian AMFI mutual fund and record your units.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddMfModal(false);
+                  setSelectedMfScheme(null);
+                  setMfSearchQuery("");
+                  setMfSearchResults([]);
+                }}
+                className="text-text-3 hover:text-text-custom text-lg px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMf} className="flex flex-col gap-4">
+              {/* Scheme Search */}
+              <div className="relative">
+                <label className="block font-mono text-[0.6rem] text-text-3 uppercase mb-1">
+                  AMFI SCHEME SEARCH <span className="text-red-custom">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={mfSearchQuery}
+                    onChange={(e) => handleMfSearch(e.target.value)}
+                    placeholder="Search e.g. Parag Parikh, SBI Small Cap, HDFC..."
+                    className="flex-1 bg-bg-2 border border-border-custom rounded p-2.5 text-xs font-mono text-text-custom outline-none focus:border-green-custom"
+                    required
+                  />
+                  {mfSearching && (
+                    <span className="font-mono text-xs text-text-3 self-center animate-pulse">Searching...</span>
+                  )}
+                </div>
+
+                {/* Search Results Dropdown */}
+                {mfSearchResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 mt-1 max-h-48 overflow-y-auto bg-bg border border-border-custom rounded shadow-xl divide-y divide-border-custom">
+                    {mfSearchResults.map((res) => (
+                      <button
+                        type="button"
+                        key={res.schemeCode}
+                        onClick={() => handleSelectScheme(res)}
+                        className="w-full text-left p-2.5 text-xs font-mono text-text-2 hover:bg-bg-2 hover:text-green-custom transition-colors cursor-pointer"
+                      >
+                        <div className="font-bold text-text-custom">{res.schemeName}</div>
+                        <div className="text-[0.6rem] text-text-3">Code: {res.schemeCode}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {selectedMfScheme && (
+                <div className="p-2.5 rounded bg-green-custom/10 border border-green-custom/30 text-xs font-mono text-green-custom">
+                  ✓ Selected: <span className="font-bold">{selectedMfScheme.schemeName}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-mono text-[0.6rem] text-text-3 uppercase mb-1">
+                    UNITS HELD <span className="text-red-custom">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={mfUnits}
+                    onChange={(e) => setMfUnits(e.target.value)}
+                    placeholder="e.g. 150.254"
+                    className="w-full bg-bg-2 border border-border-custom rounded p-2.5 text-xs font-mono text-text-custom outline-none focus:border-green-custom"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-mono text-[0.6rem] text-text-3 uppercase mb-1">
+                    AVG PURCHASE NAV (₹) <span className="text-red-custom">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={mfAvgNav}
+                    onChange={(e) => setMfAvgNav(e.target.value)}
+                    placeholder="e.g. 62.45"
+                    className="w-full bg-bg-2 border border-border-custom rounded p-2.5 text-xs font-mono text-text-custom outline-none focus:border-green-custom"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-mono text-[0.6rem] text-text-3 uppercase mb-1">
+                  FOLIO NUMBER (OPTIONAL)
+                </label>
+                <input
+                  type="text"
+                  value={mfFolio}
+                  onChange={(e) => setMfFolio(e.target.value)}
+                  placeholder="e.g. 10293847/56"
+                  className="w-full bg-bg-2 border border-border-custom rounded p-2.5 text-xs font-mono text-text-custom outline-none focus:border-green-custom"
+                />
+              </div>
+
+              {/* Total Investment preview */}
+              {parseFloat(mfUnits) > 0 && parseFloat(mfAvgNav) > 0 && (
+                <div className="p-3 bg-bg-2 border border-border-custom rounded flex justify-between items-center text-xs font-mono">
+                  <span className="text-text-3">Estimated Invested Cost:</span>
+                  <span className="text-text-custom font-bold">
+                    ₹{(parseFloat(mfUnits) * parseFloat(mfAvgNav)).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddMfModal(false);
+                    setSelectedMfScheme(null);
+                    setMfSearchQuery("");
+                  }}
+                  className="font-mono text-xs px-4 py-2 border border-border-custom text-text-3 hover:text-text-custom rounded cursor-pointer"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingMf || !selectedMfScheme}
+                  className="font-mono text-xs font-bold px-5 py-2 bg-green-custom text-bg rounded cursor-pointer hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingMf ? "SAVING..." : "SAVE HOLDING"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import MF CSV Modal */}
+      {showMfCsvModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg/80 backdrop-blur-sm p-4">
+          <div className="bg-bg-1 border border-border-custom rounded-lg max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 relative">
+            <div className="flex justify-between items-center border-b border-border-custom pb-3">
+              <div>
+                <h3 className="font-display text-lg text-text-custom">IMPORT MUTUAL FUNDS CSV</h3>
+                <p className="font-mono text-[0.62rem] text-text-3 mt-0.5">Upload Zerodha Coin statement or CAMS / KFintech CAS export.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMfCsvModal(false);
+                  setMfCsvFile(null);
+                }}
+                className="text-text-3 hover:text-text-custom text-lg px-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div className="p-3 bg-bg-2 border border-border-custom rounded text-[0.68rem] text-text-2 font-mono leading-relaxed">
+                Expected CSV columns (any standard casing):<br />
+                • <strong className="text-text-custom">Scheme / Fund Name</strong> (or AMFI Code)<br />
+                • <strong className="text-text-custom">Units / Quantity</strong><br />
+                • <strong className="text-text-custom">Avg NAV / Purchase Price</strong><br />
+                • <strong className="text-text-custom">Folio No</strong> (optional)
+              </div>
+
+              <div>
+                <label className="block font-mono text-[0.6rem] text-text-3 uppercase mb-1">
+                  SELECT CSV FILE
+                </label>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => setMfCsvFile(e.target.files?.[0] || null)}
+                  className="w-full bg-bg-2 border border-border-custom rounded p-2.5 text-xs font-mono text-text-custom outline-none focus:border-green-custom"
+                />
+              </div>
+
+              <div className="flex gap-3 justify-end mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMfCsvModal(false);
+                    setMfCsvFile(null);
+                  }}
+                  className="font-mono text-xs px-4 py-2 border border-border-custom text-text-3 hover:text-text-custom rounded cursor-pointer"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="button"
+                  disabled={uploadingMfCsv || !mfCsvFile}
+                  onClick={() => mfCsvFile && handleMfCsvSubmit(mfCsvFile)}
+                  className="font-mono text-xs font-bold px-5 py-2 bg-green-custom text-bg rounded cursor-pointer hover:opacity-90 disabled:opacity-50"
+                >
+                  {uploadingMfCsv ? "PARSING & IMPORTING..." : "IMPORT HOLDINGS"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signal Detail Modal */}
       <SignalDetailModal

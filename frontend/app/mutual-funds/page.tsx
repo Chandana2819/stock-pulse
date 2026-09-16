@@ -35,6 +35,34 @@ type GoalSuggestion = {
 
 type GoalOption = { id: string; name: string; targetDate: string; expectedReturn: number };
 
+type OwnedMfHolding = {
+  id: string;
+  schemeCode: string;
+  schemeName: string;
+  folioNumber: string | null;
+  units: number;
+  avgNav: number;
+  currentNav: number;
+  navDate?: string | null;
+  category?: string;
+  fundHouse?: string;
+  invested: number;
+  currentValue: number;
+  pl: number;
+  plPct: number;
+  source: string;
+  broker: string | null;
+};
+
+type OwnedMfSummary = {
+  totalInvested: number;
+  totalValue: number;
+  totalPl: number;
+  totalPlPct: number;
+  fundCount: number;
+  totalUnits: number;
+};
+
 function Ret({ label, val }: { label: string; val: number | null }) {
   return (
     <div className="p-2.5 border border-border-custom bg-bg-2 text-center">
@@ -45,6 +73,11 @@ function Ret({ label, val }: { label: string; val: number | null }) {
 }
 
 export default function MutualFundsPage() {
+  const [activeMainTab, setActiveMainTab] = useState<"EXPLORE" | "PORTFOLIO">("EXPLORE");
+  const [ownedHoldings, setOwnedHoldings] = useState<OwnedMfHolding[]>([]);
+  const [ownedSummary, setOwnedSummary] = useState<OwnedMfSummary | null>(null);
+  const [ownedLoading, setOwnedLoading] = useState(false);
+
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Fund[]>([]);
   const [selected, setSelected] = useState<FundDetail | null>(null);
@@ -116,9 +149,24 @@ export default function MutualFundsPage() {
     }
   }, []);
 
+  const loadOwnedHoldings = useCallback(async () => {
+    setOwnedLoading(true);
+    try {
+      const res = await api.get<{ holdings: OwnedMfHolding[]; summary: OwnedMfSummary }>("/api/mutual-funds/holdings/mine");
+      setOwnedHoldings(res.holdings || []);
+      setOwnedSummary(res.summary || null);
+    } catch {
+      setOwnedHoldings([]);
+      setOwnedSummary(null);
+    } finally {
+      setOwnedLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadRecommendations();
-  }, [loadRecommendations]);
+    loadOwnedHoldings();
+  }, [loadRecommendations, loadOwnedHoldings]);
 
   const search = async () => {
     if (!query.trim()) return;
@@ -163,11 +211,137 @@ export default function MutualFundsPage() {
         <p className="font-mono text-[0.65rem] text-text-3 mt-1">NAV & returns sourced from the public AMFI feed — search any scheme.</p>
       </div>
 
-      {/* Goal-first suggestion — asked before the generic category list so the
-          first thing shown reflects the visitor's own timeline and return
-          assumption, not just "top of category" for everyone. Skipped
-          automatically when they already have a Goal on record. */}
-      {!selected && existingGoals !== null && !goalSuggestLoading && !goalSuggestion && !goalPromptDismissed && (
+      {/* Main Tabs */}
+      <div className="flex border-b border-border-custom gap-2">
+        <button
+          type="button"
+          onClick={() => { setActiveMainTab("EXPLORE"); setSelected(null); }}
+          className={`font-mono text-xs font-bold px-4 py-2.5 border-b-2 transition-all cursor-pointer ${
+            activeMainTab === "EXPLORE"
+              ? "border-green-custom text-green-custom bg-green-custom/10"
+              : "border-transparent text-text-3 hover:text-text-custom"
+          }`}
+        >
+          EXPLORE &amp; RECOMMENDATIONS
+        </button>
+        <button
+          type="button"
+          onClick={() => { setActiveMainTab("PORTFOLIO"); setSelected(null); }}
+          className={`font-mono text-xs font-bold px-4 py-2.5 border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+            activeMainTab === "PORTFOLIO"
+              ? "border-green-custom text-green-custom bg-green-custom/10"
+              : "border-transparent text-text-3 hover:text-text-custom"
+          }`}
+        >
+          <span>MY OWNED FUNDS</span>
+          <span className={`text-[0.62rem] px-1.5 py-0.2 rounded ${activeMainTab === "PORTFOLIO" ? "bg-green-custom/20 text-green-custom" : "bg-bg-2 text-text-3"}`}>
+            {ownedHoldings.length}
+          </span>
+        </button>
+      </div>
+
+      {/* Owned Portfolio View */}
+      {activeMainTab === "PORTFOLIO" && !selected && (
+        <div className="flex flex-col gap-4">
+          {ownedSummary && ownedHoldings.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-bg-1 border border-border-custom p-4">
+                <div className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider">TOTAL INVESTED</div>
+                <div className="font-mono text-lg font-bold text-text-custom mt-1">
+                  ₹{ownedSummary.totalInvested.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="bg-bg-1 border border-border-custom p-4">
+                <div className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider">CURRENT VALUE</div>
+                <div className="font-mono text-lg font-bold text-cyan-custom mt-1">
+                  ₹{ownedSummary.totalValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="bg-bg-1 border border-border-custom p-4">
+                <div className="font-mono text-[0.55rem] text-text-3 uppercase tracking-wider">TOTAL RETURNS</div>
+                <div className={`font-mono text-lg font-bold mt-1 ${ownedSummary.totalPl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                  {ownedSummary.totalPl >= 0 ? "+" : ""}₹{ownedSummary.totalPl.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                  <span className="text-xs ml-1 font-normal">
+                    ({ownedSummary.totalPl >= 0 ? "+" : ""}{ownedSummary.totalPlPct.toFixed(2)}%)
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {ownedLoading ? (
+            <div className="font-mono text-xs text-text-3 text-center py-8 bg-bg-1 border border-border-custom">
+              Loading your mutual fund holdings...
+            </div>
+          ) : ownedHoldings.length === 0 ? (
+            <div className="border border-dashed border-border-custom bg-bg-1 p-8 text-center flex flex-col items-center gap-3">
+              <div className="font-display text-base text-text-custom">NO OWNED FUNDS FOUND</div>
+              <p className="font-mono text-xs text-text-3 max-w-md">
+                You haven't added any mutual fund holdings yet. You can add them in your Portfolio tab, sync with Zerodha Kite, or search and explore funds below.
+              </p>
+              <a
+                href="/portfolio"
+                className="font-mono text-xs font-bold px-4 py-2 bg-green-custom text-bg rounded cursor-pointer hover:opacity-90 inline-block"
+              >
+                GO TO PORTFOLIO TO ADD FUNDS →
+              </a>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="font-mono text-[0.62rem] text-text-3 uppercase tracking-wider font-bold">
+                  {ownedHoldings.length} HOLDINGS RECORDED
+                </span>
+                <a
+                  href="/portfolio"
+                  className="font-mono text-[0.62rem] text-green-custom hover:underline"
+                >
+                  Manage / Add More in Portfolio →
+                </a>
+              </div>
+
+              <div className="divide-y divide-border-custom border border-border-custom bg-bg-1">
+                {ownedHoldings.map((h) => (
+                  <div key={h.id} className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 hover:bg-bg-2/40 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold text-sm text-text-custom">{h.schemeName}</div>
+                      <div className="flex flex-wrap items-center gap-2 font-mono text-[0.62rem] text-text-3 mt-1">
+                        {h.category && <span className="bg-bg-2 px-1.5 py-0.5 rounded text-text-2">{h.category}</span>}
+                        {h.folioNumber && <span>Folio: {h.folioNumber}</span>}
+                        <span>{h.units.toFixed(3)} units @ ₹{h.avgNav.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6 self-end sm:self-center shrink-0">
+                      <div className="text-right">
+                        <div className="font-mono text-xs text-text-3">LTP: ₹{h.currentNav.toFixed(2)}</div>
+                        <div className="font-mono text-sm font-bold text-text-custom">
+                          ₹{h.currentValue.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className={`font-mono text-[0.62rem] font-bold ${h.pl >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                          {h.pl >= 0 ? "+" : ""}₹{h.pl.toFixed(2)} ({h.pl >= 0 ? "+" : ""}{h.plPct.toFixed(2)}%)
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => select({ schemeCode: h.schemeCode, schemeName: h.schemeName })}
+                        className="font-mono text-xs px-3 py-1.5 border border-border-custom text-text-custom hover:border-green-custom hover:text-green-custom transition-colors cursor-pointer"
+                        title="View fund history &amp; SIP calculator"
+                      >
+                        CALCULATE SIP
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Goal-first suggestion */}
+      {activeMainTab === "EXPLORE" && !selected && existingGoals !== null && !goalSuggestLoading && !goalSuggestion && !goalPromptDismissed && (
         <div className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
           <div>
             <h2 className="font-display text-lg text-text-custom">WHAT ARE YOU INVESTING FOR?</h2>
@@ -251,10 +425,8 @@ export default function MutualFundsPage() {
         </div>
       )}
 
-      {/* Recommended Funds — hidden while viewing a fund's detail so selecting
-          one doesn't feel like a no-op (the detail panel renders below the
-          search box, off-screen under this section otherwise). */}
-      {!selected && (
+      {/* Recommended Funds */}
+      {activeMainTab === "EXPLORE" && !selected && (
       <div className="border border-border-bright bg-bg-1 p-5 flex flex-col gap-4">
         <div>
           <h2 className="font-display text-lg text-text-custom">RECOMMENDED FUNDS</h2>

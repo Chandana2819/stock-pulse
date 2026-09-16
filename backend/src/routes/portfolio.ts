@@ -1,6 +1,7 @@
 import express from "express";
 import { prisma } from "../lib/prisma";
 import { getEnrichedHoldings, computePortfolioXirr, ensureProfile } from "../lib/services/portfolio";
+import { getEnrichedMfHoldings } from "../lib/services/mfPortfolio";
 import { diagnosePortfolio, type HoldingLite } from "../lib/engine/portfolioDoctor";
 import { analyzeBehavior } from "../lib/engine/behavior";
 import { lookupUniverse } from "../lib/universe";
@@ -29,8 +30,16 @@ router.get(
   asyncHandler(async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user) throw ApiError.notFound("User not found");
-    const holdings = await getEnrichedHoldings(req.user!.id);
-    return res.json({ holdings, user: { walletInr: user.walletInr, walletUsd: user.walletUsd } });
+    const [holdings, mfData] = await Promise.all([
+      getEnrichedHoldings(req.user!.id),
+      getEnrichedMfHoldings(req.user!.id),
+    ]);
+    return res.json({
+      holdings,
+      mfHoldings: mfData.holdings,
+      mfSummary: mfData.summary,
+      user: { walletInr: user.walletInr, walletUsd: user.walletUsd },
+    });
   })
 );
 

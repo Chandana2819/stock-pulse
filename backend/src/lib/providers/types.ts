@@ -150,6 +150,15 @@ export interface IpoProvider {
 // ── Brokers ────────────────────────────────────────────────────────────
 
 export type BrokerHolding = { symbol: string; quantity: number; avgPrice: number; exchange: string };
+export type BrokerMfHolding = {
+  folio?: string;
+  schemeCode?: string;
+  schemeName: string;
+  units: number;
+  avgPrice: number;
+  lastPrice?: number;
+  pnl?: number;
+};
 export type BrokerOrder = {
   id: string;
   symbol: string;
@@ -168,6 +177,7 @@ export interface BrokerProvider {
   getAuthUrl(state: string): string;
   exchangeCode(code: string): Promise<{ accessToken: string; refreshToken?: string; externalUserId?: string; expiresAt?: Date }>;
   getHoldings(accessToken: string): Promise<BrokerHolding[]>;
+  getMfHoldings?(accessToken: string): Promise<BrokerMfHolding[]>;
   getOrders(accessToken: string): Promise<BrokerOrder[]>;
   getPositions?(accessToken: string): Promise<any[]>;
 }
