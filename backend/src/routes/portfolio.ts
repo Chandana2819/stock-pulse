@@ -74,8 +74,10 @@ router.get(
           const avgPrice = h.avgPrice;
           const quantity = h.quantity;
 
-          const pnl = Number(((ltp - avgPrice) * quantity).toFixed(2));
-          const pnlPercentage = avgPrice > 0 ? Number((((ltp - avgPrice) / avgPrice) * 100).toFixed(2)) : 0;
+          const investedCost = quantity * avgPrice;
+          const currentValue = quantity * ltp;
+          const pnl = currentValue - investedCost;
+          const pnlPercentage = avgPrice > 0 ? ((ltp - avgPrice) / avgPrice) * 100 : 0;
 
           if (analysis && analysis.found) {
             return {
@@ -84,8 +86,10 @@ router.get(
               quantity,
               averagePrice: avgPrice,
               currentPrice: ltp,
-              pnl,
-              pnlPercentage,
+              investedCost: Number(investedCost.toFixed(2)),
+              currentValue: Number(currentValue.toFixed(2)),
+              pnl: Number(pnl.toFixed(2)),
+              pnlPercentage: Number(pnlPercentage.toFixed(2)),
               scores: analysis.decision.scores,
               pillars: analysis.decision.pillars,
               finalScore: analysis.decision.scores.final,
@@ -111,8 +115,10 @@ router.get(
             quantity,
             averagePrice: avgPrice,
             currentPrice: ltp,
-            pnl,
-            pnlPercentage,
+            investedCost: Number(investedCost.toFixed(2)),
+            currentValue: Number(currentValue.toFixed(2)),
+            pnl: Number(pnl.toFixed(2)),
+            pnlPercentage: Number(pnlPercentage.toFixed(2)),
             scores: { trend: 50, momentum: 50, volume: 50, fundamentals: 50, sentiment: 50, risk: 50, marketSector: 50, final: 50 },
             pillars: [],
             finalScore: 50,
@@ -265,7 +271,7 @@ const ZERODHA_SNAPSHOT_HOLDINGS = [
   { stock: "IRFC.NS", displaySym: "IRFC", quantity: 2, avgPrice: 100.75, exchange: "NSE", currency: "INR" },
   { stock: "RELIANCE.NS", displaySym: "RELIANCE", quantity: 2, avgPrice: 1336.35, exchange: "NSE", currency: "INR" },
   { stock: "TATAPOWER.NS", displaySym: "TATAPOWER", quantity: 4, avgPrice: 395.85, exchange: "NSE", currency: "INR" },
-  { stock: "ADANIGREEN.NS", displaySym: "ADANIGREEN", quantity: 3, avgPrice: 1020.20, exchange: "NSE", currency: "INR" },
+  { stock: "ADANIGREEN.NS", displaySym: "ADANIGREEN", quantity: 3, avgPrice: 1020.28, exchange: "NSE", currency: "INR" },
   { stock: "MON100.NS", displaySym: "MON100", quantity: 6, avgPrice: 247.28, exchange: "NSE", currency: "INR" },
   { stock: "MASPTOP50.NS", displaySym: "MASPTOP50", quantity: 6, avgPrice: 75.00, exchange: "NSE", currency: "INR" },
   { stock: "TATAGOLD.NS", displaySym: "TATAGOLD", quantity: 102, avgPrice: 14.61, exchange: "NSE", currency: "INR" },

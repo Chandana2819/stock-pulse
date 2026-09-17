@@ -80,7 +80,7 @@ export class ZerodhaKiteProvider implements BrokerProvider {
         { symbol: "IRFC.NS", quantity: 2, avgPrice: 100.75, exchange: "NSE" },
         { symbol: "RELIANCE.NS", quantity: 2, avgPrice: 1336.35, exchange: "NSE" },
         { symbol: "TATAPOWER.NS", quantity: 4, avgPrice: 395.85, exchange: "NSE" },
-        { symbol: "ADANIGREEN.NS", quantity: 3, avgPrice: 1020.20, exchange: "NSE" },
+        { symbol: "ADANIGREEN.NS", quantity: 3, avgPrice: 1020.28, exchange: "NSE" },
         { symbol: "MON100.NS", quantity: 6, avgPrice: 247.28, exchange: "NSE" },
         { symbol: "MASPTOP50.NS", quantity: 6, avgPrice: 75.00, exchange: "NSE" },
         { symbol: "TATAGOLD.NS", quantity: 102, avgPrice: 14.61, exchange: "NSE" },

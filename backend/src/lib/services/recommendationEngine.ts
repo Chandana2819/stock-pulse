@@ -55,23 +55,23 @@ export class RecommendationEngine {
       candlesCount: input.candlesCount,
     });
 
-    // Compute Entry Zone, Stop Loss, and Target Range for BUY/STRONG BUY signals
-    let entryZone: RecommendationResult["entryZone"] = null;
-    let stopLoss: RecommendationResult["stopLoss"] = null;
-    let targetRange: RecommendationResult["targetRange"] = null;
+    // Compute Entry Zone, Stop Loss, and Target Range
+    const price = input.price;
+    const atrVal = input.indicators?.atr14 ?? (price * 0.025);
 
+    // Stop Loss and Target Range for position risk and upside targets
+    const stopLoss: number = Number((price - 2 * atrVal).toFixed(2));
+    const targetRange = {
+      min: Number((price * 1.08).toFixed(2)),
+      max: Number((price * 1.16).toFixed(2)),
+    };
+
+    // Entry Zone only generated for BUY / STRONG BUY signals
+    let entryZone: RecommendationResult["entryZone"] = null;
     if (decision.signal === "BUY" || decision.signal === "STRONG BUY") {
-      const price = input.price;
-      const atrVal = input.indicators?.atr14 ?? (price * 0.025);
-      
-      stopLoss = Number((price - 2 * atrVal).toFixed(2));
       entryZone = {
-        min: Number((price - 0.015 * price).toFixed(2)),
-        max: Number((price + 0.005 * price).toFixed(2)),
-      };
-      targetRange = {
-        min: Number((price + 0.08 * price).toFixed(2)),
-        max: Number((price + 0.16 * price).toFixed(2)),
+        min: Number((price * 0.985).toFixed(2)),
+        max: Number((price * 1.005).toFixed(2)),
       };
     }
 

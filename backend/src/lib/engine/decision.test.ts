@@ -214,14 +214,16 @@ describe("computeDecision — final score and signal classification", () => {
       sectorChangePct: 1,
     });
     const result = computeDecision(input);
-    const expected = Math.round(
-      result.scores.trend * SCORING_WEIGHTS.trend +
+    const expected = Number(
+      (
+        result.scores.trend * SCORING_WEIGHTS.trend +
         result.scores.momentum * SCORING_WEIGHTS.momentum +
         result.scores.volume * SCORING_WEIGHTS.volume +
         result.scores.fundamentals * SCORING_WEIGHTS.fundamentals +
         result.scores.sentiment * SCORING_WEIGHTS.sentiment +
         result.scores.risk * SCORING_WEIGHTS.risk +
         result.scores.marketSector * SCORING_WEIGHTS.marketSector
+      ).toFixed(2)
     );
     expect(result.scores.final).toBe(expected);
   });

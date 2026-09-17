@@ -183,12 +183,12 @@ export function momentum(values: number[], period = 14): (number | null)[] {
   return out;
 }
 
-export function volumeTrend(candles: Candle[], shortPeriod = 5, longPeriod = 20): number | null {
-  const volumes = candles.map((c) => c.volume ?? 0);
+export function volumeTrend(candles: Candle[], _shortPeriod = 5, longPeriod = 20): number | null {
+  const volumes = candles.map((c) => c.volume ?? 0).filter((v) => Number.isFinite(v));
   if (volumes.length < longPeriod) return null;
-  const shortSma = volumes.slice(-shortPeriod).reduce((a, b) => a + b, 0) / shortPeriod;
+  const currentVol = volumes[volumes.length - 1];
   const longSma = volumes.slice(-longPeriod).reduce((a, b) => a + b, 0) / longPeriod;
-  return longSma > 0 ? shortSma / longSma : null;
+  return longSma > 0 ? currentVol / longSma : null;
 }
 
 export function maxDrawdown(closes: number[], lookback = 30): number | null {
@@ -236,9 +236,13 @@ export function computeIndicators(candles: Candle[]): IndicatorSnapshot {
 
   let trend: IndicatorSnapshot["trend"] = "UNKNOWN";
   if (price != null && s20 != null && s50 != null) {
-    if (price > s20 && s20 > s50) trend = "UPTREND";
-    else if (price < s20 && s20 < s50) trend = "DOWNTREND";
-    else trend = "SIDEWAYS";
+    if (s20 < s50) {
+      trend = "DOWNTREND";
+    } else if (s20 > s50 && price > s20) {
+      trend = "UPTREND";
+    } else {
+      trend = "SIDEWAYS";
+    }
   }
 
   // Relative Strength (stock return vs hypothetical 2% market index return over 55 days)

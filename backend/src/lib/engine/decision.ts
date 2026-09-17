@@ -70,6 +70,15 @@ export type DecisionInput = {
   candlesCount?: number;
 };
 
+export function classifySignal(score: number): SignalAction {
+  if (score >= 80) return "STRONG BUY";
+  if (score >= 65) return "BUY";
+  if (score >= 55) return "HOLD";
+  if (score >= 45) return "REDUCE";
+  if (score >= 30) return "SELL";
+  return "STRONG SELL";
+}
+
 function clamp0to100(n: number): number {
   return Math.round(Math.max(0, Math.min(100, n)));
 }
@@ -82,12 +91,15 @@ function computeTrendPillar(ind: IndicatorSnapshot | null, priceChangePct: numbe
   const evidence: string[] = [];
   let score = 50;
 
-  if (ind.trend === "UPTREND") {
-    score += 30;
-    evidence.push("Technical price trend is in a clear uptrend (SMA20 > SMA50)");
-  } else if (ind.trend === "DOWNTREND") {
+  const isUptrend = ind.trend === "UPTREND" || (ind.sma20 != null && ind.sma50 != null && ind.sma20 > ind.sma50 && ind.trend !== "DOWNTREND");
+  const isDowntrend = ind.trend === "DOWNTREND" || (ind.sma20 != null && ind.sma50 != null && ind.sma20 < ind.sma50);
+
+  if (isDowntrend) {
     score -= 30;
     evidence.push("Technical price trend is in a downtrend (SMA20 < SMA50)");
+  } else if (isUptrend) {
+    score += 30;
+    evidence.push("Technical price trend is in a clear uptrend (SMA20 > SMA50)");
   } else {
     evidence.push("Price is consolidating near its moving averages");
   }
@@ -451,7 +463,8 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     risk.score * SCORING_WEIGHTS.risk +
     marketSector.score * SCORING_WEIGHTS.marketSector;
 
-  const finalScore = clamp0to100(finalScoreRaw);
+  const finalScoreClamped = Math.max(0, Math.min(100, finalScoreRaw));
+  const finalScore = Number(finalScoreClamped.toFixed(2));
 
   const scores: DecisionScores = {
     trend: trend.score,
@@ -464,14 +477,8 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     final: finalScore,
   };
 
-  // Signal Classification (0-100)
-  let signal: SignalAction;
-  if (finalScore >= 80) signal = "STRONG BUY";
-  else if (finalScore >= 65) signal = "BUY";
-  else if (finalScore >= 55) signal = "HOLD";
-  else if (finalScore >= 45) signal = "REDUCE";
-  else if (finalScore >= 30) signal = "SELL";
-  else signal = "STRONG SELL";
+  // Signal Classification (0-100) using exact boundaries without premature rounding
+  let signal: SignalAction = classifySignal(finalScoreClamped);
 
   // Safety Overrides & Validation Rules
   const reasons: string[] = [];
@@ -483,31 +490,35 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     }
   });
 
-  // Rule A: Insufficient Data Quality -> WAIT
-  if (dataQualityLabel === "INSUFFICIENT" || (input.candlesCount != null && input.candlesCount < 30)) {
+  // Rule A: Insufficient Data Quality / < 30 trading candles -> WAIT
+  const hasInsufficientCandles = input.candlesCount != null && input.candlesCount < 30;
+  if (dataQualityLabel === "INSUFFICIENT" || hasInsufficientCandles) {
     signal = "WAIT";
-    reasons.unshift("Data coverage is insufficient to generate a reliable signal");
+    reasons.unshift("Data coverage is insufficient to generate a reliable signal (<30 trading days)");
   }
 
-  // Rule B: Elevated Market Risk (>75) overrides BUY to WAIT
+  // Rule B: Elevated Market Risk (>=75) overrides BUY to WAIT
   if ((signal === "BUY" || signal === "STRONG BUY") && input.marketRiskScore != null && input.marketRiskScore >= 75) {
     signal = "WAIT";
     warnings.push("BUY signal overridden to WAIT due to elevated broad market volatility (Market Risk >= 75)");
     reasons.unshift("Elevated market risk overrides BUY signal into WAIT");
   }
 
-  // Rule C: Technical Downtrend overrides BUY to WAIT
-  if ((signal === "BUY" || signal === "STRONG BUY") && input.indicators?.trend === "DOWNTREND") {
+  // Rule C: Technical Downtrend (SMA20 < SMA50 or DOWNTREND) overrides BUY to WAIT
+  const isDowntrend =
+    (input.indicators?.sma20 != null && input.indicators?.sma50 != null && input.indicators.sma20 < input.indicators.sma50) ||
+    input.indicators?.trend === "DOWNTREND";
+  if ((signal === "BUY" || signal === "STRONG BUY") && isDowntrend) {
     signal = "WAIT";
-    warnings.push("BUY signal overridden to WAIT because technical price trend is in a downtrend");
-    reasons.unshift("Downtrend setup caps action to WAIT to avoid catching falling price momentum");
+    warnings.push("BUY signal overridden to WAIT because technical price trend is in a downtrend (SMA20 < SMA50)");
+    reasons.unshift("Downtrend setup (SMA20 < SMA50) caps action to WAIT to avoid catching falling price momentum");
   }
 
-  // Confidence Calculation (0-100)
+  // Confidence Calculation (0-100): 60% agreementFactor + 40% dataQualityScore
   const scoreDeviations = usable.map(p => Math.abs(p.score - finalScore));
   const avgDeviation = scoreDeviations.length > 0 ? scoreDeviations.reduce((a, b) => a + b, 0) / scoreDeviations.length : 25;
-  const agreementFactor = Math.max(0, 100 - avgDeviation * 1.8);
-  const confidence = clamp0to100(0.6 * agreementFactor + 0.4 * (dataQualityScore));
+  const agreementFactor = clamp0to100(Math.max(0, 100 - avgDeviation * 1.8));
+  const confidence = clamp0to100(0.60 * agreementFactor + 0.40 * dataQualityScore);
 
   // Main Risk summary
   const lowestPillar = [...usable].sort((a, b) => a.score - b.score)[0];

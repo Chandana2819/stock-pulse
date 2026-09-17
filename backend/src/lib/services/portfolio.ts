@@ -219,10 +219,10 @@ export async function getEnrichedHoldings(userId: string) {
     const providerSymbol = symbols[i];
     const live = quotes[providerSymbol];
     const currentPrice = live?.price ?? null;
-    const cost = h.avgPrice * h.quantity;
-    const value = currentPrice != null ? currentPrice * h.quantity : null;
-    const pl = currentPrice != null ? value! - cost : null;
-    const plPct = (currentPrice != null && cost > 0) ? (pl! / cost) * 100 : null;
+    const cost = h.quantity * h.avgPrice;
+    const value = currentPrice != null ? h.quantity * currentPrice : null;
+    const pl = value != null ? value - cost : null;
+    const plPct = (currentPrice != null && h.avgPrice > 0) ? ((currentPrice - h.avgPrice) / h.avgPrice) * 100 : null;
     return { ...h, currentPrice, cost, value, pl, plPct };
   });
 }

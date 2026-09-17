@@ -817,7 +817,7 @@ export default function PortfolioPage() {
                                 <td className="p-3 text-center font-mono text-[0.75rem]">
                                   {sig?.targetRange ? (
                                     <span className="text-green-custom font-bold">
-                                      {currSym}{sig.targetRange.min} - {currSym}{sig.targetRange.max}
+                                      {currSym}{sig.targetRange.min.toFixed(2)} - {currSym}{sig.targetRange.max.toFixed(2)}
                                     </span>
                                   ) : (
                                     <span className="text-text-4">—</span>

@@ -209,7 +209,7 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
       dataTimestamp: quote.quoteTime ? new Date(quote.quoteTime * 1000).toISOString() : new Date().toISOString(),
       dataSource: marketDataProvider.id,
       marketStatus: "CLOSED" as const,
-      entryZone: { min: 0, max: 0 },
+      entryZone: null as { min: number; max: number } | null,
       stopLoss: 0,
       targetRange: { min: 0, max: 0 },
       activeSince: null,
@@ -222,10 +222,11 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     const price = quote.price;
     const atrVal = indicators?.atr14 ?? (price * 0.025); // Fallback to 2.5% ATR
     const stopLoss = Number((price - 2 * atrVal).toFixed(2));
-    const entryMin = Number((price - 0.015 * price).toFixed(2));
-    const entryMax = Number((price + 0.005 * price).toFixed(2));
-    const targetMin = Number((price + 0.08 * price).toFixed(2));
-    const targetMax = Number((price + 0.15 * price).toFixed(2));
+    const entryMin = Number((price * 0.985).toFixed(2));
+    const entryMax = Number((price * 1.005).toFixed(2));
+    const targetMin = Number((price * 1.08).toFixed(2));
+    const targetMax = Number((price * 1.16).toFixed(2));
+    const isBuySignal = calculatedDecision.signal === "BUY" || calculatedDecision.signal === "STRONG BUY";
 
     // Calculate Risk Level (LOW, MODERATE, HIGH, VERY HIGH)
     let riskLevel: "LOW" | "MODERATE" | "HIGH" | "VERY HIGH" = "MODERATE";
@@ -307,7 +308,7 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
       dataTimestamp: quote.quoteTime ? new Date(quote.quoteTime * 1000).toISOString() : new Date().toISOString(),
       dataSource: marketDataProvider.id,
       marketStatus,
-      entryZone: { min: entryMin, max: entryMax },
+      entryZone: isBuySignal ? { min: entryMin, max: entryMax } : null,
       stopLoss,
       targetRange: { min: targetMin, max: targetMax },
       activeSince,

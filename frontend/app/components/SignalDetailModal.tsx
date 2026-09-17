@@ -264,9 +264,11 @@ export default function SignalDetailModal({ isOpen, onClose, holding, signal, po
             <div className="flex-1 text-center">
               <div className="font-mono text-[0.62rem] tracking-wider text-text-3 uppercase">ENTRY ACCUMULATION ZONE</div>
               <div className="font-mono text-base font-bold text-cyan-custom mt-0.5">
-                {signal?.entryZone ? `${currencySymbol}${signal.entryZone.min} - ${currencySymbol}${signal.entryZone.max}` : "—"}
+                {signal?.entryZone ? `${currencySymbol}${signal.entryZone.min.toFixed(2)} - ${currencySymbol}${signal.entryZone.max.toFixed(2)}` : "—"}
               </div>
-              <div className="font-mono text-[0.65rem] text-text-4">Optimal reload range</div>
+              <div className="font-mono text-[0.65rem] text-text-4">
+                {signal?.entryZone ? "Optimal reload range" : "Applicable for BUY signals"}
+              </div>
             </div>
 
             <div className="h-8 w-px bg-border-custom hidden sm:block" />
@@ -274,7 +276,7 @@ export default function SignalDetailModal({ isOpen, onClose, holding, signal, po
             <div className="flex-1 text-center sm:text-right">
               <div className="font-mono text-[0.62rem] tracking-wider text-text-3 uppercase">AI TARGET RANGE</div>
               <div className="font-mono text-base font-bold text-green-custom mt-0.5">
-                {signal?.targetRange ? `${currencySymbol}${signal.targetRange.min} - ${currencySymbol}${signal.targetRange.max}` : "—"}
+                {signal?.targetRange ? `${currencySymbol}${signal.targetRange.min.toFixed(2)} - ${currencySymbol}${signal.targetRange.max.toFixed(2)}` : "—"}
               </div>
               <div className="font-mono text-[0.65rem] text-text-4">
                 {signal?.targetRange && holding.currentPrice 
