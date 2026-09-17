@@ -258,6 +258,25 @@ export default function StockSignalsPage() {
     }
   };
 
+  // Searchable Directory of all market items in the current exchange
+  const directoryItems = useMemo(() => {
+    return items.filter((item) => {
+      if (directoryActionFilter === "BUY" && !item.action.includes("BUY")) return false;
+      if (directoryActionFilter === "HOLD" && item.action !== "HOLD") return false;
+      if (directoryActionFilter === "SELL" && (!item.action.includes("SELL") && item.action !== "REDUCE")) return false;
+      if (directoryActionFilter === "WAIT" && item.action !== "WAIT") return false;
+
+      if (marketSearch.trim()) {
+        const q = marketSearch.trim().toLowerCase();
+        const sym = (item.displaySymbol || "").toLowerCase();
+        const name = (item.name || "").toLowerCase();
+        const sec = (item.sector || "").toLowerCase();
+        return sym.includes(q) || name.includes(q) || sec.includes(q);
+      }
+      return true;
+    });
+  }, [items, directoryActionFilter, marketSearch]);
+
   if (loading && items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
@@ -314,25 +333,6 @@ export default function StockSignalsPage() {
   const displaySellSignals = signalSourceTab === "portfolio" ? portfolioSellSignals : marketSellSignals;
   const displayWaitSignals = signalSourceTab === "portfolio" ? portfolioWaitSignals : marketWaitSignals;
 
-  // Searchable Directory of all market items in the current exchange
-  const directoryItems = useMemo(() => {
-    return items.filter((item) => {
-      if (directoryActionFilter === "BUY" && !item.action.includes("BUY")) return false;
-      if (directoryActionFilter === "HOLD" && item.action !== "HOLD") return false;
-      if (directoryActionFilter === "SELL" && (!item.action.includes("SELL") && item.action !== "REDUCE")) return false;
-      if (directoryActionFilter === "WAIT" && item.action !== "WAIT") return false;
-
-      if (marketSearch.trim()) {
-        const q = marketSearch.trim().toLowerCase();
-        const sym = (item.displaySymbol || "").toLowerCase();
-        const name = (item.name || "").toLowerCase();
-        const sec = (item.sector || "").toLowerCase();
-        return sym.includes(q) || name.includes(q) || sec.includes(q);
-      }
-      return true;
-    });
-  }, [items, directoryActionFilter, marketSearch]);
-
   const escapeCsvField = (value: string) => {
     if (value.includes(",") || value.includes('"') || value.includes("\n")) {
       return `"${value.replace(/"/g, '""')}"`;
@@ -361,9 +361,9 @@ export default function StockSignalsPage() {
           String(item.score),
           String(item.confidence),
           item.risk,
-          item.entryZone ? `${item.entryZone.min.toFixed(2)}-${item.entryZone.max.toFixed(2)}` : "",
+          item.entryZone?.min != null && item.entryZone?.max != null ? `${item.entryZone.min.toFixed(2)}-${item.entryZone.max.toFixed(2)}` : "",
           item.stopLoss != null ? String(item.stopLoss.toFixed(2)) : "",
-          item.targetRange ? `${item.targetRange.min.toFixed(2)}-${item.targetRange.max.toFixed(2)}` : "",
+          item.targetRange?.min != null && item.targetRange?.max != null ? `${item.targetRange.min.toFixed(2)}-${item.targetRange.max.toFixed(2)}` : "",
           item.reasons.join("; "),
           item.warnings.join("; "),
           item.generatedAt,
@@ -522,7 +522,7 @@ export default function StockSignalsPage() {
                           <span className="text-[0.62rem] text-text-4 font-mono">{item.exchange}</span>
                         </td>
                         <td className="py-3 px-2 text-right font-mono">{item.quantity}</td>
-                        <td className="py-3 px-2 text-right font-mono">₹{item.avgPrice.toFixed(2)}</td>
+                        <td className="py-3 px-2 text-right font-mono">{item.avgPrice != null ? `₹${item.avgPrice.toFixed(2)}` : "-"}</td>
                         <td className="py-3 px-2 text-right font-mono">
                           {item.currentPrice != null ? `₹${item.currentPrice.toFixed(2)}` : <span className="text-[0.62rem] text-text-4 italic">Live price unavailable</span>}
                         </td>
@@ -1354,7 +1354,7 @@ function SignalCard({ item }: { item: SignalItem }) {
       )}
 
       {/* Levels display for BUY */}
-      {item.action.includes("BUY") && item.entryZone && item.stopLoss && item.targetRange && (
+      {item.action.includes("BUY") && item.entryZone?.min != null && item.entryZone?.max != null && item.stopLoss != null && item.targetRange?.min != null && item.targetRange?.max != null && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border border-green-custom bg-green-dim p-3">
           <div>
             <span className="font-mono text-[0.52rem] text-green-custom uppercase block mb-0.5">Suggested Entry Zone</span>
