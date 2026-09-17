@@ -59,10 +59,16 @@ export async function apiFetch<T = unknown>(path: string, init: RequestInit = {}
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = null;
+  }
 
   if (!res.ok) {
-    throw new ApiRequestError(res.status, data?.error ?? `Request failed (${res.status})`, data?.code);
+    const fallbackMsg = text && text.length < 200 && !text.includes("<") ? text : `Request failed (${res.status})`;
+    throw new ApiRequestError(res.status, data?.error ?? fallbackMsg, data?.code);
   }
   return data as T;
 }
