@@ -220,6 +220,12 @@ export default function StockLearningPage() {
         const ok = confirm(`${err.message}\n\nReplace the existing upload for ${tradingDate} with this file?`);
         if (ok) return confirmImport(true);
         setImportMessage("Import cancelled — existing data for this date was kept.");
+      } else if (err instanceof ApiRequestError && err.status === 401) {
+        // This page has no login form — a 401 here means the server couldn't
+        // verify the request (commonly a transient backend/database issue),
+        // not that the user is missing a sign-in step. Say that plainly
+        // instead of surfacing the generic "Sign in to continue" wording.
+        setImportMessage("Upload failed — the server couldn't verify this request. This is usually temporary; wait a moment and try again.");
       } else {
         setImportMessage(err instanceof ApiRequestError ? err.message : "Import failed.");
       }
