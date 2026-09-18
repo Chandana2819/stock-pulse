@@ -91,6 +91,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
         onShowToast?.(`Loaded ${res.count} Zerodha holdings (BEL, ONGC, INFY, etc.)!`, "success");
         await loadDiagnosis();
         onPortfolioUpdated?.();
+        window.dispatchEvent(new CustomEvent("wallet-update"));
       }
     } catch (e) {
       onShowToast?.(e instanceof ApiRequestError ? e.message : "Failed to seed Zerodha portfolio", "error");

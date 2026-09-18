@@ -120,6 +120,7 @@ const SIDEBAR_LINKS_2 = [
   { href: "/calculators", label: "Calculator", icon: calcIcon },
   { href: "/assistant", label: "AI Assistant", icon: assistantIcon },
   { href: "/learn", label: "Learn", icon: learnIcon },
+  { href: "/stock-learning", label: "Stock Learning", icon: chartIcon },
   { href: "/journal", label: "Journal", icon: journalIcon },
   { href: "/kyc", label: "KYC", icon: kycIcon },
 ];

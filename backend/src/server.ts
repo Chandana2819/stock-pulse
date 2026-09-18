@@ -36,6 +36,7 @@ import legacyAnalyzeRouter from "./routes/legacyAnalyze";
 import communityRouter from "./routes/community";
 import kycRouter from "./routes/kyc";
 import signalsRouter from "./routes/signals";
+import stockLearningRouter from "./routes/stockLearning";
 
 assertProductionConfig();
 reportUpstoxConfig();
@@ -102,6 +103,7 @@ app.use("/api/search", searchRouter);
 app.use("/api/community", communityRouter);
 app.use("/api/kyc", kycRouter);
 app.use("/api/signals", signalsRouter);
+app.use("/api/stock-learning", stockLearningRouter);
 
 // Legacy endpoints kept for the existing frontend build (/api/analyze, /api/market
 // already covered above) — new frontend code should prefer /api/stocks/:symbol.

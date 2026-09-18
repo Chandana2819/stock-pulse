@@ -67,3 +67,6 @@ Thumbs.db
 *.tsbuildinfo
 # Local database backups
 **/*.db.backup
+
+# Local archive/zip backups — too large for GitHub, never intended for version control
+*.zip

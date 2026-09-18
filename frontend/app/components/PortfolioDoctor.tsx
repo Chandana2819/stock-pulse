@@ -17,13 +17,22 @@ type Performance = { totalValue: number; unrealizedPl: number; unrealizedPlPct: 
 
 const scoreColor = (s: number) => (s >= 75 ? "text-green-custom" : s >= 50 ? "text-amber-custom" : "text-red-custom");
 
-export default function PortfolioDoctor() {
+export default function PortfolioDoctor({ refreshKey }: { refreshKey?: unknown } = {}) {
   const [health, setHealth] = useState<Health | null>(null);
   const [perf, setPerf] = useState<Performance | null>(null);
 
   useEffect(() => {
     api.get<Health>("/api/portfolio/health").then(setHealth).catch(() => setHealth(null));
     api.get<Performance>("/api/portfolio/performance").then(setPerf).catch(() => setPerf(null));
+  }, [refreshKey]);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      api.get<Health>("/api/portfolio/health").then(setHealth).catch(() => setHealth(null));
+      api.get<Performance>("/api/portfolio/performance").then(setPerf).catch(() => setPerf(null));
+    };
+    window.addEventListener("wallet-update", handleUpdate);
+    return () => window.removeEventListener("wallet-update", handleUpdate);
   }, []);
 
   if (!health) return null;
