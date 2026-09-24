@@ -154,12 +154,19 @@ router.get(
   asyncHandler(async (_req, res) => {
     // Fetch from multiple global market topics in parallel
     const queries = [
+      // India
       { topic: "India stock market today",   impact: "MARKET"      },
-      { topic: "BRICS economy 2025",         impact: "GEOPOLITICAL" },
-      { topic: "US Federal Reserve interest rate", impact: "MONETARY" },
-      { topic: "war conflict economy market", impact: "GEOPOLITICAL" },
       { topic: "RBI India interest rate",    impact: "MONETARY"    },
       { topic: "FII sell India market",      impact: "FLOWS"       },
+      // US
+      { topic: "US stock market today S&P 500 Nasdaq", impact: "MARKET" },
+      { topic: "US Federal Reserve interest rate", impact: "MONETARY" },
+      { topic: "US inflation jobs report",   impact: "MACRO"       },
+      { topic: "US recession economic outlook", impact: "MACRO"    },
+      // Global / geopolitical — moves both markets
+      { topic: "BRICS economy 2025",         impact: "GEOPOLITICAL" },
+      { topic: "war conflict economy market", impact: "GEOPOLITICAL" },
+      { topic: "US China trade tariff",      impact: "GEOPOLITICAL" },
       { topic: "oil price OPEC today",       impact: "COMMODITY"   },
       { topic: "global recession economy",   impact: "MACRO"       },
     ];
@@ -172,7 +179,7 @@ router.get(
       .flatMap(r => r.status === "fulfilled" ? r.value : [])
       .filter((n, i, arr) => arr.findIndex(x => x.id === n.id) === i) // dedupe
       .sort((a, b) => new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime())
-      .slice(0, 15);
+      .slice(0, 20);
 
     // Classify each headline as bearish/bullish/neutral for Indian markets
     const bearishKeywords = ["fall", "crash", "drop", "decline", "down", "loss", "fear", "war", "sanction", "tariff", "sell", "weak", "cut", "risk", "recession", "inflation"];
