@@ -61,9 +61,21 @@ async function getYahooSession(forceRefresh = false): Promise<{ cookie: string; 
 }
 
 async function fetchChart(symbol: string, range: string, interval: string) {
+  const fetchWithSession = async (forceRefresh: boolean) => {
+    const session = await getYahooSession(forceRefresh);
+    const params = new URLSearchParams({ interval, range });
+    if (session?.crumb) params.set("crumb", session.crumb);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?${params.toString()}`;
+    return axios.get(url, {
+      headers: { "User-Agent": UA, ...(session?.cookie ? { Cookie: session.cookie } : {}) },
+      timeout: 9000,
+      validateStatus: () => true,
+    });
+  };
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
-    const res = await axios.get(url, { headers: { "User-Agent": UA }, timeout: 9000 });
+    let res = await fetchWithSession(false);
+    if (res.status === 401) res = await fetchWithSession(true);
+    if (res.status !== 200) return null;
     return (res.data?.chart?.result?.[0] as YahooChartResult | undefined) ?? null;
   } catch {
     return null;
