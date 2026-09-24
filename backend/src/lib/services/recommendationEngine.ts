@@ -59,11 +59,14 @@ export class RecommendationEngine {
     const price = input.price;
     const atrVal = input.indicators?.atr14 ?? (price * 0.025);
 
-    // Stop Loss and Target Range for position risk and upside targets
+    // Stop Loss: 2×ATR below entry (standard risk management)
+    // Target Range: 3×ATR above entry (min) to 5×ATR above entry (max)
+    // This gives a risk:reward of 1.5:1 minimum, scaling with actual volatility
+    // instead of fixed % which ignores how the stock actually moves.
     const stopLoss: number = Number((price - 2 * atrVal).toFixed(2));
     const targetRange = {
-      min: Number((price * 1.08).toFixed(2)),
-      max: Number((price * 1.16).toFixed(2)),
+      min: Number((price + 3 * atrVal).toFixed(2)),  // 1.5:1 R:R minimum
+      max: Number((price + 5 * atrVal).toFixed(2)),  // 2.5:1 R:R stretch
     };
 
     // Entry Zone only generated for BUY / STRONG BUY signals

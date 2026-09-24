@@ -5,6 +5,7 @@ import { computeIndicators, pctChange } from "../indicators";
 import { computeMarketRisk } from "../engine/marketRisk";
 import { RecommendationEngine, type SignalAction } from "./recommendationEngine";
 import { getSectorChangeForKey } from "./market";
+import { recordSignalOutcome } from "./signalOutcomeTracker";
 
 function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
   if (action.includes("BUY")) return "BUY";
@@ -322,6 +323,18 @@ export async function runMarketScan(): Promise<void> {
           dataQuality: rec.dataQuality,
           generatedAt: rec.generatedAt,
         }
+      });
+
+      // Record in SignalOutcome for win-rate tracking (BUY/STRONG BUY only)
+      await recordSignalOutcome({
+        symbol: stock.symbol,
+        signal: rec.action,
+        score: rec.score,
+        confidence: rec.confidence,
+        entryPrice: stock.price,
+        stopLoss: rec.stopLoss ?? null,
+        targetMin: rec.targetRange?.min ?? null,
+        targetMax: rec.targetRange?.max ?? null,
       });
 
       await prisma.recommendationHistory.create({

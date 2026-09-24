@@ -875,3 +875,33 @@ model MonthlyReview {
   @@unique([userId, ticker, month, year])
   @@index([userId, ticker])
 }
+
+// Tracks the outcome of every signal the engine generates.
+// A background job fills in price5d/price10d/price20d after the respective
+// trading days have passed, letting the app show a real win-rate % for each
+// signal type rather than relying on backtested assumptions.
+model SignalOutcome {
+  id          String   @id @default(uuid())
+  symbol      String
+  signal      String   // BUY | STRONG BUY | HOLD | REDUCE | SELL | STRONG SELL | WAIT
+  score       Int
+  confidence  Int
+  entryPrice  Float
+  stopLoss    Float?
+  targetMin   Float?
+  targetMax   Float?
+  generatedAt DateTime @default(now())
+
+  // Filled in by the outcome-tracking job:
+  price5d     Float?   // close price 5 trading days after signal
+  price10d    Float?   // close price 10 trading days after signal
+  price20d    Float?   // close price 20 trading days after signal
+  outcome5d   String?  // WIN | LOSS | STOPPED_OUT | PENDING
+  outcome10d  String?
+  outcome20d  String?
+  checkedAt   DateTime?
+
+  @@index([symbol, generatedAt])
+  @@index([signal, generatedAt])
+  @@index([checkedAt])
+}

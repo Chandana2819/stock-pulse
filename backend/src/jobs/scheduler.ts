@@ -13,6 +13,7 @@ import { startScannerBackgroundJob } from "../lib/services/scanner";
 import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
 import { getFundRecommendations } from "../lib/services/fundRecommendations";
 import { runScreener } from "../lib/services/screener";
+import { checkPendingSignalOutcomes } from "../lib/services/signalOutcomeTracker";
 
 // A job silently failing every tick for hours is exactly the kind of thing
 // that goes unnoticed without real alerting wired up. There's no
@@ -89,6 +90,13 @@ export function startBackgroundJobs() {
   runInterval("signal-alert-runner", env.signalAlertIntervalMs, async () => {
     const result = await evaluateSignalAlertsForAllUsers();
     return { usersChecked: result.users, notified: result.notified };
+  });
+
+  // Check signal outcomes daily: fills in 5d/10d/20d WIN/LOSS for tracked BUY signals.
+  // Runs every 24 hours so it catches the trading-day close each afternoon.
+  runInterval("signal-outcome-checker", 24 * 60 * 60 * 1000, async () => {
+    const { checked, resolved } = await checkPendingSignalOutcomes();
+    return { usersChecked: 0, checked, resolved };
   });
 
   logger.info("Background jobs started", {

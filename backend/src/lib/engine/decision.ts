@@ -453,6 +453,14 @@ export function computeDecision(input: DecisionInput): DecisionResult {
   else if (dataQualityScore >= 30) dataQualityLabel = "POOR";
   else dataQualityLabel = "INSUFFICIENT";
 
+  // Penalise further when fundamentals are missing — a 20%-weight pillar
+  // silently defaulting to 50 is the same as treating "no data" as neutral,
+  // which inflates BUY scores on stocks we have no financial visibility into.
+  if (!input.fundamentals) {
+    dataQualityScore = Math.max(0, dataQualityScore - 15);
+    if (dataQualityScore < 50) dataQualityLabel = "POOR";
+  }
+
   // Compute final score formula
   const finalScoreRaw =
     trend.score * SCORING_WEIGHTS.trend +
@@ -490,11 +498,22 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     }
   });
 
-  // Rule A: Insufficient Data Quality / < 30 trading candles -> WAIT
-  const hasInsufficientCandles = input.candlesCount != null && input.candlesCount < 30;
+  // Rule A: Insufficient Data Quality / < 60 trading candles -> WAIT
+  // SMA50 needs 50 days, ATR14 needs 14, MACD needs 35+. 60 is the safe floor.
+  const hasInsufficientCandles = input.candlesCount != null && input.candlesCount < 60;
   if (dataQualityLabel === "INSUFFICIENT" || hasInsufficientCandles) {
     signal = "WAIT";
-    reasons.unshift("Data coverage is insufficient to generate a reliable signal (<30 trading days)");
+    reasons.unshift("Data coverage is insufficient to generate a reliable signal (<60 trading days)");
+  }
+
+  // Rule D: Missing fundamental data — cap BUY/STRONG BUY at HOLD
+  // Fundamentals carry 20% of the score. When unavailable, the pillar silently
+  // scores 50 (neutral), which can push genuinely risky stocks into BUY territory.
+  // Without financial visibility into a business, the best we can responsibly say is HOLD.
+  if ((signal === "BUY" || signal === "STRONG BUY") && !input.fundamentals) {
+    signal = "HOLD";
+    warnings.push("BUY signal capped at HOLD — fundamental financial data (ROE, revenue, D/E) is unavailable for this stock.");
+    reasons.unshift("Fundamental data missing: cannot confirm business quality before issuing a BUY");
   }
 
   // Rule B: Elevated Market Risk (>=75) overrides BUY to WAIT
