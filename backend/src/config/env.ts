@@ -50,6 +50,11 @@ export const env = {
 
   newsApiKey: str("NEWS_API_KEY", ""),
 
+  // Web Push (VAPID) — for real browser/phone push notifications
+  vapidPublicKey:  str("VAPID_PUBLIC_KEY",  ""),
+  vapidPrivateKey: str("VAPID_PRIVATE_KEY", ""),
+  vapidEmail:      str("VAPID_EMAIL",       "mailto:support@bullhawk.in"),
+
   razorpayKeyId: str("RAZORPAY_KEY_ID", ""),
   razorpayKeySecret: str("RAZORPAY_KEY_SECRET", ""),
   razorpayWebhookSecret: str("RAZORPAY_WEBHOOK_SECRET", ""),

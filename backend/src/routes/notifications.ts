@@ -56,3 +56,37 @@ router.delete(
 );
 
 export default router;
+
+// ── Web Push Subscription endpoints ─────────────────────────────────────────
+
+router.post(
+  "/push-subscribe",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { endpoint, keys } = req.body as {
+      endpoint: string;
+      keys: { p256dh: string; auth: string };
+    };
+    if (!endpoint || !keys?.p256dh || !keys?.auth) {
+      return res.status(400).json({ error: "Invalid subscription payload" });
+    }
+    const userAgent = req.headers["user-agent"] ?? null;
+    await prisma.pushSubscription.upsert({
+      where: { endpoint },
+      update: { p256dh: keys.p256dh, auth: keys.auth, userAgent, userId: req.user!.id },
+      create: { userId: req.user!.id, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent },
+    });
+    return res.json({ success: true });
+  })
+);
+
+router.delete(
+  "/push-unsubscribe",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { endpoint } = req.body as { endpoint: string };
+    if (!endpoint) return res.status(400).json({ error: "endpoint required" });
+    await prisma.pushSubscription.deleteMany({ where: { endpoint, userId: req.user!.id } });
+    return res.json({ success: true });
+  })
+);
