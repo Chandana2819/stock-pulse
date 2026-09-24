@@ -13,6 +13,21 @@ function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
   return "WAIT";
 }
 
+async function runBatched<T, R>(
+  items: T[],
+  batchSize: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+
 export async function backfillStock(symbol: string): Promise<boolean> {
   try {
     console.log(`[scanner] Starting backfill for ${symbol}...`);
@@ -77,16 +92,14 @@ export async function runMarketScan(): Promise<void> {
   // Sequentially awaiting 138 of these one at a time was the single biggest
   // cost in a full scan once the DB itself is remote (each round trip pays
   // real network latency even for a trivial COUNT).
-  const historyCounts = await Promise.all(
-    UNIVERSE.map(async (item) => {
-      try {
-        return { symbol: item.symbol, count: await prisma.stockPrice.count({ where: { symbol: item.symbol } }) };
-      } catch (err) {
-        console.error(`[scanner] Error checking history depth for ${item.symbol}:`, err);
-        return { symbol: item.symbol, count: 30 }; // assume sufficient; don't force a backfill on a transient DB error
-      }
-    })
-  );
+  const historyCounts = await runBatched(UNIVERSE, 5, async (item) => {
+    try {
+      return { symbol: item.symbol, count: await prisma.stockPrice.count({ where: { symbol: item.symbol } }) };
+    } catch (err) {
+      console.error(`[scanner] Error checking history depth for ${item.symbol}:`, err);
+      return { symbol: item.symbol, count: 30 }; // assume sufficient; don't force a backfill on a transient DB error
+    }
+  });
   const needsBackfill = historyCounts.filter((c) => c.count < 30).map((c) => c.symbol);
   for (const symbol of needsBackfill) {
     try {
@@ -110,10 +123,9 @@ export async function runMarketScan(): Promise<void> {
   // count pass: safe to fire all of them at once (JS's event loop makes the
   // shared array/counter mutations below race-free even though they run
   // concurrently — nothing here awaits mid-mutation).
-  await Promise.all(
-    UNIVERSE.map(async (item) => {
-      try {
-        const quote = liveQuotes[item.symbol];
+  await runBatched(UNIVERSE, 5, async (item) => {
+    try {
+      const quote = liveQuotes[item.symbol];
         if (quote && quote.price > 0) {
           const todayDate = new Date();
           todayDate.setUTCHours(0, 0, 0, 0);
@@ -158,12 +170,11 @@ export async function runMarketScan(): Promise<void> {
           console.warn(`[scanner] Failed to get live quote for ${item.symbol}`);
           failedCount++;
         }
-      } catch (err) {
-        console.error(`[scanner] Error scanning ${item.symbol} in Phase 1:`, err);
-        failedCount++;
-      }
-    })
-  );
+    } catch (err) {
+      console.error(`[scanner] Error scanning ${item.symbol} in Phase 1:`, err);
+      failedCount++;
+    }
+  });
 
   console.log("[scanner] Phase 2: Evaluating market risk radar & sector strengths...");
   const niftySymbol = "^NSEI"; 
