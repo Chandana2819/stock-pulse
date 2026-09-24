@@ -7,6 +7,7 @@
 import { marketDataProvider, newsProvider, resolveStockQuote } from "../providers";
 import { computeIndicators, pctChange } from "../indicators";
 import { analyzeHeadline } from "../engine/sentiment";
+import { getMarketauxSentiment } from "../providers/marketauxProvider";
 import { explainMove } from "../engine/whyMoving";
 import { computeDecision, type DecisionInput, type SignalAction } from "../engine/decision";
 import { getSectorChangeForKey } from "./market";
@@ -105,7 +106,7 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
   const entry = lookupUniverse(symbol);
   const sectorKey = entry?.sectorKey ?? null;
 
-  const [candles, fundamentals, newsRaw, sectorChangePct] = await Promise.all([
+  const [candles, fundamentals, newsRaw, sectorChangePct, externalSentiment] = await Promise.all([
     // 5 years of daily candles — not just for the chart's short-range views,
     // but so long-lookback indicators like SMA200 (see indicators.ts) can
     // actually compute instead of always returning null on a 6-month window.
@@ -113,6 +114,10 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     marketDataProvider.getFundamentals(symbol).catch(() => null),
     newsProvider.getNews(`${resolved.displaySymbol} stock`, opts.newsLimit ?? 10).catch(() => []),
     getSectorChangeForKey(sectorKey).catch(() => null),
+    // Second-opinion ML sentiment from Marketaux — null when no API key is
+    // configured or the article had no per-symbol score. Never blocks the
+    // page: our own lexicon sentiment (below) is always present regardless.
+    getMarketauxSentiment(resolved.displaySymbol).catch(() => null),
   ]);
 
   // Data Validation
@@ -328,6 +333,7 @@ export async function buildStockAnalysis(rawSymbol: string, opts: StockAnalysisO
     sector: entry ? { key: entry.sectorKey, name: entry.sector } : null,
     sectorChangePct,
     news: news.map(({ analysis, ...n }) => ({ ...n, sentiment: analysis.sentiment, importance: analysis.importance })),
+    externalSentiment,
     attribution,
     decision,
     priceChangePct,

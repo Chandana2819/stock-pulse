@@ -31,6 +31,12 @@ type Analysis = {
   fundamentals: any;
   sector: { key: string; name: string } | null;
   news: { title: string; link: string; pubDate: string; source: string; sentiment: string; importance: string }[];
+  externalSentiment: {
+    score: number;
+    label: "BULLISH" | "BEARISH" | "NEUTRAL";
+    articleCount: number;
+    topHeadline: { title: string; url: string; source: string; sentimentScore: number } | null;
+  } | null;
   attribution: any;
   decision: any;
   priceChangePct: number | null;
@@ -228,9 +234,23 @@ export default function StockDetailPage() {
 
       {/* News */}
       <div className="border border-border-bright bg-bg-1 overflow-hidden">
-        <div className="py-[0.6rem] px-6 border-b border-border-custom bg-bg-2 flex items-center gap-2">
-          <span className="w-[6px] h-[6px] rounded-full bg-red-custom animate-custom-pulse shrink-0" />
-          <span className="font-mono text-[0.62rem] tracking-[0.18em] text-text-3 uppercase">LIVE NEWS · {data.resolved.displaySymbol}</span>
+        <div className="py-[0.6rem] px-6 border-b border-border-custom bg-bg-2 flex items-center gap-2 flex-wrap justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-[6px] h-[6px] rounded-full bg-red-custom animate-custom-pulse shrink-0" />
+            <span className="font-mono text-[0.62rem] tracking-[0.18em] text-text-3 uppercase">LIVE NEWS · {data.resolved.displaySymbol}</span>
+          </div>
+          {data.externalSentiment && (
+            <div className="flex items-center gap-1.5" title={`Marketaux — averaged over ${data.externalSentiment.articleCount} tagged article(s)`}>
+              <span className="font-mono text-[0.55rem] text-text-4 uppercase tracking-wider">Marketaux:</span>
+              <span className={`font-mono text-[0.6rem] font-bold px-1.5 py-[1px] border ${
+                data.externalSentiment.label === "BULLISH" ? "text-green-custom border-green-custom" :
+                data.externalSentiment.label === "BEARISH" ? "text-red-custom border-red-custom" :
+                "text-text-3 border-border-custom"
+              }`}>
+                {data.externalSentiment.label} ({data.externalSentiment.score > 0 ? "+" : ""}{data.externalSentiment.score.toFixed(2)})
+              </span>
+            </div>
+          )}
         </div>
         <div className="flex flex-col">
           {data.news.map((n, i) => (

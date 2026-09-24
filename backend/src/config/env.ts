@@ -55,6 +55,11 @@ export const env = {
   vapidPrivateKey: str("VAPID_PRIVATE_KEY", ""),
   vapidEmail:      str("VAPID_EMAIL",       "mailto:support@bullhawk.in"),
 
+  // Marketaux — optional second-opinion sentiment (real ML score, not our
+  // lexicon). Free tier is 100 req/day, so this is a supplement, never the
+  // primary engine input. Leave unset to disable it cleanly.
+  marketauxApiKey: str("MARKETAUX_API_KEY", ""),
+
   razorpayKeyId: str("RAZORPAY_KEY_ID", ""),
   razorpayKeySecret: str("RAZORPAY_KEY_SECRET", ""),
   razorpayWebhookSecret: str("RAZORPAY_WEBHOOK_SECRET", ""),
