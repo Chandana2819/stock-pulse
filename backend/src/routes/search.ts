@@ -21,12 +21,16 @@ router.get(
     let held: string[] = [];
     if (req.user) {
       const symbols = stocks.map((s) => s.symbol);
-      const [wl, hd] = await Promise.all([
-        prisma.watchlistItem.findMany({ where: { userId: req.user.id, symbol: { in: symbols } }, select: { symbol: true } }),
-        prisma.holding.findMany({ where: { userId: req.user.id, stock: { in: symbols } }, select: { stock: true } }),
-      ]);
-      watchlisted = wl.map((w) => w.symbol);
-      held = hd.map((h) => h.stock);
+      try {
+        const [wl, hd] = await Promise.all([
+          prisma.watchlistItem.findMany({ where: { userId: req.user.id, symbol: { in: symbols } }, select: { symbol: true } }),
+          prisma.holding.findMany({ where: { userId: req.user.id, stock: { in: symbols } }, select: { stock: true } }),
+        ]);
+        watchlisted = wl.map((w) => w.symbol);
+        held = hd.map((h) => h.stock);
+      } catch {
+        // DB unreachable — search still works, just without watchlist/holdings markers
+      }
     }
 
     return res.json({

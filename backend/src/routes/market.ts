@@ -124,7 +124,9 @@ router.get(
     const drivers = notable.map((n) => `${n.symbol} ${n.pctChange! >= 0 ? "up" : "down"} ${Math.abs(n.pctChange!).toFixed(2)}%`);
 
     let unreadCount = 0;
-    if (req.user) unreadCount = await prisma.notification.count({ where: { userId: req.user.id, readAt: null } });
+    if (req.user) {
+      try { unreadCount = await prisma.notification.count({ where: { userId: req.user.id, readAt: null } }); } catch {}
+    }
 
     return res.json({
       generatedAt: new Date().toISOString(),

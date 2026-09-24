@@ -1,7 +1,8 @@
 // Central, typed access to configuration. Nothing else in the backend reads
 // process.env directly, so missing/incorrect config surfaces in one place and
 // secrets never leak into responses.
-import "dotenv/config";
+import { config as dotenvConfig } from "dotenv";
+dotenvConfig({ override: true });
 
 function str(key: string, fallback = ""): string {
   const v = process.env[key];

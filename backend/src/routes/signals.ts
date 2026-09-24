@@ -18,8 +18,13 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
   const exchangeFilter = queryFilters.exchange ? String(queryFilters.exchange).toUpperCase() : null;
   const sortBy = queryFilters.sortBy ? String(queryFilters.sortBy) : "score"; // score | confidence | risk | symbol
 
-  // Fetch all recommendations
-  const recommendations = await prisma.stockRecommendation.findMany();
+  // Fetch all recommendations — DB may be unavailable (e.g. Supabase paused on free tier)
+  let recommendations: any[] = [];
+  try {
+    recommendations = await prisma.stockRecommendation.findMany();
+  } catch {
+    // DB unreachable — serve empty scan results so homepage doesn't crash
+  }
 
   // Map display metadata from universe
   const universeMap = new Map<string, UniverseEntry>(UNIVERSE.map((u: UniverseEntry) => [u.symbol, u]));
@@ -53,9 +58,14 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
   let portfolioSignals: any[] = [];
 
   if (userId) {
-    const conn = await prisma.brokerConnection.findUnique({
-      where: { userId_broker: { userId, broker: "ZERODHA" } }
-    });
+    let conn = null;
+    try {
+      conn = await prisma.brokerConnection.findUnique({
+        where: { userId_broker: { userId, broker: "ZERODHA" } }
+      });
+    } catch {
+      // DB unreachable
+    }
     if (conn) {
       const isExpired = conn.expiresAt ? conn.expiresAt < new Date() : false;
       brokerConnection = {
@@ -68,7 +78,8 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
       };
     }
 
-    const enrichedHoldings = await getEnrichedHoldings(userId);
+    let enrichedHoldings: any[] = [];
+    try { enrichedHoldings = await getEnrichedHoldings(userId); } catch {}
     if (enrichedHoldings.length > 0) {
       // Bounded-concurrency batching, matching the pattern already used for
       // this same per-holding analysis in routes/portfolio.ts: running every
@@ -212,7 +223,8 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
     ? portfolioSignals.filter((r: any) => r.action === "HOLD").length
     : recommendations.filter((r: any) => r.action === "HOLD").length;
 
-  const latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } });
+  let latestRisk = null;
+  try { latestRisk = await prisma.marketRisk.findFirst({ orderBy: { createdAt: "desc" } }); } catch {}
   const scanTime = latestRisk ? latestRisk.createdAt : new Date();
 
   return {
@@ -241,9 +253,14 @@ router.get(
 router.get(
   "/market-risk",
   asyncHandler(async (_req, res) => {
-    const risk = await prisma.marketRisk.findFirst({
-      orderBy: { createdAt: "desc" },
-    });
+    let risk = null;
+    try {
+      risk = await prisma.marketRisk.findFirst({
+        orderBy: { createdAt: "desc" },
+      });
+    } catch {
+      // DB unreachable — fall through to the neutral baseline below
+    }
     if (!risk) {
       return res.json({
         score: 50,
@@ -312,18 +329,27 @@ router.post(
 
 router.get(
   "/track-record",
-  asyncHandler(async (req, res) => {
-    const [backtested, live] = await Promise.all([getBacktestedTrackRecord(), getLiveTrackRecord()]);
-    return res.json({
-      backtested: backtested.value,
-      live: live.value,
-      meta: {
-        backtestedCacheHit: backtested.cacheHit,
-        backtestedStale: backtested.stale,
-        liveCacheHit: live.cacheHit,
-        liveStale: live.stale,
-      },
-    });
+  asyncHandler(async (_req, res) => {
+    try {
+      const [backtested, live] = await Promise.all([getBacktestedTrackRecord(), getLiveTrackRecord()]);
+      return res.json({
+        backtested: backtested.value,
+        live: live.value,
+        meta: {
+          backtestedCacheHit: backtested.cacheHit,
+          backtestedStale: backtested.stale,
+          liveCacheHit: live.cacheHit,
+          liveStale: live.stale,
+        },
+      });
+    } catch {
+      // DB unavailable or backtest failed — return empty track record
+      return res.json({
+        backtested: null,
+        live: null,
+        meta: { dbUnavailable: true },
+      });
+    }
   })
 );
 
