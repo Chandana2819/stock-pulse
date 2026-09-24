@@ -258,17 +258,14 @@ describe("computeDecision — final score and signal classification", () => {
     expect(result.signal).toBe("STRONG SELL");
   });
 
-  it("classifies a fully neutral input (all pillars at 50, the scale's exact midpoint) as REDUCE, not HOLD", () => {
-    // This documents real, possibly-unintended behavior rather than asserting
-    // a "correct" answer: the HOLD band is 55-64, so a stock the engine has
-    // no real signal on (every pillar unavailable, defaulted to neutral 50)
-    // falls one band short of HOLD and reads as a mild sell recommendation.
-    // If that's not the intended default, the fix is a scoring-policy change
-    // (e.g. widening HOLD to start at 50), not something to silently "fix"
-    // here.
+  it("classifies a fully neutral input (all pillars at 50, the scale's exact midpoint) as HOLD", () => {
+    // The HOLD band now starts at 50 (recalibrated in classifySignal), so a
+    // stock the engine has no real signal on (every pillar unavailable,
+    // defaulted to neutral 50) reads as a neutral HOLD rather than the mild,
+    // unwarranted sell recommendation this used to produce.
     const result = computeDecision(baseInput());
     expect(result.scores.final).toBe(50);
-    expect(result.signal).toBe("REDUCE");
+    expect(result.signal).toBe("HOLD");
   });
 });
 
@@ -301,11 +298,26 @@ describe("computeDecision — safety overrides", () => {
     expect(result.warnings.some((w) => w.includes("elevated broad market volatility"))).toBe(true);
   });
 
-  it("Rule C: downgrades a BUY/STRONG BUY to WAIT when the technical trend is a downtrend", () => {
-    // Strong fundamentals/momentum/sentiment push the score into BUY territory,
-    // but the trend pillar itself is bearish (DOWNTREND) — Rule C should still fire.
+  it("Rule C: keeps a BUY/STRONG BUY (with a warning) on a mild downtrend", () => {
+    // Strong fundamentals/momentum/sentiment push the score into BUY territory;
+    // the trend pillar is bearish (DOWNTREND) but RSI/MACD aren't oversold, so
+    // this is a mild downtrend — Rule C warns instead of hard-blocking.
     const input = baseInput({
       indicators: indicators({ trend: "DOWNTREND", price: 80, sma200: 100, rsi14: 60, macd: { line: 1, signal: 0, histogram: 1 }, volumeTrendRatio: 1.6 }),
+      priceChangePct: 2,
+      fundamentals: fundamentals({ roe: 25, revenueGrowth: 20, profitGrowth: 20, debtToEquity: 0.2, freeCashFlow: 100 }),
+      newsArticles: [{ title: "a", sentiment: "POSITIVE" }],
+      marketRiskScore: 10,
+      sectorChangePct: 2,
+    });
+    const result = computeDecision(input);
+    expect(["BUY", "STRONG BUY"]).toContain(result.signal);
+    expect(result.warnings.some((w) => w.includes("50-day moving average"))).toBe(true);
+  });
+
+  it("Rule C: downgrades a BUY/STRONG BUY to WAIT on a severe downtrend (RSI < 35 + negative MACD)", () => {
+    const input = baseInput({
+      indicators: indicators({ trend: "DOWNTREND", price: 80, sma200: 100, rsi14: 34, macd: { line: -1, signal: -0.5, histogram: -0.1 }, volumeTrendRatio: 1.6 }),
       priceChangePct: 2,
       fundamentals: fundamentals({ roe: 25, revenueGrowth: 20, profitGrowth: 20, debtToEquity: 0.2, freeCashFlow: 100 }),
       newsArticles: [{ title: "a", sentiment: "POSITIVE" }],
@@ -404,10 +416,10 @@ describe("computeDecision — synthesis", () => {
     expect(result.synthesis).toMatch(/working against|Rated/);
   });
 
-  it("rephrases the override warning instead of leaving reasons[] looking contradictory when a downtrend caps a would-be BUY", () => {
+  it("rephrases the override warning instead of leaving reasons[] looking contradictory when a severe downtrend caps a would-be BUY", () => {
     const result = computeDecision(
       baseInput({
-        indicators: indicators({ trend: "DOWNTREND", price: 80, sma200: 100, rsi14: 60, macd: { line: 1, signal: 0, histogram: 1 }, volumeTrendRatio: 1.6 }),
+        indicators: indicators({ trend: "DOWNTREND", price: 80, sma200: 100, rsi14: 34, macd: { line: -1, signal: -0.5, histogram: -0.1 }, volumeTrendRatio: 1.6 }),
         priceChangePct: 2,
         fundamentals: fundamentals({ roe: 25, revenueGrowth: 20, profitGrowth: 20, debtToEquity: 0.2, freeCashFlow: 100 }),
         newsArticles: [{ title: "a", sentiment: "POSITIVE" }],

@@ -164,16 +164,16 @@ describe("Stock Analysis Calculations Audit & Verification", () => {
   // Requirement 11 & 18: Exact Signal Boundaries
   describe("11 & 18. Signal Boundaries", () => {
     it("classifies exact signal boundaries without premature integer rounding", () => {
-      expect(classifySignal(79.99)).toBe("BUY");
-      expect(classifySignal(80.0)).toBe("STRONG BUY");
-      expect(classifySignal(64.99)).toBe("HOLD");
-      expect(classifySignal(65.0)).toBe("BUY");
-      expect(classifySignal(54.99)).toBe("REDUCE");
-      expect(classifySignal(55.0)).toBe("HOLD");
-      expect(classifySignal(44.99)).toBe("SELL");
-      expect(classifySignal(45.0)).toBe("REDUCE");
-      expect(classifySignal(29.99)).toBe("STRONG SELL");
-      expect(classifySignal(30.0)).toBe("SELL");
+      expect(classifySignal(77.99)).toBe("BUY");
+      expect(classifySignal(78.0)).toBe("STRONG BUY");
+      expect(classifySignal(59.99)).toBe("HOLD");
+      expect(classifySignal(60.0)).toBe("BUY");
+      expect(classifySignal(49.99)).toBe("REDUCE");
+      expect(classifySignal(50.0)).toBe("HOLD");
+      expect(classifySignal(39.99)).toBe("SELL");
+      expect(classifySignal(40.0)).toBe("REDUCE");
+      expect(classifySignal(24.99)).toBe("STRONG SELL");
+      expect(classifySignal(25.0)).toBe("SELL");
     });
   });
 
@@ -229,8 +229,9 @@ describe("Stock Analysis Calculations Audit & Verification", () => {
       expect(res.signal).toBe("WAIT");
     });
 
-    // Rule C
-    it("Rule C: BUY + SMA20 < SMA50 → WAIT", () => {
+    // Rule C — mild/medium downtrend (SMA20 < SMA50 alone): BUY is kept,
+    // just flagged with a warning instead of hard-blocked (see decision.ts).
+    it("Rule C: BUY + mild downtrend (SMA20 < SMA50) → BUY kept, with a warning", () => {
       const res = computeDecision({
         ...bullishSetup(),
         indicators: indicators({
@@ -240,10 +241,11 @@ describe("Stock Analysis Calculations Audit & Verification", () => {
           price: 1276,
         }),
       });
-      expect(res.signal).toBe("WAIT");
+      expect(res.signal).toBe("BUY");
+      expect(res.warnings.some((w) => w.includes("50-day moving average"))).toBe(true);
     });
 
-    it("Rule C: STRONG BUY + SMA20 < SMA50 → WAIT", () => {
+    it("Rule C: STRONG BUY + mild downtrend (SMA20 < SMA50) → BUY kept, with a warning", () => {
       const res = computeDecision({
         ...bullishSetup(),
         indicators: indicators({
@@ -251,6 +253,33 @@ describe("Stock Analysis Calculations Audit & Verification", () => {
           sma20: 950,
           sma50: 1100,
           price: 1276,
+        }),
+      });
+      expect(["BUY", "STRONG BUY"]).toContain(res.signal);
+      expect(res.warnings.some((w) => w.includes("50-day moving average"))).toBe(true);
+    });
+
+    // Rule C — severe downtrend (SMA20 < SMA50 + RSI oversold + negative
+    // MACD histogram): the hard WAIT override still fires.
+    it("Rule C: BUY + severe downtrend (SMA20 < SMA50, RSI < 35, negative MACD) → WAIT", () => {
+      const res = computeDecision({
+        ...bullishSetup(),
+        // Boosted vs. the plain bullishSetup() so the pre-override score still
+        // clears BUY even after the RSI/MACD severe-downtrend penalty below —
+        // otherwise this would stop testing Rule C and start testing the score
+        // never reaching BUY in the first place.
+        fundamentals: fundamentals({ roe: 25, revenueGrowth: 20, profitGrowth: 20, debtToEquity: 0.2, freeCashFlow: 100 }),
+        marketRiskScore: 10,
+        sectorChangePct: 2,
+        newsArticles: [{ title: "a", sentiment: "POSITIVE" }],
+        indicators: indicators({
+          trend: "DOWNTREND",
+          sma20: 1050,
+          sma50: 1150,
+          price: 1276,
+          rsi14: 34,
+          macd: { line: -1, signal: -0.5, histogram: -0.1 },
+          volumeTrendRatio: 1.6,
         }),
       });
       expect(res.signal).toBe("WAIT");

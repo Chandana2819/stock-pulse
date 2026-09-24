@@ -469,9 +469,12 @@ export function computeDecision(input: DecisionInput): DecisionResult {
   // Penalise further when fundamentals are missing — a 20%-weight pillar
   // silently defaulting to 50 is the same as treating "no data" as neutral,
   // which inflates BUY scores on stocks we have no financial visibility into.
+  // Guarded so this can only ever demote down to POOR, never past it — an
+  // already-INSUFFICIENT rating (from the primary banding above) must stay
+  // INSUFFICIENT, not get overwritten back up to the less-severe POOR.
   if (!input.fundamentals) {
     dataQualityScore = Math.max(0, dataQualityScore - 15);
-    if (dataQualityScore < 50) dataQualityLabel = "POOR";
+    if (dataQualityScore < 50 && dataQualityLabel !== "INSUFFICIENT") dataQualityLabel = "POOR";
   }
 
   // Compute final score formula
@@ -553,7 +556,7 @@ export function computeDecision(input: DecisionInput): DecisionResult {
   if ((signal === "BUY" || signal === "STRONG BUY") && isDowntrend) {
     if (isSevereDowntrend) {
       signal = "WAIT";
-      warnings.push("BUY overridden to WAIT — severe downtrend confirmed by RSI (<35) and negative MACD histogram. Avoid catching a falling knife.");
+      warnings.push("BUY signal overridden to WAIT — severe downtrend confirmed by RSI (<35) and negative MACD histogram. Avoid catching a falling knife.");
       reasons.unshift("Severe downtrend (SMA20 < SMA50 + RSI oversold + negative MACD) — wait for reversal confirmation");
     } else {
       warnings.push("⚠️ Stock is below its 50-day moving average. This may be a recovery entry point, but buy in small tranches and set a stop-loss.");
