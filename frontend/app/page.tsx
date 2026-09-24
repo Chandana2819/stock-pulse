@@ -1053,7 +1053,7 @@ export default function Home() {
                   className="bg-green-dim/10 border border-green-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-green-custom transition-all"
                   onClick={() => setKpiModal({
                     title: "BUY Signals",
-                    value: `${displaySummary?.buy ?? 17}`,
+                    value: `${displaySummary?.buy ?? 0}`,
                     valueColor: "text-green-custom",
                     description: "Stocks currently rated BUY by the 7-pillar quantitative model across the entire scanned market — strong trend, momentum, and fundamentals with no active safety overrides. Top-ranked picks by composite score:",
                     rows: topMarketPicks.length > 0
@@ -1062,7 +1062,7 @@ export default function Home() {
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
-                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary?.buy ?? 17}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-green-custom">{displaySummary?.buy ?? 0}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">BUY ⓘ</span>
                 </div>
                 <div
@@ -1101,13 +1101,13 @@ export default function Home() {
                   className="bg-blue-dim/10 border border-blue-custom/25 rounded p-2.5 text-center cursor-pointer hover:border-blue-custom transition-all"
                   onClick={() => setKpiModal({
                     title: "WAIT Signals",
-                    value: `${displaySummary?.wait ?? 33}`,
+                    value: `${displaySummary?.wait ?? 0}`,
                     valueColor: "text-blue-custom",
                     description: "Stocks flagged WAIT — a safety override is active, usually due to insufficient data quality or elevated market/technical risk overriding what would otherwise be a BUY.",
                     footerAction: { label: "View All Signals", href: "/stock-signals" },
                   })}
                 >
-                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary?.wait ?? 33}</div>
+                  <div className="font-mono text-[1.4rem] font-bold text-blue-custom">{displaySummary?.wait ?? 0}</div>
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT ⓘ</span>
                 </div>
               </div>
@@ -1129,23 +1129,30 @@ export default function Home() {
               <div className="flex items-center justify-between border-t border-border-custom pt-4 w-full">
                 <div
                   className="flex flex-col cursor-pointer group"
-                  onClick={() => setKpiModal({
-                    title: "Market Bias",
-                    value: "52/100 — MODERATE RISK",
-                    valueColor: "text-amber-custom",
-                    description: "A blended read of today's BUY/SELL/HOLD/WAIT signal mix and overall market risk score — a quick gut-check on whether conditions favor initiating new positions right now.",
-                    rows: [
-                      { label: "BUY Signals", value: `${displaySummary?.buy ?? 17}`, color: "text-green-custom" },
-                      { label: "SELL Signals", value: `${displaySummary?.sell ?? 29}`, color: "text-red-custom" },
-                      { label: "HOLD Signals", value: `${displaySummary?.hold ?? 55}`, color: "text-amber-custom" },
-                      { label: "WAIT Signals", value: `${displaySummary?.wait ?? 33}`, color: "text-blue-custom" },
-                    ],
-                    footerAction: { label: "View All Signals", href: "/stock-signals" },
-                  })}
+                  onClick={() => {
+                    const biasScore = marketRisk?.score ?? 45;
+                    const biasColor = biasScore >= 70 ? "text-red-custom" : biasScore >= 45 ? "text-amber-custom" : "text-green-custom";
+                    setKpiModal({
+                      title: "Market Bias",
+                      value: `${biasScore}/100 — ${marketRisk?.classification ?? "MODERATE"}`,
+                      valueColor: biasColor,
+                      description: "A blended read of today's BUY/SELL/HOLD/WAIT signal mix and overall market risk score — a quick gut-check on whether conditions favor initiating new positions right now.",
+                      rows: [
+                        { label: "BUY Signals", value: `${displaySummary?.buy ?? 0}`, color: "text-green-custom" },
+                        { label: "SELL Signals", value: `${displaySummary?.sell ?? 0}`, color: "text-red-custom" },
+                        { label: "HOLD Signals", value: `${displaySummary?.hold ?? 0}`, color: "text-amber-custom" },
+                        { label: "WAIT Signals", value: `${displaySummary?.wait ?? 0}`, color: "text-blue-custom" },
+                      ],
+                      footerAction: { label: "View All Signals", href: "/stock-signals" },
+                    });
+                  }}
                 >
                   <span className="font-mono text-[0.7rem] text-text-4 uppercase block tracking-wider group-hover:text-text-custom transition-colors">MARKET BIAS ⓘ</span>
                   <span className="font-mono text-[0.82rem] text-text-custom font-bold uppercase mt-0.5 leading-none">
-                    52/100 — <span className="text-amber-custom font-extrabold">MODERATE RISK</span>
+                    {marketRisk?.score ?? 45}/100 —{" "}
+                    <span className={`font-extrabold ${(marketRisk?.score ?? 45) >= 70 ? "text-red-custom" : (marketRisk?.score ?? 45) >= 45 ? "text-amber-custom" : "text-green-custom"}`}>
+                      {marketRisk?.classification ?? "MODERATE"}
+                    </span>
                   </span>
                 </div>
                 <Link
