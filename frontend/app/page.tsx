@@ -163,6 +163,10 @@ export default function Home() {
   const [sectorModalOpen, setSectorModalOpen] = useState(false);
   const [sectorModalInitialKey, setSectorModalInitialKey] = useState<string | null>(null);
   const [trackRecord, setTrackRecord] = useState<TrackRecordSummary | null>(null);
+  const [macroNews, setMacroNews] = useState<Array<{
+    id: string; title: string; link: string; pubDate: string;
+    source: string; impact: string; sentiment: "BEARISH" | "BULLISH" | "NEUTRAL";
+  }>>([]);
 
   useEffect(() => {
     if (!stock.trim()) {
@@ -272,6 +276,18 @@ export default function Home() {
       }
     } catch (e) {
       console.error("Error fetching track record:", e);
+    }
+  }, []);
+
+  const fetchMacroNews = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/market/macro-news`);
+      if (res.ok) {
+        const json = await res.json();
+        setMacroNews(json.news || []);
+      }
+    } catch (e) {
+      console.error("Error fetching macro news:", e);
     }
   }, []);
 
@@ -410,8 +426,9 @@ export default function Home() {
     fetchMarketData();
     fetchSectorPerf();
     fetchTrackRecord();
+    fetchMacroNews();
     requestPermission();
-  }, [fetchWatchlist, fetchWalletAndHoldings, fetchSignalsOverview, fetchMarketData, fetchSectorPerf, fetchTrackRecord, requestPermission]);
+  }, [fetchWatchlist, fetchWalletAndHoldings, fetchSignalsOverview, fetchMarketData, fetchSectorPerf, fetchTrackRecord, fetchMacroNews, requestPermission]);
 
   const handleOpenTradeModal = (type: "BUY" | "SELL") => {
     setTradeType(type);
@@ -885,6 +902,72 @@ export default function Home() {
               </button>
             </div>
           </div>
+        </section>
+
+
+        {/* WHY IS MARKET MOVING — Global macro news */}
+        <section className="border border-border-custom bg-bg-1 rounded p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-custom animate-pulse inline-block" />
+              <span className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">WHY IS MARKET MOVING?</span>
+            </div>
+            <span className="font-mono text-[0.58rem] text-text-4 uppercase tracking-wider">Live global news · Auto-refreshed</span>
+          </div>
+
+          {macroNews.length === 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="animate-pulse bg-bg-2 rounded p-3 flex flex-col gap-2">
+                  <div className="h-2 w-16 bg-bg-3 rounded" />
+                  <div className="h-3 w-full bg-bg-3 rounded" />
+                  <div className="h-3 w-3/4 bg-bg-3 rounded" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {macroNews.slice(0, 9).map((n) => (
+                <a
+                  key={n.id}
+                  href={n.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex flex-col gap-1.5 p-3 rounded border border-border-custom hover:border-border-bright bg-bg-2 hover:bg-bg-3 transition-all no-underline"
+                >
+                  {/* Impact tag + sentiment */}
+                  <div className="flex items-center gap-1.5">
+                    <span className={`font-mono text-[0.52rem] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                      n.impact === "GEOPOLITICAL" ? "bg-red-dim/20 text-red-custom border border-red-custom/30" :
+                      n.impact === "MONETARY"     ? "bg-blue-custom/15 text-blue-custom border border-blue-custom/30" :
+                      n.impact === "COMMODITY"    ? "bg-amber-custom/15 text-amber-custom border border-amber-custom/30" :
+                      n.impact === "FLOWS"        ? "bg-purple-custom/15 text-purple-custom border border-purple-custom/30" :
+                      "bg-bg-3 text-text-3 border border-border-custom"
+                    }`}>
+                      {n.impact}
+                    </span>
+                    <span className={`font-mono text-[0.52rem] font-bold ${
+                      n.sentiment === "BEARISH" ? "text-red-custom" :
+                      n.sentiment === "BULLISH" ? "text-green-custom" : "text-text-4"
+                    }`}>
+                      {n.sentiment === "BEARISH" ? "▼ BEARISH" : n.sentiment === "BULLISH" ? "▲ BULLISH" : "● NEUTRAL"}
+                    </span>
+                  </div>
+                  {/* Headline */}
+                  <p className="font-mono text-[0.72rem] text-text-custom leading-snug group-hover:text-green-custom transition-colors line-clamp-3">
+                    {n.title}
+                  </p>
+                  {/* Source + time */}
+                  <div className="flex items-center justify-between mt-auto pt-1">
+                    <span className="font-mono text-[0.58rem] text-text-4 truncate">{n.source}</span>
+                    <span className="font-mono text-[0.55rem] text-text-4 shrink-0 ml-1">
+                      {n.pubDate ? new Date(n.pubDate).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true }) : ""}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
         </section>
 
         {/* ROW 2: Sector Performance + Signals counters */}

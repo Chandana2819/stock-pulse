@@ -7,6 +7,9 @@ import { getEnrichedHoldings, ensureProfile } from "../lib/services/portfolio";
 import { getSectorPerformance } from "../lib/services/market";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, sourceMeta } from "../lib/http";
+import { GoogleNewsProvider } from "../lib/providers/googleNewsProvider";
+
+const gNews = new GoogleNewsProvider();
 
 const router = express.Router();
 
@@ -140,6 +143,53 @@ router.get(
           : holdingsCount > 0
           ? "Nothing requires immediate action."
           : "Nothing to review yet — your portfolio is empty.",
+    });
+  })
+);
+
+
+// ── Macro / global news explaining why market is moving ─────────────────────
+router.get(
+  "/macro-news",
+  asyncHandler(async (_req, res) => {
+    // Fetch from multiple global market topics in parallel
+    const queries = [
+      { topic: "India stock market today",   impact: "MARKET"      },
+      { topic: "BRICS economy 2025",         impact: "GEOPOLITICAL" },
+      { topic: "US Federal Reserve interest rate", impact: "MONETARY" },
+      { topic: "war conflict economy market", impact: "GEOPOLITICAL" },
+      { topic: "RBI India interest rate",    impact: "MONETARY"    },
+      { topic: "FII sell India market",      impact: "FLOWS"       },
+      { topic: "oil price OPEC today",       impact: "COMMODITY"   },
+      { topic: "global recession economy",   impact: "MACRO"       },
+    ];
+
+    const results = await Promise.allSettled(
+      queries.map(q => gNews.getNews(q.topic, 3).then(items => items.map(n => ({ ...n, impact: q.impact, topic: q.topic }))))
+    );
+
+    const allNews = results
+      .flatMap(r => r.status === "fulfilled" ? r.value : [])
+      .filter((n, i, arr) => arr.findIndex(x => x.id === n.id) === i) // dedupe
+      .sort((a, b) => new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime())
+      .slice(0, 15);
+
+    // Classify each headline as bearish/bullish/neutral for Indian markets
+    const bearishKeywords = ["fall", "crash", "drop", "decline", "down", "loss", "fear", "war", "sanction", "tariff", "sell", "weak", "cut", "risk", "recession", "inflation"];
+    const bullishKeywords = ["rise", "gain", "rally", "up", "growth", "strong", "buy", "record", "high", "boost", "positive", "rate cut", "stimulus", "deal"];
+
+    const classified = allNews.map(n => {
+      const text = (n.title || "").toLowerCase();
+      const bearScore = bearishKeywords.filter(k => text.includes(k)).length;
+      const bullScore = bullishKeywords.filter(k => text.includes(k)).length;
+      const sentiment: "BEARISH" | "BULLISH" | "NEUTRAL" =
+        bearScore > bullScore ? "BEARISH" : bullScore > bearScore ? "BULLISH" : "NEUTRAL";
+      return { ...n, sentiment };
+    });
+
+    return res.json({
+      generatedAt: new Date().toISOString(),
+      news: classified,
     });
   })
 );
