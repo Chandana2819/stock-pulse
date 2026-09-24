@@ -821,7 +821,7 @@ export default function PortfolioPage() {
                                     : "—"}
                                 </td>
                                 <td className="p-3 text-right font-mono text-[0.75rem]">
-                                  {sig?.stopLoss ? (
+                                  {sig?.stopLoss && sig.stopLoss > 0 ? (
                                     <span className={isStopLossBreached ? "text-red-custom font-bold animate-pulse" : "text-red-custom/80"}>
                                       {currSym}{sig.stopLoss.toFixed(2)} {isStopLossBreached && <WarningIcon />}
                                     </span>
@@ -830,7 +830,7 @@ export default function PortfolioPage() {
                                   )}
                                 </td>
                                 <td className="p-3 text-center font-mono text-[0.75rem]">
-                                  {sig?.targetRange ? (
+                                  {sig?.targetRange && (sig.targetRange.min > 0 || sig.targetRange.max > 0) ? (
                                     <span className="text-green-custom font-bold">
                                       {currSym}{sig.targetRange.min.toFixed(2)} - {currSym}{sig.targetRange.max.toFixed(2)}
                                     </span>
