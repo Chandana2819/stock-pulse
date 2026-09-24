@@ -767,8 +767,23 @@ export default function PortfolioPage() {
                               normalize(s.displaySymbol) === holdingSym ||
                               normalize(s.providerSymbol) === holdingSym
                             );
-                            const action = sig ? (sig.action || sig.signal || "HOLD").toUpperCase() : null;
+                            const rawAction = sig ? (sig.action || sig.signal || "HOLD").toUpperCase() : null;
                             const sigScore = sig?.finalScore ?? sig?.score ?? 50;
+                            // For existing holdings, WAIT is meaningless — convert to an actionable signal
+                            // based on the P&L so the trader knows what to actually do.
+                            const action = (() => {
+                              if (!rawAction) return null;
+                              if (rawAction === "WAIT" && h.plPct != null) {
+                                if (h.plPct <= -8)  return "SELL";     // heavy loss → cut it
+                                if (h.plPct <= -4)  return "REDUCE";   // moderate loss → trim
+                                return "HOLD";                           // small loss → hold & watch
+                              }
+                              // Large profit on any signal → suggest trimming
+                              if ((rawAction === "HOLD" || rawAction === "WAIT") && h.plPct != null && h.plPct >= 20) {
+                                return "REDUCE";
+                              }
+                              return rawAction;
+                            })();
                             const totalBase = h.currency === "USD" ? usdTotalValue : inrTotalValue;
                             const weightPct = totalBase > 0 ? ((h.value || 0) / totalBase) * 100 : 0;
                             const isOverConcentrated = weightPct > 25;
@@ -855,6 +870,15 @@ export default function PortfolioPage() {
                                         <span className="font-mono text-[0.6rem] text-red-custom font-bold">
                                           {guidance.label === "Exit Position" ? "Exit 100%" : `Trim ${guidance.pct}%`}
                                         </span>
+                                      )}
+                                      {/* Show note when WAIT was overridden based on P&L */}
+                                      {rawAction === "WAIT" && action !== "WAIT" && (
+                                        <span className="font-mono text-[0.55rem] text-text-3 mt-0.5">
+                                          {action === "SELL" ? "cut loss" : action === "REDUCE" ? "trim loss" : "hold"}
+                                        </span>
+                                      )}
+                                      {rawAction !== "WAIT" && action === "REDUCE" && h.plPct != null && h.plPct >= 20 && (
+                                        <span className="font-mono text-[0.55rem] text-amber-custom mt-0.5">take profit</span>
                                       )}
                                     </div>
                                   ) : (
