@@ -35,6 +35,13 @@ export class RecommendationEngine {
     newsArticles?: Array<{ title: string; sentiment: "POSITIVE" | "NEUTRAL" | "NEGATIVE" }>;
     avgVolume?: number | null;
     volume?: number | null;
+    // Real-market intelligence signals
+    circuitHit?: boolean;
+    bulkSellAlert?: boolean;
+    negativeAnnouncement?: boolean;
+    negativeKeyword?: string | null;
+    suspectedPump?: boolean;
+    marketCapCrore?: number | null;
   }): RecommendationResult {
     const priceChangePct = input.prevClose && input.prevClose > 0 
       ? ((input.price - input.prevClose) / input.prevClose) * 100 
@@ -53,6 +60,12 @@ export class RecommendationEngine {
       avgVolume: input.avgVolume ?? null,
       volume: input.volume ?? null,
       candlesCount: input.candlesCount,
+      circuitHit: input.circuitHit,
+      bulkSellAlert: input.bulkSellAlert,
+      negativeAnnouncement: input.negativeAnnouncement,
+      negativeKeyword: input.negativeKeyword,
+      suspectedPump: input.suspectedPump,
+      marketCapCrore: input.marketCapCrore,
     });
 
     // Compute Entry Zone, Stop Loss, and Target Range

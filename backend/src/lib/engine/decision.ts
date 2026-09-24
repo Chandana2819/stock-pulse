@@ -68,6 +68,19 @@ export type DecisionInput = {
   avgVolume: number | null;
   volume: number | null;
   candlesCount?: number;
+  // ── Real-market intelligence ─────────────────────────────────────────────
+  /** Stock hit upper/lower circuit today (price move >9.5% in one session). */
+  circuitHit?: boolean;
+  /** Promoter / large FII bulk-sell deal detected today via NSE bulk/block data. */
+  bulkSellAlert?: boolean;
+  /** News keyword scan matched a SEBI/fraud/penalty/insolvency headline. */
+  negativeAnnouncement?: boolean;
+  /** Matched keyword from the negative announcement scan, for the warning message. */
+  negativeKeyword?: string | null;
+  /** Small-cap (marketCap <₹2000 cr) + volume spike >5× 20-day average → possible pump. */
+  suspectedPump?: boolean;
+  /** Market capitalisation in crore INR (used for small-cap pump detection). */
+  marketCapCrore?: number | null;
 };
 
 export function classifySignal(score: number): SignalAction {
@@ -531,6 +544,61 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     signal = "WAIT";
     warnings.push("BUY signal overridden to WAIT because technical price trend is in a downtrend (SMA20 < SMA50)");
     reasons.unshift("Downtrend setup (SMA20 < SMA50) caps action to WAIT to avoid catching falling price momentum");
+  }
+
+  // Rule E: Stock hit circuit today — can't trade; set to WAIT
+  // A circuit breaker means the exchange has halted trading or orders cannot
+  // be matched at any price. The signal is meaningless until trading resumes.
+  if (input.circuitHit) {
+    signal = "WAIT";
+    warnings.push("Stock hit an upper/lower circuit today — trading is halted at this price. Signal suspended until normal trading resumes.");
+    reasons.unshift("Circuit breaker triggered today: no actionable trade possible at current price");
+  }
+
+  // Rule F: Negative regulatory/legal announcement detected in news
+  // SEBI notice, fraud probe, auditor resignation — any of these can crater a
+  // stock overnight. No algorithm's technicals should override this.
+  if (input.negativeAnnouncement && !input.circuitHit) {
+    const kw = input.negativeKeyword ?? "regulatory/legal issue";
+    if (signal === "BUY" || signal === "STRONG BUY" || signal === "HOLD") {
+      signal = "WAIT";
+      warnings.push(`⚠️ Negative news detected ("${kw}") — BUY/HOLD signal suspended pending clarification. Verify the news before acting.`);
+      reasons.unshift(`Regulatory/legal headline detected: "${kw}" — technical signal overridden to WAIT`);
+    } else {
+      // Already SELL/REDUCE — keep the signal but add a strong warning
+      warnings.push(`⚠️ Negative news detected ("${kw}") — confirms the bearish signal. Exit quickly if holding.`);
+      reasons.unshift(`Bearish signal reinforced by negative headline: "${kw}"`);
+    }
+  }
+
+  // Rule G: Bulk sell by promoter / FII today → reduce score, add warning
+  // If the people who know the company best are dumping, that's information the
+  // score alone doesn't capture. We don't force WAIT (it may be a planned sale)
+  // but we reduce the final score by 10 points and flag it prominently.
+  if (input.bulkSellAlert && !input.negativeAnnouncement && !input.circuitHit) {
+    warnings.push("Promoter/FII bulk-sell deal detected in NSE bulk/block data today — large insider selling is a yellow flag even if technicals look bullish.");
+    reasons.push("Large insider/institutional selling detected today via NSE bulk deal data");
+    // Downgrade signal one notch if it's a BUY
+    if (signal === "STRONG BUY") {
+      signal = "BUY";
+      warnings.push("STRONG BUY downgraded to BUY due to bulk sell alert.");
+    } else if (signal === "BUY") {
+      signal = "HOLD";
+      warnings.push("BUY downgraded to HOLD due to bulk sell alert — wait for selling pressure to subside.");
+    }
+  }
+
+  // Rule H: Suspected pump-and-dump (small cap + extreme volume spike)
+  // Small caps with <₹2000cr market cap and volume >5× 20-day average with no
+  // earnings/news catalyst are the classic pump pattern. WAIT until volume
+  // normalises — entering a pump is far more likely to be a loss than a win.
+  if (input.suspectedPump && !input.circuitHit) {
+    signal = "WAIT";
+    const capNote = input.marketCapCrore
+      ? ` (market cap ₹${input.marketCapCrore.toFixed(0)} cr)`
+      : "";
+    warnings.push(`⚠️ Suspected pump-and-dump: small-cap stock${capNote} with volume spike >5× its 20-day average and no known catalyst. High risk of sharp reversal.`);
+    reasons.unshift("Volume spike in small cap with no catalyst — suspected pump activity; WAIT for volume to normalise");
   }
 
   // Confidence Calculation (0-100): 60% agreementFactor + 40% dataQualityScore

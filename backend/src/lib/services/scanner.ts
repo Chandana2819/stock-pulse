@@ -6,6 +6,7 @@ import { computeMarketRisk } from "../engine/marketRisk";
 import { RecommendationEngine, type SignalAction } from "./recommendationEngine";
 import { getSectorChangeForKey } from "./market";
 import { recordSignalOutcome } from "./signalOutcomeTracker";
+import { hasBulkSellAlert, scanNewsForNegativeAnnouncement } from "../providers/nseProvider";
 
 function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
   if (action.includes("BUY")) return "BUY";
@@ -249,13 +250,14 @@ export async function runMarketScan(): Promise<void> {
           const uItem = lookupUniverse(stock.symbol);
           if (!uItem) return;
 
-      const [prices, fundamentals, newsRaw] = await Promise.all([
+      const [prices, fundamentals, newsRaw, bulkSellAlert] = await Promise.all([
         prisma.stockPrice.findMany({
           where: { symbol: stock.symbol },
           orderBy: { date: "asc" },
         }),
         marketDataProvider.getFundamentals(stock.symbol).catch(() => null),
         newsProvider.getNews(`${uItem.display} stock`, 5).catch(() => []),
+        hasBulkSellAlert(stock.symbol).catch(() => false),
       ]);
 
       if (prices.length < 30) {
@@ -272,8 +274,34 @@ export async function runMarketScan(): Promise<void> {
         volume: p.volume,
       }));
 
-      const indicators = computeIndicators(candles);
       const sentimentScore = newsRaw.length > 0 ? 0.1 : 0.0;
+
+      // ── Real-market intelligence ──────────────────────────────────────────
+      // Circuit: price moved >9.5% in one session → exchange hit circuit breaker
+      const priceChangePct = stock.prevClose && stock.prevClose > 0
+        ? ((stock.price - stock.prevClose) / stock.prevClose) * 100
+        : null;
+      const circuitHit = priceChangePct != null && Math.abs(priceChangePct) >= 9.5;
+
+      // Negative announcement: scan today's news headlines for red-flag keywords
+      const newsCheck = scanNewsForNegativeAnnouncement(newsRaw);
+      const negativeAnnouncement = newsCheck.flagged;
+      const negativeKeyword = newsCheck.matchedKeyword;
+
+      // Pump detection: small cap (marketCap < ₹2000cr) + volume spike >5× avg
+      const indicators = computeIndicators(candles);
+      const marketCapCrore = fundamentals?.marketCap != null
+        ? fundamentals.marketCap / 1_00_00_000  // convert from raw units to crore
+        : null;
+      const isSmallCap = marketCapCrore != null && marketCapCrore < 2000;
+      // 20-day average volume computed from stored candles (no external call)
+      const recentCandles = candles.slice(-20);
+      const avgVol = recentCandles.length > 0
+        ? recentCandles.reduce((s, c) => s + (c.volume ?? 0), 0) / recentCandles.length
+        : null;
+      const todayVol = candles.at(-1)?.volume ?? 0;
+      const volumeSpike = avgVol && avgVol > 0 ? todayVol / avgVol : null;
+      const suspectedPump = isSmallCap && volumeSpike != null && volumeSpike >= 5;
       const sectorChange = await getSectorChangeForKey(uItem.sectorKey).catch(() => null);
 
       const rec = RecommendationEngine.generate({
@@ -286,6 +314,12 @@ export async function runMarketScan(): Promise<void> {
         marketRiskScore: marketRiskResult.score,
         candlesCount: prices.length,
         newsSentimentScore: sentimentScore,
+        circuitHit,
+        bulkSellAlert,
+        negativeAnnouncement,
+        negativeKeyword,
+        suspectedPump,
+        marketCapCrore,
       });
 
       const lastRec = await prisma.stockRecommendation.findUnique({ where: { symbol: stock.symbol } });
