@@ -99,7 +99,25 @@ function quoteFromChartResult(providerSymbol: string, result: YahooChartResult |
     exchange,
     currency: str(meta.currency) ?? (exchange === "GLOBAL" ? "USD" : "INR"),
     price,
-    prevClose: num(meta.chartPreviousClose) ?? num(meta.previousClose),
+    prevClose: (() => {
+      // Primary: chartPreviousClose or previousClose from chart metadata
+      const fromMeta = num(meta.chartPreviousClose) ?? num(meta.previousClose);
+      if (fromMeta != null) return fromMeta;
+      // Secondary: derive from regularMarketChangePercent
+      // changePercent = (price - prevClose)/prevClose * 100 → prevClose = price/(1+pct/100)
+      // Guard: reject implausibly large values (>50% day move) to avoid corrupt data
+      const changePct = num(meta.regularMarketChangePercent);
+      if (price != null && changePct != null && Math.abs(changePct) < 50) {
+        return Number((price / (1 + changePct / 100)).toFixed(4));
+      }
+      // Tertiary: second-to-last daily candle close from chart indicators
+      const closes = result?.indicators?.quote?.[0]?.close;
+      if (Array.isArray(closes) && closes.length >= 2) {
+        const secondLast = closes[closes.length - 2];
+        if (typeof secondLast === "number" && Number.isFinite(secondLast)) return secondLast;
+      }
+      return null;
+    })(),
     open: num(meta.regularMarketOpen),
     dayHigh: num(meta.regularMarketDayHigh),
     dayLow: num(meta.regularMarketDayLow),

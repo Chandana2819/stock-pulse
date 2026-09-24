@@ -151,6 +151,7 @@ export default function Home() {
   const currentStockRef = useRef<string>("");
 
   const [signalsSummary, setSignalsSummary] = useState<any>(null);
+  const [scanLoading, setScanLoading] = useState(false);
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [portfolioSignals, setPortfolioSignals] = useState<any[]>([]);
   const [marketRisk, setMarketRisk] = useState<any>(null);
@@ -218,6 +219,25 @@ export default function Home() {
       console.error("Error fetching signals overview:", e);
     }
   }, []);
+
+  const triggerScan = useCallback(async () => {
+    setScanLoading(true);
+    try {
+      const deviceId = localStorage.getItem("sp_device_id");
+      const token = localStorage.getItem("sp_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (deviceId) headers["x-device-id"] = deviceId;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      await fetch(`${API_BASE}/api/signals/scan`, { method: "POST", headers });
+      // Give scanner a moment then re-fetch
+      await new Promise((r) => setTimeout(r, 3000));
+      await fetchSignalsOverview();
+    } catch (e) {
+      console.error("Scan trigger error:", e);
+    } finally {
+      setScanLoading(false);
+    }
+  }, [fetchSignalsOverview]);
 
   const fetchMarketData = useCallback(async () => {
     try {
@@ -769,13 +789,20 @@ export default function Home() {
               
               {/* Sparklines Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                {(indices.length > 0 ? indices : [
-                  { symbol: "NIFTY 50", price: 25497.10, pctChange: 0.41 },
-                  { symbol: "SENSEX", price: 82442.36, pctChange: 0.47 },
-                  { symbol: "BANK NIFTY", price: 56482.10, pctChange: -0.16 },
-                  { symbol: "NIFTY MID CAP 100", price: 59274.90, pctChange: 0.94 },
-                  { symbol: "SENSEX 17", price: 17472.04, pctChange: -0.08 }
-                ]).slice(0, 5).map((idx: any) => {
+                {indices.length === 0
+                ? Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} className="border border-border-custom bg-bg-1 p-3.5 rounded flex flex-col justify-between gap-3 animate-pulse">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="h-2 w-16 bg-bg-3 rounded" />
+                        <div className="h-3.5 w-24 bg-bg-3 rounded" />
+                      </div>
+                      <div className="flex items-end justify-between">
+                        <div className="h-2.5 w-10 bg-bg-3 rounded" />
+                        <div className="h-6 w-14 bg-bg-3 rounded" />
+                      </div>
+                    </div>
+                  ))
+                : indices.slice(0, 5).map((idx: any) => {
                   const isUp = (idx.pctChange || 0) >= 0;
                   const color = isUp ? "#00e5a0" : "#ff3b5c";
                   const sparkPoints = generateSparklineData(idx.symbol, idx.pctChange);
@@ -976,6 +1003,20 @@ export default function Home() {
                   <span className="font-mono text-[0.72rem] text-text-3 uppercase block tracking-wider mt-0.5">WAIT ⓘ</span>
                 </div>
               </div>
+
+              {/* Scan Now — shown only when no signals have been populated yet */}
+              {displaySummary?.buy === 0 && displaySummary?.sell === 0 && displaySummary?.hold === 0 && displaySummary?.wait === 0 && (
+                <div className="flex items-center gap-3 bg-bg-2 border border-border-custom rounded p-3">
+                  <span className="font-mono text-[0.7rem] text-text-3 flex-1">No signals yet — scanner runs every 4 h. Trigger a scan now to populate signals.</span>
+                  <button
+                    onClick={triggerScan}
+                    disabled={scanLoading}
+                    className="font-mono text-[0.7rem] font-bold uppercase tracking-wider px-3 py-1.5 rounded border border-green-custom/50 text-green-custom hover:bg-green-custom/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                  >
+                    {scanLoading ? "Scanning…" : "⟳ Scan Now"}
+                  </button>
+                </div>
+              )}
 
               <div className="flex items-center justify-between border-t border-border-custom pt-4 w-full">
                 <div
