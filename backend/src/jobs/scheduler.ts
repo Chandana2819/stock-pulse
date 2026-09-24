@@ -14,6 +14,7 @@ import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/tr
 import { getFundRecommendations } from "../lib/services/fundRecommendations";
 import { runScreener } from "../lib/services/screener";
 import { checkPendingSignalOutcomes } from "../lib/services/signalOutcomeTracker";
+import { runPortfolioCrashMonitor } from "../lib/services/portfolioCrashMonitor";
 
 // A job silently failing every tick for hours is exactly the kind of thing
 // that goes unnoticed without real alerting wired up. There's no
@@ -90,6 +91,15 @@ export function startBackgroundJobs() {
   runInterval("signal-alert-runner", env.signalAlertIntervalMs, async () => {
     const result = await evaluateSignalAlertsForAllUsers();
     return { usersChecked: result.users, notified: result.notified };
+  });
+
+  // Portfolio crash + surge monitor — runs every 15 min during IST market hours.
+  // Detects stocks in user holdings that move ≥3% intraday, fetches real news
+  // for the reason, and sends an actionable in-app alert (sell/watch/add).
+  // Also sends a market-wide alert when NIFTY drops ≥2%.
+  runInterval("portfolio-crash-monitor", 15 * 60 * 1000, async () => {
+    const result = await runPortfolioCrashMonitor();
+    return { usersChecked: result.users ?? 0 };
   });
 
   // Check signal outcomes daily: fills in 5d/10d/20d WIN/LOSS for tracked BUY signals.

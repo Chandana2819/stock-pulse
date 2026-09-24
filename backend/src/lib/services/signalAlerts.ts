@@ -9,7 +9,7 @@ import { pushNotification } from "./notifications";
 import { buildStockAnalysis } from "./stockAnalysis";
 import type { SignalAction } from "../engine/decision";
 
-const NOTIFIABLE_SIGNALS = new Set<SignalAction>(["STRONG BUY", "STRONG SELL"]);
+const NOTIFIABLE_SIGNALS = new Set<SignalAction>(["STRONG BUY", "BUY", "SELL", "STRONG SELL"]);
 const BATCH_SIZE = 6;
 const CATEGORY = "PORTFOLIO";
 
@@ -43,15 +43,30 @@ async function evaluateHolding(userId: string, holding: { stock: string; exchang
   const displaySymbol = analysis.resolved.displaySymbol;
   const score = analysis.decision.scores.final;
 
+  const d = analysis.decision;
+  let title = "";
+  let body = "";
+  let priority: "LOW" | "NORMAL" | "HIGH" | "CRITICAL" = "HIGH";
+
+  if (signal === "STRONG BUY" || signal === "BUY") {
+    title = `🟢 ${signal}: ${displaySymbol}`;
+    const entry = d.entryZone ? ` Entry zone: ₹${d.entryZone.min}–₹${d.entryZone.max}.` : "";
+    const sl    = d.stopLoss   ? ` Stop-loss: ₹${d.stopLoss}.`                           : "";
+    const tgt   = d.targetRange ? ` Target: ₹${d.targetRange.min}–₹${d.targetRange.max}.` : "";
+    body = `Score ${score}/100.${entry}${sl}${tgt} ${d.synthesis ?? ""}`.trim();
+    priority = signal === "STRONG BUY" ? "HIGH" : "NORMAL";
+  } else {
+    title = `🔴 ${signal}: ${displaySymbol}`;
+    body = `Score ${score}/100 — ${d.synthesis ?? "Consider reviewing this position."}`;
+    priority = signal === "STRONG SELL" ? "CRITICAL" : "HIGH";
+  }
+
   await pushNotification({
     userId,
     category: CATEGORY,
-    priority: "HIGH",
-    title: `${signal}: ${displaySymbol}`,
-    body:
-      signal === "STRONG BUY"
-        ? `${displaySymbol} in your portfolio is now rated STRONG BUY (score ${score}/100).`
-        : `${displaySymbol} in your portfolio is now rated STRONG SELL (score ${score}/100) — consider reviewing your position.`,
+    priority,
+    title,
+    body,
     link,
     meta: { symbol, signal, score },
   });
