@@ -126,8 +126,8 @@ export default function PortfolioPage() {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 5000);
   }, []);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       // 1. Fetch Holdings & Wallet & Mutual Funds
       const holdData = await apiFetch<{
@@ -198,7 +198,7 @@ export default function PortfolioPage() {
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
-      fetchData();
+      fetchData(true);
     }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh, fetchData]);
