@@ -40,6 +40,7 @@ export type SignalDetailData = {
   pillars?: SignalPillar[];
   reasons?: string[];
   warnings?: string[];
+  synthesis?: string;
   mainRisk?: string;
   dataQuality?: string | number;
   dataTimestamp?: string;
@@ -186,6 +187,15 @@ export default function SignalDetailModal({ isOpen, onClose, holding, signal, po
               </div>
             </div>
           </div>
+
+          {/* The one-sentence "why" — this is the plain-English answer to
+              "why this call", surfaced prominently since the portfolio table
+              row deliberately keeps only the action + confidence, not this. */}
+          {signal?.synthesis && (
+            <p className="text-sm text-text-custom leading-relaxed border-l-2 border-cyan-custom pl-3">
+              {signal.synthesis}
+            </p>
+          )}
 
           {/* Position Sizing Guidance — shown for REDUCE / SELL / STRONG SELL only */}
           {positionGuidance && (
