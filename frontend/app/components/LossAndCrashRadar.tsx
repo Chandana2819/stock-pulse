@@ -208,7 +208,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
         </div>
 
         {/* Highlight Banner */}
-        <div className="mt-4 p-3 border border-border-bright bg-bg-2/70 text-xs text-text-2 leading-relaxed flex items-start gap-2.5">
+        <div className="mt-4 p-3 border border-border-bright bg-bg-2/70 text-[0.8125rem] text-text-2 leading-relaxed flex items-start gap-2.5">
           <span className="text-cyan-custom font-bold text-sm">💡</span>
           <div>
             <span className="font-mono text-[0.6rem] text-cyan-custom uppercase tracking-wider font-bold block mb-0.5">
@@ -257,7 +257,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
       {activeTab === "LOSS_DIAGNOSIS" && (
         <div className="p-4 sm:p-6 flex flex-col gap-5">
           {data.concentrationRisk.warning && (
-            <div className="p-3 border border-amber-custom/40 bg-amber-dim/50 text-xs text-amber-custom flex items-start gap-2">
+            <div className="p-3 border border-amber-custom/40 bg-amber-dim/50 text-[0.8125rem] text-amber-custom flex items-start gap-2">
               <span className="font-bold text-sm">⚠️</span>
               <span className="font-mono text-[0.68rem]">{data.concentrationRisk.warning}</span>
             </div>
@@ -346,7 +346,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
               {data.crashRadar.reasons.map((r, idx) => (
                 <div key={idx} className="p-2.5 border border-border-custom bg-bg-1 flex items-start gap-2">
                   <span className="text-cyan-custom font-bold">✓</span>
-                  <span className="text-xs text-text-3">{r}</span>
+                  <span className="text-[0.8125rem] text-text-3">{r}</span>
                 </div>
               ))}
             </div>
@@ -385,7 +385,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
             <div className="font-display text-3xl font-bold text-text-custom">
               {data.recoveryPlan.estimatedMonthsMin} – {data.recoveryPlan.estimatedMonthsMax} MONTHS
             </div>
-            <p className="text-xs text-text-3 mt-1 leading-relaxed">
+            <p className="text-[0.8125rem] text-text-3 mt-1 leading-relaxed">
               Consolidation timeline for fundamentally strong monopolies (BEL, ONGC, Reliance, INFY) to digest valuation spikes and resume an upward trajectory with next earnings cycle.
             </p>
           </div>
@@ -396,7 +396,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
             </div>
             <div className="flex flex-col gap-2">
               {data.recoveryPlan.actionSteps.map((step, idx) => (
-                <div key={idx} className="p-3 border border-border-custom bg-bg-2 flex items-start gap-2.5 text-xs text-text-2">
+                <div key={idx} className="p-3 border border-border-custom bg-bg-2 flex items-start gap-2.5 text-[0.8125rem] text-text-2">
                   <span className="font-mono text-cyan-custom font-bold">{idx + 1}.</span>
                   <span>{step}</span>
                 </div>
@@ -404,7 +404,7 @@ export default function LossAndCrashRadar({ onPortfolioUpdated, onShowToast }: P
             </div>
           </div>
 
-          <div className="p-3 border border-border-custom bg-bg-1 text-xs text-text-3 font-mono">
+          <div className="p-3 border border-border-custom bg-bg-1 text-[0.8125rem] text-text-3 font-mono">
             <span className="text-text-custom font-bold block mb-0.5">Averaging Down Guidance:</span>
             {data.recoveryPlan.averagingRecommendation}
           </div>
