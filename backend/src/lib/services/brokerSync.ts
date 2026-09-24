@@ -27,11 +27,14 @@ export async function syncUserBroker(userId: string, brokerId: string) {
       ? conn.accessTokenEnc
       : decryptSecret(conn.accessTokenEnc);
 
-    const [holdings, orders, mfHoldings] = await Promise.all([
-      provider.getHoldings(accessToken),
-      provider.getOrders(accessToken),
-      provider.getMfHoldings ? provider.getMfHoldings(accessToken) : Promise.resolve([]),
-    ]);
+    // Sequential calls — Render.com lacks IPv6 outbound routing; concurrent
+    // requests trigger ETIMEDOUT / ENETUNREACH against api.kite.trade (Cloudflare).
+    // Running one at a time is far more reliable on free-tier cloud instances.
+    const holdings = await provider.getHoldings(accessToken);
+    const orders = await provider.getOrders(accessToken);
+    const mfHoldings = provider.getMfHoldings
+      ? await provider.getMfHoldings(accessToken)
+      : [];
 
     // Save synced holdings to database Holding table
     // Delete old holdings that are not present in the new sync for this broker

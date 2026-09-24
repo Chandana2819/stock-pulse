@@ -1,3 +1,6 @@
+import dns from "dns";
+dns.setDefaultResultOrder("ipv4first"); // Force IPv4: Render.com has no IPv6 outbound routing, preventing ENETUNREACH on Cloudflare addresses
+
 import express from "express";
 import cors from "cors";
 import { env, assertProductionConfig, reportUpstoxConfig } from "./config/env";
