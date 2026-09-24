@@ -1,9 +1,15 @@
 // Portfolio Crash Monitor
 //
-// Runs every 15 minutes during NSE market hours (9:15–15:30 IST).
+// Runs every 5 minutes during NSE market hours (9:15–15:30 IST) — tightened
+// from 15 min so a fast move is caught within one tick instead of possibly
+// sitting unnoticed for up to a quarter hour.
+//
 // For each user with active holdings it:
 //   1. Fetches live prices from the market data provider
-//   2. Flags any stock that has dropped ≥ CRASH_PCT (3%) today
+//   2. Flags any stock that has moved ≥ its own volatility-adjusted threshold
+//      today (see dynamicThresholdPct below) — not one fixed % for every
+//      stock. A stock that normally swings 4% a day needs a bigger move to
+//      count as "notable" than one that normally barely moves at all.
 //   3. Fetches real Google News headlines to explain *why*
 //   4. Decides: SELL NOW (price ≤ stop-loss) vs WATCH (still above stop-loss)
 //   5. Pushes an in-app notification with the reason + recommended action
@@ -14,15 +20,41 @@
 import { prisma } from "../prisma";
 import { marketDataProvider, newsProvider } from "../providers";
 import { pushNotification } from "./notifications";
-import { pctChange } from "../indicators";
+import { pctChange, realisedVolatility } from "../indicators";
 import { resolveIndexSymbol } from "../symbols";
 import { scanNewsForNegativeAnnouncement } from "../providers/nseProvider";
 
-const CRASH_PCT    = 3;   // stock drop threshold %
-const MARKET_PCT   = 2;   // NIFTY drop threshold %
-const RISE_PCT     = 3;   // strong single-day gain → possible BUY alert
+const MARKET_PCT   = 2;   // NIFTY drop threshold % — market-wide, stays fixed
 const COOLDOWN_MS  = 2 * 60 * 60 * 1000; // 2 hours between same-stock alerts
 const NIFTY_SYMBOL = resolveIndexSymbol("NIFTY 50").providerSymbol;
+
+// Per-stock threshold floor/ceiling: never alert on sub-2% noise, never
+// require more than a 6% move even for a genuinely volatile stock — keeps
+// the range sane at both ends of the volatility spectrum.
+const THRESHOLD_FLOOR = 2;
+const THRESHOLD_CEILING = 6;
+const THRESHOLD_VOL_MULTIPLIER = 1.5; // "notable" = 1.5x the stock's typical daily move
+
+/**
+ * A stock-specific "this move is actually notable" threshold, derived from
+ * its own realised volatility instead of one fixed % for every symbol.
+ * Falls back to the flat 3% BullHawk used before this if candles aren't
+ * available (new listing, provider hiccup, etc.) — same old behavior, just
+ * as the fallback rather than the default.
+ */
+async function dynamicThresholdPct(symbol: string): Promise<number> {
+  try {
+    const candles = await marketDataProvider.getCandles(symbol, "1M");
+    const closes = candles.map((c) => c.close).filter((c) => Number.isFinite(c));
+    const annualisedVolPct = realisedVolatility(closes, 20);
+    if (annualisedVolPct == null) return 3;
+    const dailyVolPct = annualisedVolPct / Math.sqrt(252);
+    const threshold = dailyVolPct * THRESHOLD_VOL_MULTIPLIER;
+    return Math.min(THRESHOLD_CEILING, Math.max(THRESHOLD_FLOOR, threshold));
+  } catch {
+    return 3;
+  }
+}
 
 /** True between 9:10 and 15:40 IST on weekdays */
 function isMarketHours(): boolean {
@@ -95,22 +127,27 @@ async function monitorUser(userId: string) {
 
     const displaySym = holding.stock.toUpperCase();
 
-    // ── CRASH: stock down ≥ 3% ────────────────────────────────────────────
-    if (chg <= -CRASH_PCT) {
+    // Stop-loss breach is action-critical regardless of how "normal" a move
+    // this is for the stock — check it independently of the volatility
+    // threshold below, so a low-volatility stock can't have a real stop-loss
+    // breach silently wait for a bigger % move to qualify as "notable".
+    const rec = await prisma.stockRecommendation.findFirst({
+      where: { symbol: sym },
+      orderBy: { generatedAt: "desc" },
+    });
+    const stopLoss = rec?.stopLoss ?? null;
+    const belowStopLoss = stopLoss != null && q.price <= stopLoss;
+
+    const threshold = await dynamicThresholdPct(sym);
+
+    // ── CRASH: stop-loss breached, OR down ≥ this stock's own threshold ───
+    if (belowStopLoss || chg <= -threshold) {
       if (await recentlySent(userId, sym, "CRASH")) continue;
 
       const headline = await getTopHeadline(displaySym);
       const reasonPart = headline
         ? `Possible reason: "${headline}"`
         : "No specific news found — could be sector selling or broader market pressure.";
-
-      // Check stop-loss from latest recommendation
-      const rec = await prisma.stockRecommendation.findFirst({
-        where: { symbol: sym },
-        orderBy: { generatedAt: "desc" },
-      });
-      const stopLoss = rec?.stopLoss ?? null;
-      const belowStopLoss = stopLoss != null && q.price <= stopLoss;
 
       const action = belowStopLoss
         ? `⚠️ Price (₹${q.price.toFixed(2)}) is AT or BELOW your stop-loss of ₹${stopLoss!.toFixed(2)}. Consider SELLING to limit further loss.`
@@ -125,18 +162,16 @@ async function monitorUser(userId: string) {
         title: `📉 ${displaySym} is down ${Math.abs(chg).toFixed(1)}% today`,
         body: `${reasonPart}\n\n${action}`,
         link: `CRASH:${sym}`,
-        meta: { symbol: sym, changePct: chg, headline, belowStopLoss },
+        meta: { symbol: sym, changePct: chg, headline, belowStopLoss, thresholdUsedPct: Number(threshold.toFixed(2)) },
       });
     }
 
-    // ── SURGE: stock up ≥ 3% (might be a BUY opportunity to add more) ─────
-    if (chg >= RISE_PCT) {
+    // ── SURGE: stock up ≥ this stock's own threshold (might be a BUY opportunity to add more) ─
+    if (chg >= threshold) {
       if (await recentlySent(userId, sym, "SURGE")) continue;
 
-      const rec = await prisma.stockRecommendation.findFirst({
-        where: { symbol: sym },
-        orderBy: { generatedAt: "desc" },
-      });
+      // Reuses the `rec` already fetched above for the stop-loss check —
+      // same latest recommendation row, no need to query twice.
       const signal = rec?.action ?? "—";
 
       // Only notify surges when signal is positive

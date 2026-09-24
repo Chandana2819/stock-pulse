@@ -93,11 +93,14 @@ export function startBackgroundJobs() {
     return { usersChecked: result.users, notified: result.notified };
   });
 
-  // Portfolio crash + surge monitor — runs every 15 min during IST market hours.
-  // Detects stocks in user holdings that move ≥3% intraday, fetches real news
-  // for the reason, and sends an actionable in-app alert (sell/watch/add).
-  // Also sends a market-wide alert when NIFTY drops ≥2%.
-  runInterval("portfolio-crash-monitor", 15 * 60 * 1000, async () => {
+  // Portfolio crash + surge monitor — runs every 5 min during IST market hours
+  // (tightened from 15 min so a fast move surfaces within one tick, not up
+  // to a quarter hour late). Detects stocks in user holdings that move past
+  // their own volatility-adjusted threshold intraday (see
+  // portfolioCrashMonitor.ts — not one fixed % for every stock), fetches
+  // real news for the reason, and sends an actionable in-app alert
+  // (sell/watch/add). Also sends a market-wide alert when NIFTY drops ≥2%.
+  runInterval("portfolio-crash-monitor", 5 * 60 * 1000, async () => {
     const result = await runPortfolioCrashMonitor();
     return { usersChecked: result.users ?? 0 };
   });
