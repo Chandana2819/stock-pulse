@@ -60,6 +60,13 @@ export const env = {
   // primary engine input. Leave unset to disable it cleanly.
   marketauxApiKey: str("MARKETAUX_API_KEY", ""),
 
+  // Upstox — official, free-with-account market data (quotes + candles) for
+  // NSE/BSE equities, used in place of the unofficial/scraped Yahoo Finance
+  // endpoint for the symbols it covers. Read-only "Analytics" access token,
+  // long-lived (1yr). Leave unset and the app behaves exactly as before,
+  // fully on Yahoo — see providers/upstoxProvider.ts.
+  upstoxAccessToken: str("UPSTOX_ACCESS_TOKEN", ""),
+
   razorpayKeyId: str("RAZORPAY_KEY_ID", ""),
   razorpayKeySecret: str("RAZORPAY_KEY_SECRET", ""),
   razorpayWebhookSecret: str("RAZORPAY_WEBHOOK_SECRET", ""),
