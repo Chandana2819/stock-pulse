@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import CandleChart from "../../components/CandleChart";
+import CandleChart, { type ChartMarker } from "../../components/CandleChart";
+import SignalHistoryPanel, { type SymbolSignalHistory } from "../../components/SignalHistoryPanel";
 import DecisionPanel from "../../components/DecisionPanel";
 import WhyMovingPanel from "../../components/WhyMovingPanel";
 import FundamentalsPanel from "../../components/FundamentalsPanel";
@@ -58,6 +59,7 @@ export default function StockDetailPage() {
   const [wallet, setWallet] = useState<{ walletInr: number; walletUsd: number }>({ walletInr: 0, walletUsd: 0 });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const { sendBrowserNotification } = useBrowserNotifications();
+  const [signalMarkers, setSignalMarkers] = useState<ChartMarker[]>([]);
 
   const addToast = useCallback((toast: Omit<Toast, "id" | "timestamp">) => {
     const id = Math.random().toString(36).slice(2);
@@ -81,6 +83,47 @@ export default function StockDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Overlay every past signal this stock has received onto the price chart —
+  // a wide 1-year window so the markers cover as much of the chart as we
+  // have signal history for, independent of the period the history panel
+  // below is showing.
+  useEffect(() => {
+    if (!data) return;
+    (async () => {
+      try {
+        const hist = await api.get<SymbolSignalHistory>(
+          `/api/signals/history/outcomes?symbol=${encodeURIComponent(data.symbol)}&days=365`
+        );
+        const candleDays = data.candles.map((c) => ({
+          time: c.time,
+          day: new Date(c.time * 1000).toISOString().slice(0, 10),
+        }));
+        const markers: ChartMarker[] = [];
+        for (const e of hist.entries) {
+          let match = candleDays.find((c) => c.day === e.date);
+          if (!match) {
+            const earlier = candleDays.filter((c) => c.day < e.date);
+            match = earlier[earlier.length - 1];
+          }
+          if (!match) continue;
+          const isBuy = e.action.includes("BUY");
+          const isSell = e.action.includes("SELL") || e.action === "REDUCE";
+          markers.push({
+            time: match.time,
+            position: isBuy ? "belowBar" : "aboveBar",
+            color: isBuy ? "#00d4aa" : isSell ? "#ff4757" : e.action === "HOLD" ? "#3b82f6" : "#f59e0b",
+            shape: isBuy ? "arrowUp" : isSell ? "arrowDown" : "circle",
+            text: e.action,
+          });
+        }
+        setSignalMarkers(markers);
+      } catch {
+        // Non-critical — the chart just renders without markers.
+        setSignalMarkers([]);
+      }
+    })();
+  }, [data?.symbol]);
 
   useEffect(() => {
     (async () => {
@@ -224,9 +267,11 @@ export default function StockDetailPage() {
         </div>
       </div>
 
-      <CandleChart candles={data.candles} stock={data.resolved.displaySymbol} />
+      <CandleChart candles={data.candles} stock={data.resolved.displaySymbol} markers={signalMarkers} />
 
       <DecisionPanel decision={data.decision} />
+
+      <SignalHistoryPanel symbol={data.resolved.displaySymbol} />
 
       {data.attribution && <WhyMovingPanel attribution={data.attribution} symbol={data.resolved.displaySymbol} />}
 

@@ -10,12 +10,21 @@ type CandlePoint = {
   close: number;
 };
 
+export type ChartMarker = {
+  time: number;
+  position: "aboveBar" | "belowBar";
+  color: string;
+  shape: "arrowUp" | "arrowDown" | "circle";
+  text?: string;
+};
+
 type Props = {
   candles: CandlePoint[];
   stock: string;
+  markers?: ChartMarker[];
 };
 
-export default function CandleChart({ candles, stock }: Props) {
+export default function CandleChart({ candles, stock, markers }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,7 +33,7 @@ export default function CandleChart({ candles, stock }: Props) {
     let chart: any;
 
     (async () => {
-      const { createChart, ColorType, CandlestickSeries } = await import("lightweight-charts");
+      const { createChart, ColorType, CandlestickSeries, createSeriesMarkers } = await import("lightweight-charts");
 
       chartRef.current!.innerHTML = "";
 
@@ -69,6 +78,17 @@ export default function CandleChart({ candles, stock }: Props) {
       }));
 
       candleSeries.setData(formatted);
+
+      if (markers && markers.length > 0) {
+        createSeriesMarkers(
+          candleSeries,
+          markers
+            .slice()
+            .sort((a, b) => a.time - b.time)
+            .map((m) => ({ time: m.time as any, position: m.position, color: m.color, shape: m.shape, text: m.text }))
+        );
+      }
+
       chart.timeScale().fitContent();
 
       const handleResize = () => {
@@ -86,7 +106,7 @@ export default function CandleChart({ candles, stock }: Props) {
     return () => {
       if (chart) chart.remove();
     };
-  }, [candles, stock]);
+  }, [candles, stock, markers]);
 
   if (candles.length === 0) {
     return (

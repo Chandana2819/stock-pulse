@@ -7,7 +7,7 @@ import { UNIVERSE, lookupUniverse, type UniverseEntry } from "../lib/universe";
 import { getEnrichedHoldings } from "../lib/services/portfolio";
 import { syncUserBroker } from "../lib/services/brokerSync";
 import { buildStockAnalysis } from "../lib/services/stockAnalysis";
-import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
+import { getBacktestedTrackRecord, getLiveTrackRecord, getSymbolSignalHistory } from "../lib/services/trackRecord";
 import { getIndiaMarketStatus } from "../lib/marketHours";
 
 const router = express.Router();
@@ -307,6 +307,26 @@ router.get(
     }));
 
     return res.json({ symbol, history: items });
+  })
+);
+
+// Per-symbol "did the signal work?" history — every past dated call for one
+// stock, checked against what actually happened 5/10/20 trading days later.
+// Same win/loss methodology as /track-record's "live" section, scoped to a
+// single symbol so it can be charted and read day by day.
+router.get(
+  "/history/outcomes",
+  asyncHandler(async (req, res) => {
+    const symbolParam = String(req.query.symbol ?? "").trim();
+    if (!symbolParam) throw ApiError.badRequest("Query parameter 'symbol' is required.");
+
+    const entry = lookupUniverse(symbolParam);
+    const symbol = entry?.symbol ?? symbolParam;
+
+    const days = Math.min(Math.max(Number(req.query.days) || 180, 7), 730);
+
+    const result = await getSymbolSignalHistory(symbol, days);
+    return res.json(result);
   })
 );
 

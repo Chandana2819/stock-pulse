@@ -78,6 +78,144 @@ function emptyLiveTrackRecord(): LiveTrackRecord {
   };
 }
 
+// Per-symbol signal history: the same "did it work?" methodology as the
+// aggregate live track record above (RecommendationHistory checked against
+// real StockPrice closes, one signal per symbol per calendar day), but
+// returning every individual dated call for one stock instead of a single
+// rolled-up percentage. This is what answers "what did it tell me to do a
+// week/month ago for this stock, and did that pan out" — the aggregate
+// track record can't show that, only a per-symbol breakdown can.
+export type SymbolSignalHistoryEntry = {
+  date: string; // YYYY-MM-DD, the calendar day the signal was issued
+  action: string;
+  score: number;
+  confidence: number;
+  entryPrice: number | null;
+  horizons: {
+    d5: SignalHorizonResult;
+    d10: SignalHorizonResult;
+    d20: SignalHorizonResult;
+  };
+};
+
+export type SignalHorizonResult = {
+  price: number | null;
+  returnPct: number | null;
+  result: "WIN" | "LOSS" | "STABLE" | "UNSTABLE" | "PENDING" | "NOT_SCORED";
+};
+
+export type SymbolSignalHistory = {
+  symbol: string;
+  windowDays: number;
+  entries: SymbolSignalHistoryEntry[];
+  summary: {
+    totalSignals: number;
+    scored: { d5: number; d10: number; d20: number };
+    accuracyPct: { d5: number | null; d10: number | null; d20: number | null };
+  };
+};
+
+export function classifyHorizonResult(
+  bucket: "BUY" | "SELL" | "HOLD" | "WAIT",
+  entryPrice: number,
+  futurePrice: number | undefined
+): SignalHorizonResult {
+  if (bucket === "WAIT") return { price: null, returnPct: null, result: "NOT_SCORED" };
+  if (futurePrice == null) return { price: null, returnPct: null, result: "PENDING" };
+  const returnPct = Number((((futurePrice - entryPrice) / entryPrice) * 100).toFixed(2));
+  let result: SignalHorizonResult["result"];
+  if (bucket === "BUY") result = returnPct > 0 ? "WIN" : "LOSS";
+  else if (bucket === "SELL") result = returnPct < 0 ? "WIN" : "LOSS";
+  else result = Math.abs(returnPct) <= 3 ? "STABLE" : "UNSTABLE";
+  return { price: futurePrice, returnPct, result };
+}
+
+export async function getSymbolSignalHistory(symbol: string, windowDays = 180): Promise<SymbolSignalHistory> {
+  const since = new Date(Date.now() - windowDays * 24 * 3600 * 1000);
+
+  const rows = await prisma.recommendationHistory.findMany({
+    where: { symbol, generatedAt: { gte: since } },
+    orderBy: { generatedAt: "asc" },
+    select: { action: true, score: true, confidence: true, generatedAt: true },
+  });
+
+  // Collapse to one signal per calendar day, same rule as the aggregate view.
+  const dailySignals = new Map<string, { action: string; score: number; confidence: number; date: Date }>();
+  for (const r of rows) {
+    const dayKey = r.generatedAt.toISOString().slice(0, 10);
+    if (!dailySignals.has(dayKey)) {
+      dailySignals.set(dayKey, { action: r.action, score: r.score, confidence: r.confidence, date: r.generatedAt });
+    }
+  }
+  const signals = Array.from(dailySignals.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  if (signals.length === 0) {
+    return {
+      symbol,
+      windowDays,
+      entries: [],
+      summary: { totalSignals: 0, scored: { d5: 0, d10: 0, d20: 0 }, accuracyPct: { d5: null, d10: null, d20: null } },
+    };
+  }
+
+  const earliestSignalDate = signals[signals.length - 1].date;
+  const prices = await prisma.stockPrice.findMany({
+    where: { symbol, date: { gte: earliestSignalDate } },
+    orderBy: { date: "asc" },
+    select: { date: true, close: true },
+  });
+
+  let scored5 = 0, wins5 = 0, scored10 = 0, wins10 = 0, scored20 = 0, wins20 = 0;
+
+  const entries: SymbolSignalHistoryEntry[] = signals.map((sig) => {
+    const bucket = directionBucket(sig.action);
+
+    let entryIdx = -1;
+    for (let i = 0; i < prices.length; i++) {
+      if (prices[i].date.getTime() <= sig.date.getTime()) entryIdx = i;
+      else break;
+    }
+    const entryPrice = entryIdx >= 0 ? prices[entryIdx].close : null;
+
+    const at = (offset: number): number | undefined => {
+      const idx = entryIdx + offset;
+      return idx >= 0 && idx < prices.length ? prices[idx].close ?? undefined : undefined;
+    };
+
+    const d5 = entryPrice != null ? classifyHorizonResult(bucket, entryPrice, at(5)) : { price: null, returnPct: null, result: "PENDING" as const };
+    const d10 = entryPrice != null ? classifyHorizonResult(bucket, entryPrice, at(10)) : { price: null, returnPct: null, result: "PENDING" as const };
+    const d20 = entryPrice != null ? classifyHorizonResult(bucket, entryPrice, at(20)) : { price: null, returnPct: null, result: "PENDING" as const };
+
+    if (d5.result === "WIN" || d5.result === "LOSS") { scored5++; if (d5.result === "WIN") wins5++; }
+    if (d10.result === "WIN" || d10.result === "LOSS") { scored10++; if (d10.result === "WIN") wins10++; }
+    if (d20.result === "WIN" || d20.result === "LOSS") { scored20++; if (d20.result === "WIN") wins20++; }
+
+    return {
+      date: sig.date.toISOString().slice(0, 10),
+      action: sig.action,
+      score: sig.score,
+      confidence: sig.confidence,
+      entryPrice,
+      horizons: { d5, d10, d20 },
+    };
+  });
+
+  return {
+    symbol,
+    windowDays,
+    entries,
+    summary: {
+      totalSignals: entries.length,
+      scored: { d5: scored5, d10: scored10, d20: scored20 },
+      accuracyPct: {
+        d5: scored5 > 0 ? Math.round((wins5 / scored5) * 100) : null,
+        d10: scored10 > 0 ? Math.round((wins10 / scored10) * 100) : null,
+        d20: scored20 > 0 ? Math.round((wins20 / scored20) * 100) : null,
+      },
+    },
+  };
+}
+
 const LIVE_CACHE_KEY = "track-record:live:v1";
 
 export async function getLiveTrackRecord(): Promise<{ value: LiveTrackRecord; cacheHit: boolean; stale: boolean }> {
