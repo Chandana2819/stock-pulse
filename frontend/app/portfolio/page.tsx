@@ -694,8 +694,47 @@ export default function PortfolioPage() {
               const inrTotalValue = holdings.filter(h => h.currency === "INR").reduce((sum, h) => sum + (h.value || 0), 0);
               const usdTotalValue = holdings.filter(h => h.currency === "USD").reduce((sum, h) => sum + (h.value || 0), 0);
 
+              // Portfolio-level trust calculations
+              const normalize2 = (sym?: string) => (sym || "").toUpperCase().replace(/\.(NS|BO)$/, "").trim();
+              const urgentSells = holdings.filter(h => {
+                const s = aiSignals.find(sig => normalize2(sig.symbol) === normalize2(h.displaySym || h.stock) || normalize2(sig.displaySymbol) === normalize2(h.displaySym || h.stock));
+                const rawA = s ? (s.action || s.signal || "").toUpperCase() : "";
+                if (rawA === "SELL" || rawA === "STRONG SELL") return true;
+                if (rawA === "WAIT" && h.plPct != null && h.plPct <= -8) return true;
+                return false;
+              });
+              const urgentBuys = holdings.filter(h => {
+                const s = aiSignals.find(sig => normalize2(sig.symbol) === normalize2(h.displaySym || h.stock) || normalize2(sig.displaySymbol) === normalize2(h.displaySym || h.stock));
+                const rawA = s ? (s.action || s.signal || "").toUpperCase() : "";
+                return rawA === "BUY" || rawA === "STRONG BUY";
+              });
+              const avgConfidence = aiSignals.length > 0
+                ? Math.round(aiSignals.reduce((sum, s) => sum + (s.confidence ?? 50), 0) / aiSignals.length)
+                : 0;
+
               return (
                 <>
+                  {/* ── Trust Banner ─────────────────────────────────── */}
+                  {urgentSells.length > 0 && (
+                    <div className="mt-4 mb-2 flex flex-wrap gap-2 items-center p-3 rounded border border-red-custom/40 bg-red-dim/10">
+                      <span className="font-mono text-[0.65rem] font-bold text-red-custom uppercase tracking-wider animate-pulse">🚨 ACTION REQUIRED</span>
+                      <span className="font-mono text-[0.65rem] text-text-2">
+                        {urgentSells.length} stock{urgentSells.length > 1 ? "s" : ""} need immediate exit:
+                        <span className="text-red-custom font-bold ml-1">{urgentSells.map(h => h.displaySym || h.stock).join(", ")}</span>
+                      </span>
+                      <span className="ml-auto font-mono text-[0.6rem] text-text-3">Signal confidence: <span className="text-text-custom font-bold">{avgConfidence}%</span></span>
+                    </div>
+                  )}
+                  {urgentSells.length === 0 && urgentBuys.length > 0 && (
+                    <div className="mt-4 mb-2 flex flex-wrap gap-2 items-center p-3 rounded border border-green-custom/40 bg-green-dim/10">
+                      <span className="font-mono text-[0.65rem] font-bold text-green-custom uppercase tracking-wider">✓ BUY OPPORTUNITY</span>
+                      <span className="font-mono text-[0.65rem] text-text-2">
+                        Add more to: <span className="text-green-custom font-bold">{urgentBuys.map(h => h.displaySym || h.stock).join(", ")}</span>
+                      </span>
+                      <span className="ml-auto font-mono text-[0.6rem] text-text-3">Signal confidence: <span className="text-text-custom font-bold">{avgConfidence}%</span></span>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center justify-between gap-3 mt-6 mb-3">
                     <div className="flex items-center gap-3">
                       <div className="font-mono text-[0.65rem] tracking-[0.15em] text-text-3 uppercase font-bold">
@@ -788,8 +827,21 @@ export default function PortfolioPage() {
                             const weightPct = totalBase > 0 ? ((h.value || 0) / totalBase) * 100 : 0;
                             const isOverConcentrated = weightPct > 25;
                             const currSym = h.currency === "USD" ? "$" : "₹";
-                            const isStopLossBreached = sig?.stopLoss && h.currentPrice && h.currentPrice <= sig.stopLoss;
+                            const isStopLossBreached = sig?.stopLoss && sig.stopLoss > 0 && h.currentPrice && h.currentPrice <= sig.stopLoss;
                             const guidance = action ? getPositionGuidance(action, sigScore, weightPct) : null;
+
+                            // Trust-building computed values
+                            const confidence = sig?.confidence ?? 0;
+                            const confidenceLabel = confidence >= 70 ? "HIGH" : confidence >= 45 ? "MED" : "LOW";
+                            const confidenceColor = confidence >= 70 ? "text-green-custom" : confidence >= 45 ? "text-amber-custom" : "text-text-3";
+                            const synthesis = sig?.synthesis as string | undefined;
+                            const topReason = Array.isArray(sig?.reasons) && sig.reasons.length > 0 ? sig.reasons[0] : null;
+                            const breakEvenPct = h.plPct != null && h.plPct < 0 ? Math.abs(h.plPct / (1 + h.plPct / 100)) : null;
+                            const slGap = sig?.stopLoss && sig.stopLoss > 0 && h.currentPrice && h.currentPrice > sig.stopLoss
+                              ? ((h.currentPrice - sig.stopLoss) / h.currentPrice * 100)
+                              : null;
+                            const slUrgent = slGap != null && slGap < 4;
+                            const isCriticalSell = (action === "SELL" || action === "STRONG SELL") && (h.plPct ?? 0) <= -8;
 
                             return (
                               <tr key={h.id} className="border-b border-border-custom hover:bg-bg-2/50 transition-colors duration-150 whitespace-nowrap">
@@ -838,48 +890,88 @@ export default function PortfolioPage() {
                                     <span className="text-text-4">—</span>
                                   )}
                                 </td>
-                                <td className="p-3 text-center">
+                                <td className="p-3 text-left min-w-[160px]">
                                   {action ? (
-                                    <div className="flex flex-col items-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedModalHolding(h);
-                                          setSelectedModalSignal(sig || null);
-                                          setSelectedModalWeight(weightPct);
-                                        }}
-                                        className={`inline-flex items-center gap-1 font-mono text-[0.65rem] font-bold px-2 py-0.5 border rounded uppercase cursor-pointer transition-transform hover:scale-105 ${
-                                          action.includes("BUY") ? "bg-green-dim/20 border-green-custom/40 text-green-custom hover:border-green-custom" :
-                                          (action.includes("SELL") || action === "REDUCE") ? "bg-red-dim/20 border-red-custom/40 text-red-custom hover:border-red-custom" :
-                                          action === "HOLD" ? "bg-blue-custom/15 border-blue-custom/40 text-blue-custom hover:border-blue-custom" :
-                                          "bg-amber-custom/15 border-amber-custom/40 text-amber-custom hover:border-amber-custom"
-                                        }`}
-                                        title="Click to view 7-pillar breakdown & analysis"
-                                      >
-                                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${
-                                          action.includes("BUY") ? "bg-green-custom" :
-                                          (action.includes("SELL") || action === "REDUCE") ? "bg-red-custom" :
-                                          action === "HOLD" ? "bg-blue-custom" : "bg-amber-custom"
-                                        }`} />
-                                        <span>{action}</span>
-                                        <svg className="w-2.5 h-2.5 text-text-3 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.2-5.2m1.7-5.3a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
-                                      </button>
-                                      {guidance && (
-                                        <span className="font-mono text-[0.6rem] text-red-custom font-bold">
-                                          {guidance.label === "Exit Position" ? "Exit 100%" : `Trim ${guidance.pct}%`}
-                                        </span>
+                                    <div className="flex flex-col gap-1">
+                                      {/* Row 1: Signal badge + confidence */}
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedModalHolding(h);
+                                            setSelectedModalSignal(sig || null);
+                                            setSelectedModalWeight(weightPct);
+                                          }}
+                                          className={`inline-flex items-center gap-1 font-mono text-[0.72rem] font-bold px-2.5 py-0.5 border rounded uppercase cursor-pointer transition-all hover:scale-105 ${
+                                            isCriticalSell ? "animate-pulse shadow-lg shadow-red-custom/30 bg-red-dim/30 border-red-custom text-red-custom" :
+                                            action.includes("BUY") ? "bg-green-dim/20 border-green-custom/40 text-green-custom hover:border-green-custom" :
+                                            (action.includes("SELL") || action === "REDUCE") ? "bg-red-dim/20 border-red-custom/40 text-red-custom hover:border-red-custom" :
+                                            action === "HOLD" ? "bg-blue-custom/15 border-blue-custom/40 text-blue-custom hover:border-blue-custom" :
+                                            "bg-amber-custom/15 border-amber-custom/40 text-amber-custom hover:border-amber-custom"
+                                          }`}
+                                          title={synthesis || "Click for full 7-pillar analysis"}
+                                        >
+                                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${
+                                            action.includes("BUY") ? "bg-green-custom" :
+                                            (action.includes("SELL") || action === "REDUCE") ? "bg-red-custom" :
+                                            action === "HOLD" ? "bg-blue-custom" : "bg-amber-custom"
+                                          }`} />
+                                          <span>{action}</span>
+                                        </button>
+                                        {/* Confidence pill */}
+                                        {sig && (
+                                          <span className={`font-mono text-[0.55rem] font-bold px-1 py-0.5 rounded border ${confidenceColor} ${
+                                            confidence >= 70 ? "border-green-custom/30 bg-green-dim/10" :
+                                            confidence >= 45 ? "border-amber-custom/30 bg-amber-custom/10" :
+                                            "border-text-3/20 bg-bg-3"
+                                          }`}>
+                                            {confidenceLabel}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Row 2: One-line reason */}
+                                      {(synthesis || topReason) && (
+                                        <p className="font-mono text-[0.58rem] text-text-3 leading-snug max-w-[150px] whitespace-normal">
+                                          {(synthesis || topReason || "").slice(0, 80)}{(synthesis || topReason || "").length > 80 ? "…" : ""}
+                                        </p>
                                       )}
-                                      {/* Show note when WAIT was overridden based on P&L */}
-                                      {rawAction === "WAIT" && action !== "WAIT" && (
-                                        <span className="font-mono text-[0.55rem] text-text-3 mt-0.5">
-                                          {action === "SELL" ? "cut loss" : action === "REDUCE" ? "trim loss" : "hold"}
-                                        </span>
-                                      )}
-                                      {rawAction !== "WAIT" && action === "REDUCE" && h.plPct != null && h.plPct >= 20 && (
-                                        <span className="font-mono text-[0.55rem] text-amber-custom mt-0.5">take profit</span>
-                                      )}
+
+                                      {/* Row 3: Action sub-label */}
+                                      <div className="flex flex-col gap-0.5">
+                                        {guidance && (
+                                          <span className="font-mono text-[0.6rem] text-red-custom font-bold">
+                                            {guidance.label === "Exit Position" ? "→ Exit 100%" : `→ Trim ${guidance.pct}%`}
+                                          </span>
+                                        )}
+                                        {rawAction === "WAIT" && action !== "WAIT" && !guidance && (
+                                          <span className="font-mono text-[0.58rem] text-red-custom font-bold">
+                                            {action === "SELL" ? "→ Cut loss now" : action === "REDUCE" ? "→ Trim position" : "→ Hold & watch"}
+                                          </span>
+                                        )}
+                                        {action === "REDUCE" && h.plPct != null && h.plPct >= 20 && !guidance && (
+                                          <span className="font-mono text-[0.58rem] text-amber-custom font-bold">→ Take profit</span>
+                                        )}
+
+                                        {/* Break-even % for losing positions */}
+                                        {breakEvenPct != null && breakEvenPct > 1 && (
+                                          <span className="font-mono text-[0.55rem] text-text-4">
+                                            needs +{breakEvenPct.toFixed(1)}% to breakeven
+                                          </span>
+                                        )}
+
+                                        {/* Stop-loss proximity warning */}
+                                        {slUrgent && !isStopLossBreached && (
+                                          <span className="font-mono text-[0.55rem] text-red-custom/80 animate-pulse">
+                                            ⚠ SL only {slGap!.toFixed(1)}% away
+                                          </span>
+                                        )}
+                                        {isStopLossBreached && (
+                                          <span className="font-mono text-[0.55rem] text-red-custom font-bold animate-pulse">
+                                            🚨 STOP-LOSS BREACHED
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   ) : (
                                     <span className="font-mono text-[0.65rem] text-text-4 uppercase">No Signal</span>
