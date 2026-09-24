@@ -84,11 +84,11 @@ export type DecisionInput = {
 };
 
 export function classifySignal(score: number): SignalAction {
-  if (score >= 80) return "STRONG BUY";
-  if (score >= 65) return "BUY";
-  if (score >= 55) return "HOLD";
-  if (score >= 45) return "REDUCE";
-  if (score >= 30) return "SELL";
+  if (score >= 78) return "STRONG BUY";
+  if (score >= 60) return "BUY";        // lowered from 65 — recovery entries need a path
+  if (score >= 50) return "HOLD";       // lowered from 55
+  if (score >= 40) return "REDUCE";     // lowered from 45
+  if (score >= 25) return "SELL";       // lowered from 30
   return "STRONG SELL";
 }
 
@@ -519,14 +519,15 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     reasons.unshift("Data coverage is insufficient to generate a reliable signal (<60 trading days)");
   }
 
-  // Rule D: Missing fundamental data — cap BUY/STRONG BUY at HOLD
-  // Fundamentals carry 20% of the score. When unavailable, the pillar silently
-  // scores 50 (neutral), which can push genuinely risky stocks into BUY territory.
-  // Without financial visibility into a business, the best we can responsibly say is HOLD.
+  // Rule D: Missing fundamental data — warn but keep BUY
+  // Fundamentals pillar already scores 50 (neutral) when unavailable, which
+  // discounts the final score by ~10 points. Adding a hard cap on top made it
+  // impossible to ever issue a BUY for ~40% of NSE stocks where Yahoo Finance
+  // doesn't return financials. We still surface the warning prominently so the
+  // trader knows to verify manually before acting.
   if ((signal === "BUY" || signal === "STRONG BUY") && !input.fundamentals) {
-    signal = "HOLD";
-    warnings.push("BUY signal capped at HOLD — fundamental financial data (ROE, revenue, D/E) is unavailable for this stock.");
-    reasons.unshift("Fundamental data missing: cannot confirm business quality before issuing a BUY");
+    warnings.push("⚠️ Fundamental data (ROE, revenue, D/E) unavailable — verify business quality manually before buying.");
+    reasons.push("Fundamental data missing: treat this BUY with extra caution and check the company's financials yourself");
   }
 
   // Rule B: Elevated Market Risk (>=75) overrides BUY to WAIT
@@ -536,14 +537,28 @@ export function computeDecision(input: DecisionInput): DecisionResult {
     reasons.unshift("Elevated market risk overrides BUY signal into WAIT");
   }
 
-  // Rule C: Technical Downtrend (SMA20 < SMA50 or DOWNTREND) overrides BUY to WAIT
+  // Rule C: Technical Downtrend — warn but keep BUY if score is strong
+  // When the broad market is in a correction, nearly every stock has SMA20 < SMA50.
+  // A hard WAIT override in that environment produces 0 BUY signals across the
+  // entire universe, making the app useless for traders. Instead: keep the BUY
+  // but add a prominent warning. The Trend pillar already penalises downtrends
+  // (scores 20–35 range), so the final score already reflects the risk.
+  // We reserve the hard WAIT for extreme cases: severe downtrend AND RSI oversold.
   const isDowntrend =
     (input.indicators?.sma20 != null && input.indicators?.sma50 != null && input.indicators.sma20 < input.indicators.sma50) ||
     input.indicators?.trend === "DOWNTREND";
+  const isSevereDowntrend = isDowntrend &&
+    (input.indicators?.rsi14 != null && input.indicators.rsi14 < 35) &&
+    (input.indicators?.macd?.histogram != null && input.indicators.macd.histogram < 0);
   if ((signal === "BUY" || signal === "STRONG BUY") && isDowntrend) {
-    signal = "WAIT";
-    warnings.push("BUY signal overridden to WAIT because technical price trend is in a downtrend (SMA20 < SMA50)");
-    reasons.unshift("Downtrend setup (SMA20 < SMA50) caps action to WAIT to avoid catching falling price momentum");
+    if (isSevereDowntrend) {
+      signal = "WAIT";
+      warnings.push("BUY overridden to WAIT — severe downtrend confirmed by RSI (<35) and negative MACD histogram. Avoid catching a falling knife.");
+      reasons.unshift("Severe downtrend (SMA20 < SMA50 + RSI oversold + negative MACD) — wait for reversal confirmation");
+    } else {
+      warnings.push("⚠️ Stock is below its 50-day moving average. This may be a recovery entry point, but buy in small tranches and set a stop-loss.");
+      reasons.push("SMA20 below SMA50 — price is in a medium-term downtrend; position sizing should be conservative");
+    }
   }
 
   // Rule E: Stock hit circuit today — can't trade; set to WAIT
