@@ -1383,12 +1383,23 @@ export default function Home() {
       {/* ── Footer ── */}
       <footer className="flex items-center justify-between p-[0.95rem_2rem] border-t border-border-custom bg-bg-1 select-none">
         <div className="font-mono text-[0.6rem] text-text-3 tracking-[0.05em]">
-          © 2024 BULLHAWK - DATA TANGO FINANCE &amp; GOOGLE NEWS - NOT FINANCIAL ADVICE
+          © {new Date().getFullYear()} BULLHAWK - DATA TANGO FINANCE &amp; GOOGLE NEWS - NOT FINANCIAL ADVICE
         </div>
         <div className="flex items-center gap-4 font-mono text-[0.6rem] text-text-4">
           <span className="hover:text-text-custom cursor-pointer">Privacy Policy</span>
           <span className="hover:text-text-custom cursor-pointer">Terms of Service</span>
-          <span className="hover:text-text-custom cursor-pointer">Disclaimer</span>
+          <span
+            className="hover:text-text-custom cursor-pointer"
+            onClick={() => setKpiModal({
+              title: "Disclaimer",
+              value: "Read before acting on any signal",
+              valueColor: "text-amber-custom",
+              description:
+                "BullHawk is a personal research tool, not a SEBI-registered investment adviser — using it does not create any advisory or fiduciary relationship. Every BUY/SELL/HOLD/WAIT signal, score, and price level is generated algorithmically from public market data (Yahoo Finance, Upstox, and third-party news/sentiment feeds); it reflects a rules-based model's read of the numbers, not a licensed professional's personalized judgment of your finances, goals, or risk tolerance. Underlying data can be delayed, incomplete, or wrong, and past performance — including the app's own backtested and live track record — never guarantees future results. Nothing here is a recommendation to buy or sell any specific security. Always verify independently and consult a licensed financial advisor before making investment decisions, especially with money you can't afford to lose.",
+            })}
+          >
+            Disclaimer
+          </span>
           <span className="hover:text-text-custom cursor-pointer">Support</span>
         </div>
       </footer>
