@@ -1020,7 +1020,32 @@ export default function Home() {
 
           {/* Today's Market Signals Card */}
           <div className="xl:col-span-4 border border-border-custom bg-bg-1 p-5 rounded flex flex-col gap-4 justify-between">
-            <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"TODAY'S MARKET SIGNALS"}</div>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="font-mono text-[1rem] tracking-[0.15em] text-text-3 uppercase font-bold">{"TODAY'S MARKET SIGNALS"}</div>
+              {(() => {
+                const status = displaySummary?.marketStatus as string | undefined;
+                const isOpen = status === "OPEN";
+                const asOfLabel = displaySummary?.asOf
+                  ? new Date(displaySummary.asOf).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" })
+                  : null;
+                const label = isOpen
+                  ? "Market Open"
+                  : status === "PRE_MARKET"
+                  ? "Pre-Market"
+                  : status === "POST_MARKET"
+                  ? "Post-Market"
+                  : "Market Closed";
+                const dotClass = "w-[6px] h-[6px] rounded-full shrink-0 " + (isOpen ? "bg-green-custom animate-custom-pulse" : "bg-text-4");
+                const labelClass = isOpen ? "text-green-custom font-bold" : "text-text-4 font-bold";
+                return (
+                  <div className="flex items-center gap-1.5 font-mono text-[0.62rem] tracking-wider uppercase shrink-0">
+                    <span className={dotClass} />
+                    <span className={labelClass}>{label}</span>
+                    {!isOpen && asOfLabel && <span className="text-text-4 normal-case tracking-normal">· as of {asOfLabel} IST</span>}
+                  </div>
+                );
+              })()}
+            </div>
             
             <div className="flex flex-col gap-4 justify-between h-full">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-center w-full">

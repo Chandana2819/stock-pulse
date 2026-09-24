@@ -8,6 +8,7 @@ import { getEnrichedHoldings } from "../lib/services/portfolio";
 import { syncUserBroker } from "../lib/services/brokerSync";
 import { buildStockAnalysis } from "../lib/services/stockAnalysis";
 import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
+import { getIndiaMarketStatus } from "../lib/marketHours";
 
 const router = express.Router();
 
@@ -234,6 +235,8 @@ async function getSignalsPayload(userId?: string, queryFilters: any = {}) {
       sell: sellCount,
       hold: holdCount,
       wait: waitCount,
+      marketStatus: getIndiaMarketStatus(),
+      asOf: scanTime,
     },
     items,
     brokerConnection,
