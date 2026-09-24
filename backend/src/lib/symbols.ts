@@ -65,7 +65,7 @@ export const SECTOR_INDICES: { key: string; label: string; ticker: string }[] = 
   { key: "METAL", label: "Metal", ticker: "^CNXMETAL" },
   { key: "ENERGY", label: "Energy", ticker: "^CNXENERGY" },
   { key: "REALTY", label: "Realty", ticker: "^CNXREALTY" },
-  { key: "FIN", label: "Financial Services", ticker: "^CNXFINANCE" },
+  { key: "FIN", label: "Financial Services", ticker: "NIFTY_FIN_SERVICE.NS" },
   { key: "PSUBANK", label: "PSU Bank", ticker: "^CNXPSUBANK" },
 ];
 
