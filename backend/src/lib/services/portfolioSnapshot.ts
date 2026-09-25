@@ -118,8 +118,22 @@ export type PortfolioTrackRecordDay = {
   niftyCumulativeReturnPct: number | null;
 };
 
+export type PortfolioTrackRecordPeriod = {
+  key: string; // week: Monday's date (YYYY-MM-DD); month: YYYY-MM
+  start: string; // first snapshot date in the period
+  end: string; // last snapshot date in the period
+  tradingDays: number;
+  endInvestedInr: number;
+  endValueInr: number;
+  pnlChangeInr: number; // sum of that period's daily P&L changes
+  returnPct: number | null; // daily returns chained within the period
+  niftyReturnPct: number | null;
+};
+
 export type PortfolioTrackRecord = {
   days: PortfolioTrackRecordDay[]; // oldest first
+  weekly: PortfolioTrackRecordPeriod[]; // oldest first
+  monthly: PortfolioTrackRecordPeriod[]; // oldest first
   summary: {
     daysTracked: number;
     since: string | null;
@@ -131,6 +145,48 @@ export type PortfolioTrackRecord = {
 };
 
 const round2 = (n: number) => Number(n.toFixed(2));
+
+/** Monday of the week containing an ISO date (YYYY-MM-DD), as YYYY-MM-DD. */
+export function weekKey(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  const offset = (d.getUTCDay() + 6) % 7; // Mon=0 ... Sun=6
+  d.setUTCDate(d.getUTCDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Rolls daily rows up into weeks or months. A day's return belongs to the
+ * period it lands in (Monday's return covers the Friday -> Monday move), and
+ * returns inside a period are chained, not added. A period whose only day is
+ * the very first snapshot has nothing to compare against, so its return is null.
+ */
+export function aggregatePeriods(days: PortfolioTrackRecordDay[], keyOf: (isoDate: string) => string): PortfolioTrackRecordPeriod[] {
+  const groups = new Map<string, PortfolioTrackRecordDay[]>();
+  for (const d of days) {
+    const k = keyOf(d.date);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k)!.push(d);
+  }
+  return Array.from(groups.entries()).map(([key, group]) => {
+    const chain = (vals: (number | null)[]) => {
+      const present = vals.filter((v): v is number => v != null);
+      if (present.length === 0) return null;
+      return round2((present.reduce((acc, r) => acc * (1 + r / 100), 1) - 1) * 100);
+    };
+    const last = group[group.length - 1];
+    return {
+      key,
+      start: group[0].date,
+      end: last.date,
+      tradingDays: group.length,
+      endInvestedInr: last.investedInr,
+      endValueInr: last.valueInr,
+      pnlChangeInr: round2(group.reduce((sum, d) => sum + (d.dayChangeInr ?? 0), 0)),
+      returnPct: chain(group.map((d) => d.dayReturnPct)),
+      niftyReturnPct: chain(group.map((d) => d.niftyDayReturnPct)),
+    };
+  });
+}
 
 /**
  * Turns raw daily snapshots into a track record.
@@ -184,6 +240,8 @@ export function buildPortfolioTrackRecord(rows: SnapshotRow[]): PortfolioTrackRe
   const last = days[days.length - 1];
   return {
     days,
+    weekly: aggregatePeriods(days, weekKey),
+    monthly: aggregatePeriods(days, (d) => d.slice(0, 7)),
     summary: {
       daysTracked: days.length,
       since: days[0]?.date ?? null,

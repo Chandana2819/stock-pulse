@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPortfolioTrackRecord, type SnapshotRow } from "./portfolioSnapshot";
+import { buildPortfolioTrackRecord, weekKey, type SnapshotRow } from "./portfolioSnapshot";
 
 const row = (date: string, investedInr: number, valueInr: number, niftyClose: number | null = null): SnapshotRow => ({
   date: new Date(`${date}T00:00:00Z`),
@@ -66,5 +66,48 @@ describe("buildPortfolioTrackRecord", () => {
     expect(r.days.map((d) => d.date)).toEqual(["2026-09-25", "2026-09-26"]);
     expect(r.days[1].niftyDayReturnPct).toBeNull();
     expect(r.summary.since).toBe("2026-09-25");
+  });
+});
+
+describe("weekly / monthly roll-up", () => {
+  it("weekKey maps any day to that week's Monday", () => {
+    expect(weekKey("2026-09-28")).toBe("2026-09-28"); // Monday
+    expect(weekKey("2026-10-02")).toBe("2026-09-28"); // Friday
+    expect(weekKey("2026-10-04")).toBe("2026-09-28"); // Sunday
+    expect(weekKey("2026-10-05")).toBe("2026-10-05");
+  });
+
+  it("chains daily returns within a week and puts Monday's move in the new week", () => {
+    const r = buildPortfolioTrackRecord([
+      row("2026-09-24", 100000, 100000, 25000), // Thu (first snapshot)
+      row("2026-09-25", 100000, 110000, 25250), // Fri +10%
+      row("2026-09-28", 100000, 99000, 25250), // Mon -10%
+      row("2026-09-29", 100000, 108900, 25250), // Tue +10%
+    ]);
+    expect(r.weekly.map((w) => w.key)).toEqual(["2026-09-21", "2026-09-28"]);
+    expect(r.weekly[0].returnPct).toBe(10);
+    expect(r.weekly[0].niftyReturnPct).toBe(1);
+    expect(r.weekly[1].returnPct).toBe(-1); // 0.9 * 1.1 = 0.99
+    expect(r.weekly[1].pnlChangeInr).toBe(-1100);
+    expect(r.weekly[1].tradingDays).toBe(2);
+    expect(r.weekly[1].endValueInr).toBe(108900);
+  });
+
+  it("groups by calendar month", () => {
+    const r = buildPortfolioTrackRecord([
+      row("2026-09-29", 100000, 100000),
+      row("2026-09-30", 100000, 102000),
+      row("2026-10-01", 100000, 104040),
+    ]);
+    expect(r.monthly.map((m) => m.key)).toEqual(["2026-09", "2026-10"]);
+    expect(r.monthly[0].returnPct).toBe(2);
+    expect(r.monthly[1].returnPct).toBe(2);
+    expect(r.monthly[1].start).toBe("2026-10-01");
+  });
+
+  it("a period containing only the first-ever snapshot has no return yet", () => {
+    const r = buildPortfolioTrackRecord([row("2026-09-30", 100000, 100000), row("2026-10-01", 100000, 101000)]);
+    expect(r.monthly[0].returnPct).toBeNull();
+    expect(r.monthly[1].returnPct).toBe(1);
   });
 });
