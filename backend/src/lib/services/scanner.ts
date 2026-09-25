@@ -6,6 +6,7 @@ import { computeMarketRisk } from "../engine/marketRisk";
 import { RecommendationEngine, type SignalAction } from "./recommendationEngine";
 import { getSectorChangeForKey } from "./market";
 import { recordSignalOutcome } from "./signalOutcomeTracker";
+import { warmBacktestedTrackRecord } from "./trackRecord";
 import { hasBulkSellAlert, scanNewsForNegativeAnnouncement } from "../providers/nseProvider";
 
 function directionBucket(action: string): "BUY" | "SELL" | "HOLD" | "WAIT" {
@@ -453,9 +454,13 @@ export function startScannerBackgroundJob() {
   // that fake history never got replaced and permanently skewed their
   // SMA/RSI/trend indicators. Real data takes longer to appear on a cold
   // database, but it's never wrong.
-  runMarketScan().catch((err) => {
-    console.error("[scanner] Initial scanner run failed:", err);
-  });
+  runMarketScan()
+    .catch((err) => {
+      console.error("[scanner] Initial scanner run failed:", err);
+    })
+    // Warm the Track Record's historical replay once the startup scan is done
+    // (not alongside it — both are heavy on a free-tier instance).
+    .finally(() => warmBacktestedTrackRecord());
 
   const timer = setInterval(async () => {
     try {

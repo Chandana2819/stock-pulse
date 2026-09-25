@@ -94,7 +94,7 @@ type TrackRecordData = {
     grossAverageReturn?: number;
     portfolioReturn?: number;
     exitBreakdown?: Record<"STOP_LOSS" | "TARGET" | "SELL_SIGNAL" | "WINDOW_END", { count: number; winRatePct: number | null; avgReturnPct: number | null }>;
-  };
+  } | null;
   live: {
     totalSignalsIssued: number;
     scoredSignals: number;
@@ -107,7 +107,8 @@ type TrackRecordData = {
     buy: DirectionalOutcome;
     sell: DirectionalOutcome;
     hold: { sampleSize: number; stabilityPct: number | null };
-  };
+  } | null;
+  meta?: { backtestedComputing?: boolean; backtestedStale?: boolean; dbUnavailable?: boolean };
 };
 
 export default function StockSignalsPage() {
@@ -183,13 +184,37 @@ export default function StockSignalsPage() {
   }, [loadData]);
 
   useEffect(() => {
-    // Independent of the signals list: the full-universe backtest behind this
-    // can be slow on a cold cache, so it shouldn't block the rest of the page.
-    api
-      .get<TrackRecordData>("/api/signals/track-record")
-      .then((res) => setTrackRecord(res))
-      .catch((e) => setTrackRecordError(e instanceof ApiRequestError ? e.message : "Failed to load track record"))
-      .finally(() => setTrackRecordLoading(false));
+    // Independent of the signals list. The historical replay is computed in the
+    // background on the server; while it runs the endpoint answers straight
+    // away with backtested: null (or the previous result) and
+    // meta.backtestedComputing, so poll every 30s until it's ready.
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const fetchTrackRecord = () => {
+      api
+        .get<TrackRecordData>("/api/signals/track-record")
+        .then((res) => {
+          if (cancelled) return;
+          setTrackRecord(res);
+          setTrackRecordError(null);
+          attempts++;
+          if (res.meta?.backtestedComputing && attempts < 20) {
+            timer = setTimeout(fetchTrackRecord, 30_000);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) setTrackRecordError(e instanceof ApiRequestError ? e.message : "Failed to load track record");
+        })
+        .finally(() => {
+          if (!cancelled) setTrackRecordLoading(false);
+        });
+    };
+    fetchTrackRecord();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const handleRefreshScan = async () => {
@@ -1053,6 +1078,11 @@ export default function StockSignalsPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* LIVE */}
+            {!trackRecord.live ? (
+              <div className="border border-border-custom bg-bg-2 p-5 flex items-center justify-center font-mono text-xs text-text-3 text-center">
+                Live signal accuracy unavailable right now.
+              </div>
+            ) : (
             <div className="border border-border-custom bg-bg-2 p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="font-mono text-[0.6rem] tracking-[0.15em] text-cyan-custom uppercase">● LIVE SIGNAL ACCURACY</span>
@@ -1109,8 +1139,19 @@ export default function StockSignalsPage() {
                 This sample grows the longer the scanner runs — treat early numbers as directional, not definitive.
               </span>
             </div>
+            )}
 
             {/* BACKTESTED */}
+            {!trackRecord.backtested ? (
+              <div className="border border-border-custom bg-bg-2 p-5 flex flex-col items-center justify-center gap-2 text-center">
+                <span className="font-mono text-[0.6rem] tracking-[0.15em] text-text-3 uppercase">◆ HISTORICAL REPLAY</span>
+                <span className={`font-mono text-xs text-text-3 ${trackRecord.meta?.backtestedComputing ? "animate-pulse" : ""}`}>
+                  {trackRecord.meta?.backtestedComputing
+                    ? "Replaying 2 years of real prices across every stock — this takes a few minutes after an update. This card fills in on its own."
+                    : "Historical replay unavailable right now."}
+                </span>
+              </div>
+            ) : (
             <div className="border border-border-custom bg-bg-2 p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <span className="font-mono text-[0.6rem] tracking-[0.15em] text-text-3 uppercase">◆ HISTORICAL REPLAY</span>
@@ -1162,7 +1203,7 @@ export default function StockSignalsPage() {
                     ["SELL_SIGNAL", "Closed on SELL signal"],
                     ["WINDOW_END", "Still open at end"],
                   ] as const).map(([key, label]) => {
-                    const row = trackRecord.backtested.exitBreakdown![key];
+                    const row = trackRecord.backtested!.exitBreakdown![key];
                     if (!row || row.count === 0) return null;
                     return (
                       <div key={key} className="flex justify-between items-center font-mono text-[0.62rem]">
@@ -1182,8 +1223,10 @@ export default function StockSignalsPage() {
               <span className="text-[0.55rem] text-text-4 leading-relaxed">
                 Simulated day-by-day replay of the current decision engine over {trackRecord.backtested.symbolsCovered} real historical price series, {trackRecord.backtested.totalTrades} total trades, avg hold {trackRecord.backtested.averageHoldingPeriod} days{trackRecord.backtested.grossAverageReturn !== undefined ? `, avg trade ${trackRecord.backtested.grossAverageReturn >= 0 ? "+" : ""}${trackRecord.backtested.grossAverageReturn}% before ~0.22% trading costs` : ""}. Drawdown assumes capital split equally across every stock tested.
                 Past performance does not guarantee future results — this shows how today's engine logic would have called it, not what it will do next.
+                {trackRecord.meta?.backtestedComputing ? " Showing the previous result while a fresh replay computes." : ""}
               </span>
             </div>
+            )}
           </div>
         )}
       </div>

@@ -31,21 +31,60 @@ export type BacktestedTrackRecord = BacktestResult & {
   computedAt: string;
 };
 
-export async function getBacktestedTrackRecord(): Promise<{ value: BacktestedTrackRecord; cacheHit: boolean; stale: boolean }> {
-  const { value, hit, stale } = await cache.wrap(BACKTEST_CACHE_KEY, TTL.trackRecord, async () => {
-    const symbols = UNIVERSE.filter((u) => u.exchange === "NSE").map((u) => u.symbol);
-    const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - BACKTEST_WINDOW_DAYS * 24 * 3600 * 1000);
-    const result = await runBacktest({ symbols, startDate, endDate });
-    const record: BacktestedTrackRecord = {
-      ...result,
-      symbolsCovered: symbols.length,
-      windowLabel: "Last 2 years",
-      computedAt: new Date().toISOString(),
-    };
-    return record;
-  });
-  return { value, cacheHit: hit, stale };
+// The full-universe replay takes minutes on a cold cache (215 stocks x ~500
+// trading days, indicators recomputed each day). It used to run inside the
+// HTTP request: the page sat on "Loading track record..." for the whole
+// computation, and every refresh during that time started ANOTHER full
+// replay in parallel, slowing all of them down. Now it runs once in the
+// background (concurrent callers share the same in-flight run), the request
+// returns immediately, and the last good result is kept for a week so an
+// expired cache shows the previous numbers while fresh ones compute.
+const BACKTEST_LAST_GOOD_KEY = `${BACKTEST_CACHE_KEY}:last-good`;
+const BACKTEST_LAST_GOOD_TTL = 7 * 24 * 3600 * 1000;
+let backtestInFlight: Promise<BacktestedTrackRecord> | null = null;
+
+async function computeBacktestedTrackRecord(): Promise<BacktestedTrackRecord> {
+  const symbols = UNIVERSE.filter((u) => u.exchange === "NSE").map((u) => u.symbol);
+  const endDate = new Date();
+  const startDate = new Date(endDate.getTime() - BACKTEST_WINDOW_DAYS * 24 * 3600 * 1000);
+  const result = await runBacktest({ symbols, startDate, endDate });
+  return {
+    ...result,
+    symbolsCovered: symbols.length,
+    windowLabel: "Last 2 years",
+    computedAt: new Date().toISOString(),
+  };
+}
+
+function startBacktestComputation(): Promise<BacktestedTrackRecord> {
+  if (!backtestInFlight) {
+    const started = Date.now();
+    backtestInFlight = computeBacktestedTrackRecord()
+      .then(async (record) => {
+        await cache.set(BACKTEST_CACHE_KEY, record, TTL.trackRecord);
+        await cache.set(BACKTEST_LAST_GOOD_KEY, record, BACKTEST_LAST_GOOD_TTL);
+        console.log(`[track-record] Historical replay computed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+        return record;
+      })
+      .finally(() => {
+        backtestInFlight = null;
+      });
+    backtestInFlight.catch((err) => console.error("[track-record] Historical replay failed:", err));
+  }
+  return backtestInFlight;
+}
+
+export async function getBacktestedTrackRecord(): Promise<{ value: BacktestedTrackRecord | null; computing: boolean; stale: boolean }> {
+  const fresh = await cache.get<BacktestedTrackRecord>(BACKTEST_CACHE_KEY);
+  if (fresh) return { value: fresh, computing: false, stale: false };
+  void startBacktestComputation();
+  const lastGood = await cache.get<BacktestedTrackRecord>(BACKTEST_LAST_GOOD_KEY);
+  return { value: lastGood ?? null, computing: true, stale: lastGood != null };
+}
+
+/** Kick off the replay in the background so the first visitor after a deploy doesn't wait for it. */
+export function warmBacktestedTrackRecord(): void {
+  void startBacktestComputation().catch(() => {});
 }
 
 export type LiveTrackRecord = {

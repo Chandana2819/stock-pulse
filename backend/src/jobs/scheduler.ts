@@ -10,7 +10,7 @@ import { logger } from "../lib/logger";
 import { evaluateAllActiveUsers } from "../lib/services/alerts";
 import { evaluateSignalAlertsForAllUsers } from "../lib/services/signalAlerts";
 import { startScannerBackgroundJob } from "../lib/services/scanner";
-import { getBacktestedTrackRecord, getLiveTrackRecord } from "../lib/services/trackRecord";
+import { getLiveTrackRecord } from "../lib/services/trackRecord";
 import { getFundRecommendations } from "../lib/services/fundRecommendations";
 import { runScreener } from "../lib/services/screener";
 import { checkPendingSignalOutcomes } from "../lib/services/signalOutcomeTracker";
@@ -61,11 +61,12 @@ export function startBackgroundJobs() {
     logger.error("Failed to start scanner background job", err);
   }
 
-  // Pre-warm the track record cache so the first dashboard visitor doesn't pay
-  // for the full-universe backtest inline.
-  Promise.all([getBacktestedTrackRecord(), getLiveTrackRecord()])
-    .then(() => logger.info("Track record cache pre-warmed"))
-    .catch((err) => logger.error("Track record pre-warm failed", err));
+  // Pre-warm the live track record. The heavier historical replay is warmed
+  // by the scanner once its startup scan finishes (see startScannerBackgroundJob)
+  // rather than here, so the two don't compete for the instance at boot.
+  getLiveTrackRecord()
+    .then(() => logger.info("Live track record cache pre-warmed"))
+    .catch((err) => logger.error("Live track record pre-warm failed", err));
 
   // Same reasoning: the mutual-fund recommendation list fetches ~13 real
   // schemes from the AMFI feed on a cold cache — pre-warm it so neither the

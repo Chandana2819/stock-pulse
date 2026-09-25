@@ -37,10 +37,14 @@ export async function assessGoalFeasibility(expectedReturnPct: number, realPortf
   let niftyAnnualizedPct: number | null = null;
   let benchmarkWindowLabel = `Last ${BACKTEST_WINDOW_YEARS} years`;
   try {
+    // null while the replay is still computing in the background — falls
+    // through to the "benchmark not available right now" answer below.
     const { value: bt } = await getBacktestedTrackRecord();
-    benchmarkWindowLabel = bt.windowLabel;
-    if (bt.benchmarkReturn != null) {
-      niftyAnnualizedPct = (Math.pow(1 + bt.benchmarkReturn / 100, 1 / BACKTEST_WINDOW_YEARS) - 1) * 100;
+    if (bt) {
+      benchmarkWindowLabel = bt.windowLabel;
+      if (bt.benchmarkReturn != null) {
+        niftyAnnualizedPct = (Math.pow(1 + bt.benchmarkReturn / 100, 1 / BACKTEST_WINDOW_YEARS) - 1) * 100;
+      }
     }
   } catch {}
 

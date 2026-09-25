@@ -359,7 +359,7 @@ router.get(
         backtested: backtested.value,
         live: live.value,
         meta: {
-          backtestedCacheHit: backtested.cacheHit,
+          backtestedComputing: backtested.computing,
           backtestedStale: backtested.stale,
           liveCacheHit: live.cacheHit,
           liveStale: live.stale,
