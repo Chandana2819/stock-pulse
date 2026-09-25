@@ -53,19 +53,3 @@ export function getIndiaMarketStatus(now: Date = new Date()): MarketStatus {
   if (mins >= 930 && mins < 960) return "POST_MARKET"; // 3:30 – 4:00 PM
   return "CLOSED";
 }
-
-/**
- * The IST calendar date for `now`, whether NSE traded on it (weekday and not
- * a listed holiday), and minutes past midnight IST. Used by jobs that must
- * run once per trading day after the close.
- */
-export function getIstTradingDay(now: Date = new Date()): { isoDate: string; isTradingDay: boolean; minutesIst: number } {
-  const istDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const day = istDate.getDay();
-  const isoDate = `${istDate.getFullYear()}-${String(istDate.getMonth() + 1).padStart(2, "0")}-${String(istDate.getDate()).padStart(2, "0")}`;
-  return {
-    isoDate,
-    isTradingDay: day >= 1 && day <= 5 && !isTradingHoliday(istDate),
-    minutesIst: istDate.getHours() * 60 + istDate.getMinutes(),
-  };
-}

@@ -917,22 +917,3 @@ model PushSubscription {
 
   @@index([userId])
 }
-
-// Daily end-of-day snapshot of a user's REAL portfolio (broker-synced /
-// imported / manual holdings — simulated paper trades excluded), so the app
-// can show a day-by-day track record against NIFTY. Brokers only report
-// current holdings, not past values, so this history can only be built
-// going forward, one row per trading day. The table is also created on first
-// use by lib/services/portfolioSnapshot.ts, so no manual db push is needed.
-model PortfolioSnapshot {
-  id            String   @id @default(uuid())
-  userId        String
-  date          DateTime // IST trading day, stored as UTC midnight
-  investedInr   Float    // cost basis of real INR holdings at the close
-  valueInr      Float    // market value of the same holdings at the close
-  holdingsCount Int
-  niftyClose    Float?
-  createdAt     DateTime @default(now())
-
-  @@unique([userId, date])
-}

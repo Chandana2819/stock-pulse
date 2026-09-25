@@ -15,7 +15,6 @@ import { getFundRecommendations } from "../lib/services/fundRecommendations";
 import { runScreener } from "../lib/services/screener";
 import { checkPendingSignalOutcomes } from "../lib/services/signalOutcomeTracker";
 import { runPortfolioCrashMonitor } from "../lib/services/portfolioCrashMonitor";
-import { takePortfolioSnapshots } from "../lib/services/portfolioSnapshot";
 
 // A job silently failing every tick for hours is exactly the kind of thing
 // that goes unnoticed without real alerting wired up. There's no
@@ -112,14 +111,6 @@ export function startBackgroundJobs() {
   runInterval("signal-outcome-checker", 24 * 60 * 60 * 1000, async () => {
     const { checked, resolved } = await checkPendingSignalOutcomes();
     return { usersChecked: 0, checked, resolved };
-  });
-
-  // Real-portfolio daily snapshot for the Portfolio track record. Checks every
-  // 30 min; only acts on trading days after 3:45 PM IST, once per user per day
-  // (so a restart or a sleepy free-tier instance still catches the day).
-  runInterval("portfolio-snapshot", 30 * 60 * 1000, async () => {
-    const result = await takePortfolioSnapshots();
-    return { usersChecked: result.users, saved: result.saved };
   });
 
   logger.info("Background jobs started", {

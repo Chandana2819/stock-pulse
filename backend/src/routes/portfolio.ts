@@ -12,7 +12,6 @@ import { asyncHandler, ApiError } from "../lib/http";
 import { cagr } from "../lib/finance";
 import { buildStockAnalysis } from "../lib/services/stockAnalysis";
 import { requireAuth } from "../middleware/auth";
-import { getPortfolioTrackRecord } from "../lib/services/portfolioSnapshot";
 
 const router = express.Router();
 router.use(requireAuth);
@@ -246,16 +245,6 @@ router.get(
       holdingsCount: holdings.length,
       transactionsCount: transactions.length,
     });
-  })
-);
-
-// Day-by-day record of the user's real portfolio vs NIFTY, built from one
-// snapshot saved after each trading day's close (see portfolioSnapshot.ts).
-router.get(
-  "/track-record",
-  asyncHandler(async (req, res) => {
-    const record = await getPortfolioTrackRecord(req.user!.id);
-    return res.json(record);
   })
 );
 
