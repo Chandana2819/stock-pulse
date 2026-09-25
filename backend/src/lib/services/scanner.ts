@@ -402,7 +402,7 @@ export async function runMarketScan(): Promise<void> {
           // "RELIANCE.NS") — match either form rather than assuming one.
           const bareSymbol = stock.symbol.replace(/\.(NS|BO)$/, "");
           const [holders, watchers] = await Promise.all([
-            prisma.holding.findMany({ where: { stock: { in: [stock.symbol, bareSymbol] } }, select: { userId: true } }),
+            prisma.holding.findMany({ where: { stock: { in: [stock.symbol, bareSymbol] }, quantity: { gt: 0 } }, select: { userId: true } }),
             prisma.watchlistItem.findMany({ where: { symbol: { in: [stock.symbol, bareSymbol] } }, select: { userId: true } }),
           ]);
           const interestedUserIds = new Set([...holders.map((h) => h.userId), ...watchers.map((w) => w.userId)]);

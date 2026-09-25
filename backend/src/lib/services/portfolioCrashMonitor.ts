@@ -103,7 +103,8 @@ async function recentlySent(userId: string, symbol: string, type: "CRASH" | "SUR
 }
 
 async function monitorUser(userId: string) {
-  const holdings = await prisma.holding.findMany({ where: { userId } });
+  // quantity > 0 — a sold-out 0-share row is not a position to monitor.
+  const holdings = await prisma.holding.findMany({ where: { userId, quantity: { gt: 0 } } });
   if (!holdings.length) return;
 
   // Build provider symbols

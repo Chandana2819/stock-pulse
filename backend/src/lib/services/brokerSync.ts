@@ -36,9 +36,15 @@ export async function syncUserBroker(userId: string, brokerId: string) {
       ? await provider.getMfHoldings(accessToken)
       : [];
 
+    // Kite keeps a stock you sold today in its holdings list with quantity 0
+    // until the next day. Treat those as sold: drop them here so the delete
+    // below removes the stored row, instead of upserting a 0-share "position"
+    // that keeps showing on the Portfolio page with a SELL / exit alert.
+    const activeHoldings = holdings.filter((h) => Number(h.quantity) > 0);
+
     // Save synced holdings to database Holding table
     // Delete old holdings that are not present in the new sync for this broker
-    const newSymbols = new Set(holdings.map((h) => h.symbol.toUpperCase().trim()));
+    const newSymbols = new Set(activeHoldings.map((h) => h.symbol.toUpperCase().trim()));
     
     await prisma.holding.deleteMany({
       where: {
@@ -48,7 +54,7 @@ export async function syncUserBroker(userId: string, brokerId: string) {
       }
     });
 
-    for (const h of holdings) {
+    for (const h of activeHoldings) {
       const symbol = h.symbol.toUpperCase().trim();
       const exchange = h.exchange.toUpperCase() === "GLOBAL" ? "GLOBAL" : "NSE";
       const currency = exchange === "GLOBAL" ? "USD" : "INR";

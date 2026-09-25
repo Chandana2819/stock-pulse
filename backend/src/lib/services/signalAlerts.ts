@@ -74,7 +74,8 @@ async function evaluateHolding(userId: string, holding: { stock: string; exchang
 }
 
 export async function evaluateSignalAlertsForUser(userId: string) {
-  const holdings = await prisma.holding.findMany({ where: { userId } });
+  // quantity > 0 — never send exit/sell alerts for a stock already sold out.
+  const holdings = await prisma.holding.findMany({ where: { userId, quantity: { gt: 0 } } });
   if (holdings.length === 0) return { checked: 0, notified: 0 };
 
   let notified = 0;

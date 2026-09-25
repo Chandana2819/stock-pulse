@@ -168,7 +168,9 @@ export async function executeTransaction(
 export type EnrichedHolding = Awaited<ReturnType<typeof getEnrichedHoldings>>[number];
 
 export async function getEnrichedHoldings(userId: string) {
-  const rawHoldings = await prisma.holding.findMany({ where: { userId }, orderBy: { stock: "asc" } });
+  // quantity > 0: a fully sold stock can be left behind as a 0-share row
+  // (e.g. synced from Kite on the day it was sold) — it isn't a position.
+  const rawHoldings = await prisma.holding.findMany({ where: { userId, quantity: { gt: 0 } }, orderBy: { stock: "asc" } });
   if (rawHoldings.length === 0) return [];
 
   // Deduplicate holdings by canonical display symbol (e.g. BEL vs BEL.NS)
