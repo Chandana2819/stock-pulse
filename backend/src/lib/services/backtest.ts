@@ -1,6 +1,7 @@
 import { prisma } from "../prisma";
 import { computeIndicators } from "../indicators";
 import { RecommendationEngine } from "./recommendationEngine";
+import { marketDataProvider } from "../providers";
 
 type Trade = {
   symbol: string;
@@ -17,7 +18,58 @@ type Trade = {
   returnPct: number | null; // net of estimated transaction costs
   grossReturnPct: number | null; // before transaction costs, for transparency
   durationDays: number | null;
+  exitReason: ExitReason | null;
 };
+
+export type ExitReason = "STOP_LOSS" | "TARGET" | "SELL_SIGNAL" | "WINDOW_END";
+
+export type ExitBreakdown = Record<ExitReason, { count: number; winRatePct: number | null; avgReturnPct: number | null }>;
+
+// Which exits are making or losing the money — tells us whether the model's
+// problem is entries (stop-losses dominating), exits (SELL signals cutting
+// winners early), or just costs, instead of guessing from one average.
+export function computeExitBreakdown(trades: Pick<Trade, "exitReason" | "returnPct">[]): ExitBreakdown {
+  const reasons: ExitReason[] = ["STOP_LOSS", "TARGET", "SELL_SIGNAL", "WINDOW_END"];
+  const out = {} as ExitBreakdown;
+  for (const reason of reasons) {
+    const group = trades.filter((t) => t.exitReason === reason);
+    const wins = group.filter((t) => (t.returnPct ?? 0) > 0).length;
+    const sum = group.reduce((s, t) => s + (t.returnPct ?? 0), 0);
+    out[reason] = {
+      count: group.length,
+      winRatePct: group.length > 0 ? Math.round((wins / group.length) * 100) : null,
+      avgReturnPct: group.length > 0 ? Number((sum / group.length).toFixed(2)) : null,
+    };
+  }
+  return out;
+}
+
+// Max drawdown of a realistic portfolio: capital split equally across every
+// stock tested, each stock's slice trading only that stock's signals. The
+// backtest holds at most one open trade per stock, so total exposure can
+// never exceed 100% of capital. (The previous version sized every trade at a
+// fixed 5% of capital regardless of how many were open at once — with ~75
+// trades open simultaneously on average that was ~3-4x hidden leverage, which
+// inflated the drawdown figure several times over.)
+export function computeMaxDrawdown(
+  trades: Pick<Trade, "exitDate" | "returnPct">[],
+  symbolsEvaluated: number
+): number {
+  if (symbolsEvaluated <= 0 || trades.length === 0) return 0;
+  const startingCapital = 100000;
+  const slice = startingCapital / symbolsEvaluated;
+  const chronological = [...trades].sort((a, b) => (a.exitDate?.getTime() ?? 0) - (b.exitDate?.getTime() ?? 0));
+  let equity = startingCapital;
+  let peak = startingCapital;
+  let maxDd = 0;
+  for (const t of chronological) {
+    equity += slice * ((t.returnPct ?? 0) / 100);
+    if (equity > peak) peak = equity;
+    const dd = peak > 0 ? ((peak - equity) / peak) * 100 : 0;
+    if (dd > maxDd) maxDd = dd;
+  }
+  return Number(maxDd.toFixed(2));
+}
 
 // Estimated round-trip transaction cost for an NSE equity delivery trade via a
 // zero-brokerage discount broker (Zerodha): STT 0.1% on both buy and sell,
@@ -58,20 +110,53 @@ export type BacktestResult = {
   maxDrawdown: number; // %
   averageHoldingPeriod: number; // days
   benchmarkReturn: number | null; // % real NIFTY 50 return over the same window, null if no index data covers it
+  grossAverageReturn: number; // % per trade before transaction costs
+  portfolioReturn: number; // % total return of the equal-weight portfolio drawdown is measured on — comparable to benchmarkReturn
+  exitBreakdown: ExitBreakdown;
   trades: Trade[];
 };
 
+// The scanner never stores NIFTY's own daily history (it only reads NIFTY's
+// live quote for the market-risk score), so the DB copy only exists if
+// someone ran scratch/backfill_nifty.ts by hand — which is why the benchmark
+// showed "—". Use the DB copy only when it genuinely spans the window;
+// otherwise pull the real index history from the market-data provider.
+const COVERAGE_TOLERANCE_MS = 10 * 24 * 3600 * 1000;
+
 async function getRealNiftyReturn(startDate: Date, endDate: Date): Promise<number | null> {
-  const niftyPrices = await prisma.stockPrice.findMany({
-    where: { symbol: "^NSEI", date: { gte: startDate, lte: endDate } },
-    orderBy: { date: "asc" },
-    select: { close: true },
-  });
-  if (niftyPrices.length < 2) return null;
-  const first = niftyPrices[0].close;
-  const last = niftyPrices[niftyPrices.length - 1].close;
-  if (!first) return null;
-  return Number((((last - first) / first) * 100).toFixed(2));
+  try {
+    const niftyPrices = await prisma.stockPrice.findMany({
+      where: { symbol: "^NSEI", date: { gte: startDate, lte: endDate } },
+      orderBy: { date: "asc" },
+      select: { close: true, date: true },
+    });
+    if (niftyPrices.length >= 2) {
+      const firstRow = niftyPrices[0];
+      const lastRow = niftyPrices[niftyPrices.length - 1];
+      const coversWindow =
+        firstRow.date.getTime() - startDate.getTime() <= COVERAGE_TOLERANCE_MS &&
+        endDate.getTime() - lastRow.date.getTime() <= COVERAGE_TOLERANCE_MS;
+      if (coversWindow && firstRow.close) {
+        return Number((((lastRow.close - firstRow.close) / firstRow.close) * 100).toFixed(2));
+      }
+    }
+  } catch {
+    // fall through to the provider
+  }
+
+  try {
+    const candles = await marketDataProvider.getCandles("^NSEI", "5Y");
+    const startSec = startDate.getTime() / 1000;
+    const endSec = endDate.getTime() / 1000;
+    const inWindow = candles.filter((c) => c.time >= startSec && c.time <= endSec && c.close > 0);
+    if (inWindow.length < 2) return null;
+    const first = inWindow[0];
+    const last = inWindow[inWindow.length - 1];
+    if (first.time * 1000 - startDate.getTime() > COVERAGE_TOLERANCE_MS) return null;
+    return Number((((last.close - first.close) / first.close) * 100).toFixed(2));
+  } catch {
+    return null;
+  }
 }
 
 export async function runBacktest(options: {
@@ -82,6 +167,7 @@ export async function runBacktest(options: {
   const trades: Trade[] = [];
   let buySignalsCount = 0;
   let sellSignalsCount = 0;
+  let symbolsEvaluated = 0;
 
   for (const symbol of options.symbols) {
     const prices = await prisma.stockPrice.findMany({
@@ -93,6 +179,7 @@ export async function runBacktest(options: {
     });
 
     if (prices.length < 35) continue;
+    symbolsEvaluated++;
 
     let activeTrade: Trade | null = null;
 
@@ -158,6 +245,7 @@ export async function runBacktest(options: {
             returnPct: null,
             grossReturnPct: null,
             durationDays: null,
+            exitReason: null,
           };
         }
       } else if (decision.action.includes("SELL") || decision.action.includes("REDUCE")) {
@@ -172,6 +260,7 @@ export async function runBacktest(options: {
           activeTrade.grossReturnPct = gross;
           activeTrade.returnPct = net;
           activeTrade.durationDays = duration;
+          activeTrade.exitReason = "SELL_SIGNAL";
           
           trades.push(activeTrade);
           activeTrade = null;
@@ -193,6 +282,9 @@ export async function runBacktest(options: {
           activeTrade.grossReturnPct = gross;
           activeTrade.returnPct = net;
           activeTrade.durationDays = duration;
+          // Stop-loss always sits below entry and the target above it, so the
+          // side of entry the exit happened on tells us which one fired.
+          activeTrade.exitReason = currentPrice < activeTrade.entryPrice ? "STOP_LOSS" : "TARGET";
           
           trades.push(activeTrade);
           activeTrade = null;
@@ -212,6 +304,7 @@ export async function runBacktest(options: {
       activeTrade.grossReturnPct = gross;
       activeTrade.returnPct = net;
       activeTrade.durationDays = duration;
+      activeTrade.exitReason = "WINDOW_END";
 
       trades.push(activeTrade);
     }
@@ -228,31 +321,17 @@ export async function runBacktest(options: {
   const sumHoldDays = trades.reduce((sum, t) => sum + (t.durationDays ?? 0), 0);
   const averageHoldingPeriod = totalTrades > 0 ? Math.round(sumHoldDays / totalTrades) : 0;
 
-  // Calculate Max Drawdown across a chronological, equal-weighted equity curve.
-  // `trades` is grouped per-symbol (all of symbol A's trades, then symbol B's...),
-  // not in time order, so walking it as-is and compounding full equity into each
-  // trade would treat unrelated symbols' trade sequences as if they happened one
-  // after another with 100% of capital re-staked every time — a single bad run
-  // on one symbol could then crater "equity" for every symbol simulated after it.
-  // Sorting chronologically and sizing each trade as a fixed slice of capital
-  // (as if capital were split across several concurrent positions) models a
-  // real multi-symbol strategy instead of one all-in serial bet.
-  const CONCURRENT_POSITION_SLOTS = 20;
-  const positionSize = 100000 / CONCURRENT_POSITION_SLOTS;
-  const chronologicalTrades = [...trades].sort(
-    (a, b) => (a.exitDate?.getTime() ?? 0) - (b.exitDate?.getTime() ?? 0)
-  );
+  const maxDrawdown = computeMaxDrawdown(trades, symbolsEvaluated);
 
-  let equity = 100000;
-  let peakEquity = 100000;
-  let maxDrawdown = 0;
+  const grossSum = trades.reduce((sum, t) => sum + (t.grossReturnPct ?? 0), 0);
+  const grossAverageReturn = totalTrades > 0 ? Number((grossSum / totalTrades).toFixed(2)) : 0;
 
-  for (const t of chronologicalTrades) {
-    equity += positionSize * ((t.returnPct ?? 0) / 100);
-    if (equity > peakEquity) peakEquity = equity;
-    const dd = peakEquity > 0 ? ((peakEquity - equity) / peakEquity) * 100 : 0;
-    if (dd > maxDrawdown) maxDrawdown = dd;
-  }
+  // Total return of the same equal-weight portfolio (each stock's slice of
+  // capital, trading only its own signals) — the like-for-like number to
+  // put next to NIFTY buy & hold. Average-per-trade can't be compared to an
+  // index return directly.
+  const portfolioReturn =
+    symbolsEvaluated > 0 ? Number((trades.reduce((s, t) => s + (t.returnPct ?? 0), 0) / symbolsEvaluated).toFixed(2)) : 0;
 
   // Real NIFTY 50 buy & hold return over the same window (null if index history doesn't cover it)
   const benchmarkReturn = await getRealNiftyReturn(options.startDate, options.endDate);
@@ -263,9 +342,12 @@ export async function runBacktest(options: {
     sellSignalsCount,
     winRate,
     averageReturn,
-    maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    maxDrawdown,
     averageHoldingPeriod,
     benchmarkReturn,
+    grossAverageReturn,
+    portfolioReturn,
+    exitBreakdown: computeExitBreakdown(trades),
     trades: trades.slice(0, 100), // Limit payload sizes
   };
 }

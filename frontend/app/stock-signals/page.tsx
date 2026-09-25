@@ -91,6 +91,9 @@ type TrackRecordData = {
     symbolsCovered: number;
     windowLabel: string;
     computedAt: string;
+    grossAverageReturn?: number;
+    portfolioReturn?: number;
+    exitBreakdown?: Record<"STOP_LOSS" | "TARGET" | "SELL_SIGNAL" | "WINDOW_END", { count: number; winRatePct: number | null; avgReturnPct: number | null }>;
   };
   live: {
     totalSignalsIssued: number;
@@ -1131,17 +1134,53 @@ export default function StockSignalsPage() {
                 </div>
               </div>
 
-              <div className="flex justify-between items-center font-mono text-[0.68rem] border-t border-border-custom pt-3">
-                <span className="text-text-3">NIFTY 50 buy &amp; hold, same window:</span>
-                <span className="font-bold text-text-2">
-                  {trackRecord.backtested.benchmarkReturn === null
-                    ? "—"
-                    : `${trackRecord.backtested.benchmarkReturn >= 0 ? "+" : ""}${trackRecord.backtested.benchmarkReturn}%`}
-                </span>
+              <div className="flex flex-col gap-1.5 font-mono text-[0.68rem] border-t border-border-custom pt-3">
+                {trackRecord.backtested.portfolioReturn !== undefined && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-text-3">This engine, equal-weight portfolio:</span>
+                    <span className={`font-bold ${trackRecord.backtested.portfolioReturn >= 0 ? "text-green-custom" : "text-red-custom"}`}>
+                      {trackRecord.backtested.portfolioReturn >= 0 ? "+" : ""}{trackRecord.backtested.portfolioReturn}%
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center">
+                  <span className="text-text-3">NIFTY 50 buy &amp; hold, same window:</span>
+                  <span className="font-bold text-text-2">
+                    {trackRecord.backtested.benchmarkReturn === null
+                      ? "—"
+                      : `${trackRecord.backtested.benchmarkReturn >= 0 ? "+" : ""}${trackRecord.backtested.benchmarkReturn}%`}
+                  </span>
+                </div>
               </div>
 
+              {trackRecord.backtested.exitBreakdown && (
+                <div className="flex flex-col gap-1 border-t border-border-custom pt-3">
+                  <span className="font-mono text-[0.55rem] tracking-[0.12em] text-text-4 uppercase">How trades ended</span>
+                  {([
+                    ["STOP_LOSS", "Hit stop-loss"],
+                    ["TARGET", "Hit target"],
+                    ["SELL_SIGNAL", "Closed on SELL signal"],
+                    ["WINDOW_END", "Still open at end"],
+                  ] as const).map(([key, label]) => {
+                    const row = trackRecord.backtested.exitBreakdown![key];
+                    if (!row || row.count === 0) return null;
+                    return (
+                      <div key={key} className="flex justify-between items-center font-mono text-[0.62rem]">
+                        <span className="text-text-3">{label}</span>
+                        <span className="text-text-2">
+                          {row.count} trades ·{" "}
+                          <span className={(row.avgReturnPct ?? 0) >= 0 ? "text-green-custom" : "text-red-custom"}>
+                            avg {(row.avgReturnPct ?? 0) >= 0 ? "+" : ""}{row.avgReturnPct}%
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               <span className="text-[0.55rem] text-text-4 leading-relaxed">
-                Simulated day-by-day replay of the current decision engine over {trackRecord.backtested.symbolsCovered} real historical price series, {trackRecord.backtested.totalTrades} total trades, avg hold {trackRecord.backtested.averageHoldingPeriod} days.
+                Simulated day-by-day replay of the current decision engine over {trackRecord.backtested.symbolsCovered} real historical price series, {trackRecord.backtested.totalTrades} total trades, avg hold {trackRecord.backtested.averageHoldingPeriod} days{trackRecord.backtested.grossAverageReturn !== undefined ? `, avg trade ${trackRecord.backtested.grossAverageReturn >= 0 ? "+" : ""}${trackRecord.backtested.grossAverageReturn}% before ~0.22% trading costs` : ""}. Drawdown assumes capital split equally across every stock tested.
                 Past performance does not guarantee future results — this shows how today's engine logic would have called it, not what it will do next.
               </span>
             </div>

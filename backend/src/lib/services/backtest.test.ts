@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { netReturnPct, checkExitTrigger } from "./backtest";
+import { netReturnPct, checkExitTrigger, computeMaxDrawdown, computeExitBreakdown } from "./backtest";
 
 describe("netReturnPct", () => {
   it("computes gross return with no cost adjustment", () => {
@@ -59,5 +59,51 @@ describe("checkExitTrigger", () => {
     expect(checkExitTrigger(noLevels, 94)).toBe(true); // -6%
     expect(checkExitTrigger(noLevels, 95)).toBe(false); // -5%, inside the fallback band
     expect(checkExitTrigger(noLevels, 115)).toBe(true); // +15%
+  });
+});
+
+describe("computeMaxDrawdown", () => {
+  const d = (day: number) => new Date(Date.UTC(2025, 0, day));
+
+  it("sizes each trade as one stock's slice of capital, so exposure never exceeds 100%", () => {
+    // 100 stocks tested, 10 simultaneous -10% losses: 10 slices x 1% of capital x -10% = -1% total
+    const trades = Array.from({ length: 10 }, () => ({ exitDate: d(5), returnPct: -10 }));
+    expect(computeMaxDrawdown(trades, 100)).toBe(1);
+  });
+
+  it("does not inflate drawdown with hidden leverage when many trades overlap", () => {
+    // Old sizing (fixed 5% per trade regardless of count) would call this a 50% drawdown
+    const trades = Array.from({ length: 100 }, () => ({ exitDate: d(5), returnPct: -10 }));
+    expect(computeMaxDrawdown(trades, 200)).toBe(5);
+  });
+
+  it("measures drawdown from the running peak, in exit-date order", () => {
+    const trades = [
+      { exitDate: d(3), returnPct: -20 }, // listed first but happens after the gain
+      { exitDate: d(1), returnPct: 20 },
+    ];
+    // 2 slices of 50k: +10k -> 110k peak, then -10k -> 100k => 9.09% drawdown
+    expect(computeMaxDrawdown(trades, 2)).toBe(9.09);
+  });
+
+  it("returns 0 with no trades or no stocks evaluated", () => {
+    expect(computeMaxDrawdown([], 10)).toBe(0);
+    expect(computeMaxDrawdown([{ exitDate: d(1), returnPct: -5 }], 0)).toBe(0);
+  });
+});
+
+describe("computeExitBreakdown", () => {
+  it("groups trades by exit reason with win rate and average return", () => {
+    const b = computeExitBreakdown([
+      { exitReason: "STOP_LOSS", returnPct: -5 },
+      { exitReason: "STOP_LOSS", returnPct: -3 },
+      { exitReason: "TARGET", returnPct: 8 },
+      { exitReason: "SELL_SIGNAL", returnPct: 2 },
+      { exitReason: "SELL_SIGNAL", returnPct: -1 },
+    ]);
+    expect(b.STOP_LOSS).toEqual({ count: 2, winRatePct: 0, avgReturnPct: -4 });
+    expect(b.TARGET).toEqual({ count: 1, winRatePct: 100, avgReturnPct: 8 });
+    expect(b.SELL_SIGNAL).toEqual({ count: 2, winRatePct: 50, avgReturnPct: 0.5 });
+    expect(b.WINDOW_END).toEqual({ count: 0, winRatePct: null, avgReturnPct: null });
   });
 });

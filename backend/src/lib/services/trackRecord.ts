@@ -14,7 +14,7 @@ import { cache, TTL } from "../cache";
 import { runBacktest, type BacktestResult } from "./backtest";
 import { UNIVERSE } from "../universe";
 
-const BACKTEST_CACHE_KEY = "track-record:backtested:v1";
+const BACKTEST_CACHE_KEY = "track-record:backtested:v2";
 const BACKTEST_WINDOW_DAYS = 730;
 const LIVE_FORWARD_TRADING_DAYS = 5;
 
