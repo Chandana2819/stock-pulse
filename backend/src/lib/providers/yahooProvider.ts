@@ -31,32 +31,76 @@ type YahooChartResult = {
 // refreshing on a 401.
 let yahooSession: { cookie: string; crumb: string } | null = null;
 let yahooSessionPromise: Promise<{ cookie: string; crumb: string } | null> | null = null;
+let lastSessionAttemptAt = 0;
+// A failed or forced session fetch is retried at most once a minute, so a
+// blocked cookie/crumb endpoint isn't hammered by 200+ symbols in one scan.
+const SESSION_RETRY_MS = 60 * 1000;
+
+// What went wrong last, readable from /api/health/data-sources — without it a
+// silent Yahoo failure just shows up as "fundamentals missing" on every stock.
+export const yahooDiagnostics = {
+  sessionOk: 0,
+  sessionFailed: 0,
+  lastSessionError: null as null | { at: string; stage: string; detail: string },
+  fundamentalsOk: 0,
+  fundamentalsFailed: 0,
+  lastFundamentalsOkAt: null as string | null,
+  lastFundamentalsError: null as null | { at: string; symbol: string; status: number | null; detail: string },
+};
+
+const snippet = (data: unknown) => (typeof data === "string" ? data : JSON.stringify(data ?? "")).slice(0, 200);
+
+function cookiesFrom(res: { headers: Record<string, unknown> }): string {
+  const raw = res.headers["set-cookie"];
+  const list = Array.isArray(raw) ? raw : raw ? [String(raw)] : [];
+  return list.map((c) => String(c).split(";")[0]).join("; ");
+}
 
 async function fetchYahooSession(): Promise<{ cookie: string; crumb: string } | null> {
-  try {
-    const res1 = await axios.get("https://fc.yahoo.com", { headers: { "User-Agent": UA }, timeout: 8000, validateStatus: () => true });
-    const cookie = (res1.headers["set-cookie"] ?? []).map((c) => c.split(";")[0]).join("; ");
-    if (!cookie) return null;
-    const res2 = await axios.get("https://query1.finance.yahoo.com/v1/test/getcrumb", {
-      headers: { "User-Agent": UA, Cookie: cookie },
-      timeout: 8000,
-    });
-    const crumb = String(res2.data ?? "").trim();
-    if (!crumb) return null;
-    return { cookie, crumb };
-  } catch {
+  const fail = (stage: string, detail: string) => {
+    yahooDiagnostics.sessionFailed++;
+    yahooDiagnostics.lastSessionError = { at: new Date().toISOString(), stage, detail };
     return null;
+  };
+  try {
+    // fc.yahoo.com is the usual cookie source; the finance homepage is a
+    // fallback for when it returns no Set-Cookie.
+    let cookie = "";
+    for (const url of ["https://fc.yahoo.com", "https://finance.yahoo.com/"]) {
+      const res = await axios.get(url, { headers: { "User-Agent": UA }, timeout: 8000, maxRedirects: 0, validateStatus: () => true });
+      cookie = cookiesFrom(res);
+      if (cookie) break;
+    }
+    if (!cookie) return fail("cookie", "no Set-Cookie from fc.yahoo.com or finance.yahoo.com");
+
+    let lastDetail = "";
+    for (const host of ["query1", "query2"]) {
+      const res2 = await axios.get(`https://${host}.finance.yahoo.com/v1/test/getcrumb`, {
+        headers: { "User-Agent": UA, Cookie: cookie },
+        timeout: 8000,
+        validateStatus: () => true,
+      });
+      const crumb = String(res2.data ?? "").trim();
+      if (res2.status === 200 && crumb && !crumb.startsWith("<") && crumb.length < 64) {
+        yahooDiagnostics.sessionOk++;
+        return { cookie, crumb };
+      }
+      lastDetail = `${host} getcrumb HTTP ${res2.status}: ${snippet(res2.data)}`;
+    }
+    return fail("crumb", lastDetail);
+  } catch (err) {
+    return fail("network", err instanceof Error ? err.message : String(err));
   }
 }
 
 async function getYahooSession(forceRefresh = false): Promise<{ cookie: string; crumb: string } | null> {
   if (yahooSession && !forceRefresh) return yahooSession;
-  if (!yahooSessionPromise || forceRefresh) {
-    yahooSessionPromise = fetchYahooSession().then((s) => {
-      yahooSession = s;
-      return s;
-    });
-  }
+  if (yahooSessionPromise && Date.now() - lastSessionAttemptAt < SESSION_RETRY_MS) return yahooSessionPromise;
+  lastSessionAttemptAt = Date.now();
+  yahooSessionPromise = fetchYahooSession().then((s) => {
+    yahooSession = s;
+    return s;
+  });
   return yahooSessionPromise;
 }
 
@@ -223,6 +267,13 @@ export class YahooProvider implements MarketDataProvider {
   }
 
   async getFundamentals(symbol: string): Promise<FundamentalsData | null> {
+    // A failure used to be cached as null for the full 6-hour TTL, so one bad
+    // moment (rate limit, expired crumb) blanked a stock's fundamentals for
+    // hours. Now a failure throws (nothing cached) and only a short negative
+    // entry stops every caller from retrying it immediately.
+    const failKey = `fundamentals-fail:${symbol}`;
+    if (await cache.get<boolean>(failKey)) return null;
+    try {
     const { value } = await cache.wrap<FundamentalsData | null>(`fundamentals:${symbol}`, TTL.fundamentals, async () => {
       const modules = [
         "assetProfile",
@@ -232,11 +283,11 @@ export class YahooProvider implements MarketDataProvider {
         "majorHoldersBreakdown",
         "price",
       ].join(",");
-      const fetchWithSession = async (forceRefresh: boolean) => {
+      const fetchWithSession = async (forceRefresh: boolean, host: string) => {
         const session = await getYahooSession(forceRefresh);
         const params = new URLSearchParams({ modules });
         if (session?.crumb) params.set("crumb", session.crumb);
-        const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params.toString()}`;
+        const url = `https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params.toString()}`;
         return axios.get(url, {
           headers: { "User-Agent": UA, ...(session?.cookie ? { Cookie: session.cookie } : {}) },
           timeout: 10000,
@@ -244,12 +295,21 @@ export class YahooProvider implements MarketDataProvider {
         });
       };
 
-      let res = await fetchWithSession(false);
-      if (res.status === 401) res = await fetchWithSession(true); // crumb/cookie likely expired — refresh once
-      if (res.status !== 200) return null;
+      let res = await fetchWithSession(false, "query2");
+      if (res.status === 401) res = await fetchWithSession(true, "query2"); // crumb/cookie likely expired — refresh once
+      if (res.status !== 200) res = await fetchWithSession(false, "query1"); // the other host sometimes answers when one doesn't
 
-      const r = res.data?.quoteSummary?.result?.[0];
-      if (!r) return null;
+      const r = res.status === 200 ? res.data?.quoteSummary?.result?.[0] : null;
+      if (!r) {
+        yahooDiagnostics.fundamentalsFailed++;
+        yahooDiagnostics.lastFundamentalsError = {
+          at: new Date().toISOString(),
+          symbol,
+          status: res.status ?? null,
+          detail: snippet(res.data),
+        };
+        throw new Error(`quoteSummary ${symbol} HTTP ${res.status}`);
+      }
 
       const profile = r.assetProfile ?? {};
       const summary = r.summaryDetail ?? {};
@@ -298,9 +358,15 @@ export class YahooProvider implements MarketDataProvider {
         .filter((k) => k !== "missing" && data[k] === null)
         .map(String);
 
+      yahooDiagnostics.fundamentalsOk++;
+      yahooDiagnostics.lastFundamentalsOkAt = data.fetchedAt;
       return data;
     });
     return value;
+    } catch {
+      await cache.set(failKey, true, 15 * 60 * 1000);
+      return null;
+    }
   }
 
   async search(query: string, limit = 10) {
@@ -320,4 +386,38 @@ export class YahooProvider implements MarketDataProvider {
       return [];
     }
   }
+}
+
+/**
+ * Step-by-step live check of the fundamentals feed for one symbol, bypassing
+ * all caches, for /api/health/data-sources. Never returns the cookie or crumb.
+ */
+export async function probeYahooFundamentals(symbol: string) {
+  const steps: { step: string; ok: boolean; detail: string }[] = [];
+  const session = await fetchYahooSession();
+  steps.push({
+    step: "session (cookie + crumb)",
+    ok: session != null,
+    detail: session ? "ok" : JSON.stringify(yahooDiagnostics.lastSessionError),
+  });
+  for (const host of ["query2", "query1"]) {
+    try {
+      const params = new URLSearchParams({ modules: "financialData,defaultKeyStatistics" });
+      if (session?.crumb) params.set("crumb", session.crumb);
+      const res = await axios.get(`https://${host}.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`, {
+        headers: { "User-Agent": UA, ...(session?.cookie ? { Cookie: session.cookie } : {}) },
+        timeout: 10000,
+        validateStatus: () => true,
+      });
+      const fin = res.data?.quoteSummary?.result?.[0]?.financialData;
+      steps.push({
+        step: `quoteSummary via ${host}`,
+        ok: res.status === 200 && fin != null,
+        detail: res.status === 200 && fin != null ? `HTTP 200, returnOnEquity=${JSON.stringify(fin.returnOnEquity?.raw ?? null)}` : `HTTP ${res.status}: ${snippet(res.data)}`,
+      });
+    } catch (err) {
+      steps.push({ step: `quoteSummary via ${host}`, ok: false, detail: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { symbol, steps, counters: yahooDiagnostics };
 }

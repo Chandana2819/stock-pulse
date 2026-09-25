@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from "./middleware/error";
 import { requestLogger } from "./middleware/requestLogger";
 import { startBackgroundJobs } from "./jobs/scheduler";
 import { logger } from "./lib/logger";
+import { probeYahooFundamentals } from "./lib/providers/yahooProvider";
 
 import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
@@ -113,6 +114,18 @@ app.use("/api/stock-learning", stockLearningRouter);
 app.use("/api", legacyAnalyzeRouter);
 
 app.get("/api/health", (_req, res) => res.json({ status: "ok", uptime: process.uptime(), timestamp: new Date().toISOString() }));
+// Live check of the fundamentals feed (Yahoo quoteSummary) — says which step
+// fails (cookie, crumb, or the data request itself) instead of every stock just
+// showing "fundamental data missing". Public on purpose: returns no secrets.
+app.get("/api/health/data-sources", async (req, res) => {
+  const symbol = String(req.query.symbol ?? "TCS.NS").toUpperCase().slice(0, 24);
+  if (!/^[A-Z0-9.&^-]+$/.test(symbol)) return res.status(400).json({ error: "invalid symbol" });
+  try {
+    return res.json(await probeYahooFundamentals(symbol));
+  } catch (err) {
+    return res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
 
 app.use(notFoundHandler);
 app.use(errorHandler);
