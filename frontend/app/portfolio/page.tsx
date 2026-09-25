@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import NotificationSystem, { Toast } from "../components/NotificationSystem";
 import PortfolioDoctor from "../components/PortfolioDoctor";
+import PortfolioTrackRecord from "../components/PortfolioTrackRecord";
 import LossAndCrashRadar from "../components/LossAndCrashRadar";
 import SignalDetailModal, { SignalDetailData } from "../components/SignalDetailModal";
 import { getPositionGuidance } from "../lib/positionGuidance";
@@ -594,6 +595,7 @@ export default function PortfolioPage() {
       <main className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] max-w-[1900px] mx-auto w-full p-4 sm:p-6 lg:p-8 gap-6 lg:gap-8">
 
         <div className="xl:col-span-2 min-w-0 flex flex-col gap-6">
+          <PortfolioTrackRecord />
           <LossAndCrashRadar
             onPortfolioUpdated={fetchData}
             onShowToast={(msg, type) =>
